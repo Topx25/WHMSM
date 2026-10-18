@@ -1,0 +1,59 @@
+# ---- Safety Monitor Pro — source repo ignore (KEEP SECRETS OUT, even in a private repo) ----
+
+# build / packaging artifacts (regenerable)
+_obf_src/
+_obf_out/
+_pkg/
+packaging/*.tar.gz
+*.tar.gz
+*.zip
+
+# secrets / credentials — NEVER commit
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*_key
+*.env
+.env
+.env.*
+*.my.cnf
+.my.cnf
+secret*.php.local
+*master*.key
+*.secret
+storage/.appkey
+storage/.gate
+storage/.gate_otl
+storage/.wahook
+storage/otp.log
+storage/.otp_debug
+
+# runtime data / state (not source)
+var/
+/var/
+cache/
+locks/
+*.db
+*.sqlite
+*.log
+
+# editor / OS junk
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# server-side backups that may contain secrets
+*.bak_*
+*.bak
+
+# obfuscated release output (not source) and per-release artifacts
+_obf/
+packaging/*.gate.json
+packaging/*.sig
+packaging/*.RELEASE-NOTES.txt
+

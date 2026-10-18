@@ -1,0 +1,63 @@
+<!--
+  cpanel_session.xml — teach Wazuh where cPanel actually records a successful sign-in.
+
+  Wazuh's bundled cPanel ruleset looks for "SUCCESS LOGIN" in /usr/local/cpanel/logs/login_log. Its own test file
+  (wazuh-ruleset/tools/rules-testing/tests/cpanel.ini) dates from 2016 and every successful-login case in it is a
+  login_log line of the form:
+
+      [2016-04-18 13:07:02 -0400] info [cpsrvd] 10.1.5.19 - root - SUCCESS LOGIN whostmgrd
+
+  Current cPanel does not write that line. Measured on two production servers in September 2026:
+
+      grep -c 'SUCCESS LOGIN\|SUCCEEDED LOGIN' /usr/local/cpanel/logs/login_log   ->   0
+      grep -c ' NEW ' /usr/local/cpanel/logs/session_log                          ->   3,900+
+
+  login_log now carries refusals only (FAILED, DEFERRED). A session that is GRANTED is a NEW line in
+  /usr/local/cpanel/logs/session_log. So a Wazuh manager running the stock cPanel ruleset reports zero successful
+  logins on a server being signed into all day — and zero successful logins looks exactly like a clean server.
+
+  Install:
+      cp cpanel_session.xml /var/ossec/etc/decoders/
+      # and on each cPanel agent, in ossec.conf:
+      #   <localfile><log_format>syslog</log_format>
+      #     <location>/usr/local/cpanel/logs/session_log</location></localfile>
+      /var/ossec/bin/wazuh-logtest          # paste a line from the sample file to check
+
+  A note on what these decoders deliberately do NOT try to do: Wazuh cannot compare two decoded fields, so
+  "the session was created by a DIFFERENT identity than the one it belongs to" is not expressible here. On the
+  real logs that condition only ever co-occurred with path=loadsession, which IS expressible, so the rules below
+  key on `path`. If cPanel ever writes path=form with a creator other than the user, these rules would call it a
+  password login; nothing in two production logs did.
+-->
+<decoder name="cpanel-session">
+  <prematch type="pcre2">^\[[^\]]+\]\s+\w+\s+\[[^\]]+\]\s+\S+\s+(?:NEW|PURGE)\s</prematch>
+</decoder>
+
+<!--
+  A GRANTED session. The identity may be a cPanel account (bob) or a mailbox (info@example.com) — the '@' is part
+  of the name and must survive: a mailbox reported as "infoexample.com" matches nothing an operator can act on.
+  'internal' in the address position means the session was minted on the box, not reached over the network.
+-->
+<decoder name="cpanel-session-new">
+  <parent>cpanel-session</parent>
+  <regex type="pcre2">^\[([^\]]+)\]\s+\w+\s+\[([^\]]+)\]\s+(\S+)\s+NEW\s+([^:\s]+):\S*\s+(.*)$</regex>
+  <order>timestamp,daemon,srcip,dstuser,extra_data</order>
+</decoder>
+
+<!-- The same line, when cPanel wrote no key=value tail at all. -->
+<decoder name="cpanel-session-new">
+  <parent>cpanel-session</parent>
+  <regex type="pcre2">^\[([^\]]+)\]\s+\w+\s+\[([^\]]+)\]\s+(\S+)\s+NEW\s+([^:\s]+):\S*\s*$</regex>
+  <order>timestamp,daemon,srcip,dstuser</order>
+</decoder>
+
+<!--
+  A session ENDING, and its reason. PURGE is not a login — treating it as one double-counts every session — but
+  the reason is worth having: 'badpass' is a rejected password recorded here as well as in login_log, and
+  'tokendenied' is somebody holding a session token the server will not honour.
+-->
+<decoder name="cpanel-session-purge">
+  <parent>cpanel-session</parent>
+  <regex type="pcre2">^\[([^\]]+)\]\s+\w+\s+\[([^\]]+)\]\s+(\S+)\s+PURGE\s+([^:\s]+):\S*\s+(\w+)</regex>
+  <order>timestamp,daemon,srcip,dstuser,status</order>
+</decoder>

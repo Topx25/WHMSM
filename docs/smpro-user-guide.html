@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety Monitor Pro — User Guide</title>
+<style>
+  :root{
+    --ink:#0f1b33;--ink2:#1f2733;--muted:#566174;--faint:#8a93a6;--line:#e3e7ef;--bg:#eef1f7;--card:#fff;
+    --accent:#2f56e6;--accent2:#6979f8;--ok:#15803d;--okbg:#e7f7ee;--warn:#b45309;--warnbg:#fdf3e3;--dng:#b91c1c;--dngbg:#fdeceC;--sb:#10182b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font:13.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink2);background:var(--bg);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{max-width:1000px;margin:0 auto;padding:26px}
+  h1{font-size:30px;margin:0;color:#fff;font-weight:800;letter-spacing:-.4px}
+  h2{font-size:19px;margin:0 0 4px;color:var(--ink);font-weight:800;display:flex;align-items:center;gap:10px}
+  h2 .n{width:27px;height:27px;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;flex:none}
+  h3{font-size:14.5px;margin:14px 0 6px;color:var(--ink);font-weight:800}
+  p{margin:8px 0}
+  .sub{color:var(--muted)}
+  .lead{font-size:14.5px;color:var(--muted)}
+  /* cover */
+  .cover{background:linear-gradient(135deg,#10182b 0%,#243companies 0%,#22305a 100%);background:linear-gradient(135deg,#10182b,#22305a);border-radius:18px;padding:40px 34px;color:#c9d6f0;margin-bottom:22px}
+  .cover .brand{display:flex;align-items:center;gap:13px;margin-bottom:10px}
+  .cover .brand svg{width:40px;height:40px}
+  .cover .tagline{font-size:15px;color:#aebbe0;margin-top:6px;max-width:620px}
+  .cover .pills{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap}
+  .pill{display:inline-block;font-size:11.5px;font-weight:700;padding:4px 12px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff}
+  /* contents */
+  .toc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin-bottom:22px}
+  .toc ol{margin:6px 0 0;padding-left:20px;columns:2;column-gap:30px}
+  .toc li{margin:4px 0;color:var(--ink2);font-weight:600;break-inside:avoid}
+  .toc li span{color:var(--faint);font-weight:500}
+  /* section */
+  .sec{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin-bottom:18px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .sec.break{break-before:page}
+  ul.steps{margin:8px 0;padding:0;list-style:none;counter-reset:s}
+  ul.steps li{position:relative;padding:6px 0 6px 34px;border-bottom:1px dashed var(--line)}
+  ul.steps li:last-child{border-bottom:0}
+  ul.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:6px;width:23px;height:23px;border-radius:50%;background:var(--accent);color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+  .feat{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin:8px 0}
+  .feat div{position:relative;padding-left:22px;font-size:13px}
+  .feat div::before{content:"\2713";position:absolute;left:0;color:var(--ok);font-weight:800}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:#0d1424;color:#cfe0ff;padding:10px 13px;border-radius:9px;display:block;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .tip{border-left:4px solid var(--accent);background:#f1f5ff;border-radius:0 9px 9px 0;padding:10px 14px;margin:12px 0;font-size:13px}
+  .tip b{color:var(--accent)}
+  .warnbox{border-left:4px solid var(--warn);background:var(--warnbg);border-radius:0 9px 9px 0;padding:10px 14px;margin:12px 0;font-size:13px}
+  /* screenshot frame */
+  .shot{border:1px solid #d6deea;border-radius:12px;overflow:hidden;box-shadow:0 8px 22px rgba(15,23,42,.10);margin:14px 0;background:#fff;break-inside:avoid}
+  .shot-bar{display:flex;align-items:center;gap:8px;background:var(--sb);color:#fff;padding:9px 14px}
+  .shot-bar .tl{display:flex;gap:6px}.shot-bar .tl i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .shot-brand{font-weight:800;font-size:12.5px;display:flex;align-items:center;gap:7px;margin-left:6px}
+  .shot-brand svg{width:15px;height:15px}
+  .shot-pg{margin-left:auto;font-size:11px;color:#9fb0d6;background:rgba(255,255,255,.08);padding:3px 10px;border-radius:7px}
+  .shot-body{padding:14px;background:#f4f6fb}
+  .cap{font-size:11.5px;color:var(--faint);text-align:center;margin:-6px 0 2px}
+  /* mock UI bits */
+  .m-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .m-title{font-weight:800;color:var(--ink);font-size:15px}
+  .m-msub{font-size:11.5px;color:var(--muted)}
+  .m-btn{background:var(--accent);color:#fff;font-size:11.5px;font-weight:700;padding:6px 11px;border-radius:8px}
+  .m-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .m-kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+  .m-kpi .n{font-size:21px;font-weight:800;color:var(--ink)}
+  .m-kpi .l{font-size:10.5px;color:var(--muted);margin-top:2px}
+  .m-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 13px;margin-top:9px}
+  .m-card h4{margin:0 0 8px;font-size:12.5px;font-weight:800;color:var(--ink)}
+  .m-row{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid #eef1f6;font-size:12px}
+  .m-row:last-child{border-bottom:0}
+  .m-dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .m-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:auto}
+  .b-ok{background:var(--okbg);color:var(--ok)}.b-wn{background:var(--warnbg);color:var(--warn)}.b-dg{background:#fdecec;color:var(--dng)}
+  .m-bar{height:7px;border-radius:5px;background:#eef1f6;overflow:hidden;margin-top:5px}.m-bar i{display:block;height:100%;border-radius:5px}
+  .m-pill{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;background:#eef2ff;color:var(--accent);margin:2px 4px 2px 0}
+  .ring{width:60px;height:60px;border-radius:50%;background:conic-gradient(var(--ok) 0 76%,#e6eaf1 76% 100%);display:flex;align-items:center;justify-content:center;flex:none}
+  .ring .in{width:46px;height:46px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--ink);font-size:17px}
+  .foot{text-align:center;color:var(--faint);font-size:11px;margin-top:14px}
+  @page{size:A4;margin:13mm}
+  @media print{body{background:#fff}.page{padding:0;max-width:none}.sec,.toc,.cover{box-shadow:none}.sec{break-inside:auto} .shot,.m-card,.feat,ul.steps li{break-inside:avoid} h2,h3{break-after:avoid}}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- COVER -->
+  <div class="cover">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#8aa6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 7.6 8 10 4.6-2.4 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+      <h1>Safety Monitor Pro</h1>
+    </div>
+    <div style="font-size:16px;color:#fff;font-weight:700">User Guide</div>
+    <div class="tagline">All-in-one server protection &amp; monitoring for WHM / cPanel — real-time health, firewall &amp; intrusion insight, mail-abuse defense, site repair, performance tuning, and AI-assisted fixes, in one plugin.</div>
+    <div class="pills"><span class="pill">WHM / cPanel</span><span class="pill">Version 1.0.198</span><span class="pill">English</span></div>
+  </div>
+
+  <!-- CONTENTS -->
+  <div class="toc">
+    <h2 style="font-size:16px"><span class="n">≡</span> Contents</h2>
+    <ol>
+      <li>Introduction <span>— what it does</span></li>
+      <li>Requirements</li>
+      <li>Installation</li>
+      <li>Activating your license</li>
+      <li>The Dashboard</li>
+      <li>Monitoring</li>
+      <li>Security &amp; firewall</li>
+      <li>Mail abuse protection</li>
+      <li>Site Doctor</li>
+      <li>Server Tune-up</li>
+      <li>Alerts &amp; notifications</li>
+      <li>Multi-Server Hub</li>
+      <li>Updates</li>
+      <li>Tips &amp; best practices</li>
+      <li>FAQ &amp; support</li>
+    </ol>
+  </div>
+
+  <!-- 1 INTRO -->
+  <div class="sec">
+    <h2><span class="n">1</span> Introduction</h2>
+    <p class="lead">Safety Monitor Pro (SM Pro) is a single WHM plugin that gives a hosting administrator a live, actionable view of server health and security — and the one-click tools to act on it.</p>
+    <div class="feat">
+      <div>Real-time server health, load &amp; processes</div>
+      <div>Firewall (CSF/LFD) status &amp; controls</div>
+      <div>Intrusion &amp; web-attack monitoring</div>
+      <div>Forensics / malware audit per account</div>
+      <div>Outbound spam &amp; phishing defense</div>
+      <div>Site Doctor — detect &amp; auto-fix down sites</div>
+      <div>Server Tune-up with an optimization score</div>
+      <div>WhatsApp / Telegram / email alerts</div>
+      <div>AI-assisted diagnosis &amp; fixes (bring your own key)</div>
+      <div>Manage many servers from one Hub</div>
+    </div>
+  </div>
+
+  <!-- 2 REQUIREMENTS -->
+  <div class="sec">
+    <h2><span class="n">2</span> Requirements</h2>
+    <div class="feat">
+      <div>A server running <b>WHM / cPanel</b> (AlmaLinux, CloudLinux, Rocky or Ubuntu)</div>
+      <div><b>Root</b> access (the installer runs as root)</div>
+      <div>Outbound HTTPS to the license/update server</div>
+      <div>A valid <b>license key</b> (from your purchase email / WhatsApp)</div>
+    </div>
+  </div>
+
+  <!-- 3 INSTALL -->
+  <div class="sec break">
+    <h2><span class="n">3</span> Installation</h2>
+    <p>You receive your license key and a one-line installer by email / WhatsApp the moment your serial is created. As <b>root</b>, paste it into your server's terminal:</p>
+    <span class="mono">curl -fsSL -A "Mozilla/5.0 …SafetyMonitorPro/installer" https://&lt;license-host&gt;/install.sh | bash -s -- YOUR-LICENSE-KEY</span>
+    <ul class="steps">
+      <li>The installer reads your server's main IP and a hardware fingerprint and requests your signed copy of the plugin.</li>
+      <li>The package is verified (checksum) and extracted, and the WHM plugin is registered automatically.</li>
+      <li>Open <b>WHM → Plugins → Safety Monitor Pro</b> — you're taken to the License page to finish activation.</li>
+    </ul>
+    <div class="tip"><b>Tip:</b> the installer is tied to your key + this server. Each key installs on one server; contact support to move a license to a new machine.</div>
+  </div>
+
+  <!-- 4 ACTIVATE -->
+  <div class="sec">
+    <h2><span class="n">4</span> Activating your license</h2>
+    <p>On first open, the License page shows your server identity and activates automatically against your key. A green banner confirms the license is valid; features unlock based on your plan.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand"><svg viewBox="0 0 24 24" fill="none" stroke="#8aa6ff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Safety Monitor Pro</span><span class="shot-pg">License</span></div>
+      <div class="shot-body">
+        <div class="m-card" style="border-color:#bfe6cd;background:#f3fbf6"><div class="m-row" style="border:0"><span class="m-dot" style="background:var(--ok)"></span><b style="color:var(--ok)">License active</b><span class="m-badge b-ok">Pro plan</span></div><div class="m-msub" style="margin-left:17px">Expires 2026-07-13 · 21 features enabled · re-checks automatically</div></div>
+        <div class="m-card"><h4>This server's identity</h4>
+          <div class="m-row"><span class="sub">Main IP</span><span style="margin-left:auto" class="mono" >203.0.113.20</span></div>
+          <div class="m-row"><span class="sub">Hostname</span><span style="margin-left:auto" class="mono">srv1.example.com</span></div>
+          <div class="m-row"><span class="sub">Enforcement</span><span style="margin-left:auto">Hard gate</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — License &amp; activation page</div>
+  </div>
+
+  <!-- 5 DASHBOARD -->
+  <div class="sec break">
+    <h2><span class="n">5</span> The Dashboard</h2>
+    <p>The Dashboard is your at-a-glance command center: key metrics on top, then recent activity and health breakdowns. Use the quick-action buttons to jump to any tool.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Dashboard</span></div>
+      <div class="shot-body">
+        <div class="m-head"><div><div class="m-title">Dashboard</div><div class="m-msub">Server health &amp; activity at a glance</div></div><span class="m-btn">Run a scan</span></div>
+        <div class="m-kpis">
+          <div class="m-kpi"><div class="n" style="color:var(--ok)">OK</div><div class="l">Server status</div></div>
+          <div class="m-kpi"><div class="n">0.42</div><div class="l">Load (1m)</div></div>
+          <div class="m-kpi"><div class="n">38%</div><div class="l">Disk used</div></div>
+          <div class="m-kpi"><div class="n">120</div><div class="l">Accounts</div></div>
+        </div>
+        <div class="m-card"><h4>Recent activity</h4>
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>Firewall reloaded<span class="m-badge b-ok">ok</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--warn)"></span>3 login failures blocked<span class="m-badge b-wn">blocked</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>Nightly malware scan clean<span class="m-badge b-ok">clean</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — Dashboard overview</div>
+  </div>
+
+  <!-- 6 MONITORING -->
+  <div class="sec">
+    <h2><span class="n">6</span> Monitoring</h2>
+    <p>Live insight into the things that take a server down: <b>Server Health</b>, <b>Load Monitor</b>, <b>Top Processes</b>, <b>Disk / Storage</b>, <b>Network Traffic</b>, <b>Hardware &amp; Platform</b> and <b>cPanel Services</b>. Spot a runaway process or a full disk before customers notice.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Load &amp; Processes</span></div>
+      <div class="shot-body">
+        <div class="m-card"><h4>System load</h4>
+          <div class="m-msub">1m / 5m / 15m</div><div class="m-bar"><i style="width:35%;background:var(--ok)"></i></div>
+          <div class="m-msub" style="margin-top:8px">CPU 28% · RAM 41% · Swap 0%</div>
+        </div>
+        <div class="m-card"><h4>Top processes</h4>
+          <div class="m-row"><span>mysqld</span><span style="margin-left:auto" class="sub">CPU 18%</span></div>
+          <div class="m-row"><span>php-fpm (user42)</span><span style="margin-left:auto" class="sub">CPU 9%</span></div>
+          <div class="m-row"><span>httpd</span><span style="margin-left:auto" class="sub">CPU 6%</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — Load &amp; top processes</div>
+    <h3>How to use</h3>
+    <ul class="steps"><li>Open the relevant monitoring page from the menu.</li><li>Watch the live values; red/amber means attention needed.</li><li>Drill into Top Processes to find what's consuming CPU/RAM.</li></ul>
+  </div>
+
+  <!-- 7 SECURITY -->
+  <div class="sec break">
+    <h2><span class="n">7</span> Security &amp; firewall</h2>
+    <p>SM Pro brings your defenses into one place: <b>Firewall Status</b> (CSF/LFD), <b>Account Audit</b> (logins &amp; suspicious access), <b>Intrusion Monitor</b> (web attacks / Imunify), <b>Forensics / Audit</b> (per-account malware), <b>PHP Harden</b>, and a <b>Security Health</b> checklist.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Security Health</span></div>
+      <div class="shot-body">
+        <div class="m-card"><h4>Security checklist</h4>
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>Firewall enforcing<span class="m-badge b-ok">pass</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--warn)"></span>SSH password auth enabled<span class="m-badge b-wn">review</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>Brute-force protection active<span class="m-badge b-ok">pass</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--dng)"></span>2 accounts with known malware<span class="m-badge b-dg">action</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — Security Health checklist</div>
+    <h3>How to use</h3>
+    <ul class="steps"><li>Review the checklist — each item shows the current state + a recommendation.</li><li>For findings, follow the in-page guidance or open Forensics to quarantine affected files.</li><li>Use Firewall Status to confirm CSF is enforcing and your IP is allowlisted.</li></ul>
+    <div class="warnbox"><b>Caution:</b> changes that affect SSH/firewall access show a red warning — keep your current session open and verify a new login before closing it.</div>
+  </div>
+
+  <!-- 8 MAIL -->
+  <div class="sec">
+    <h2><span class="n">8</span> Mail abuse protection</h2>
+    <p><b>Spam &amp; Phishing</b> surfaces accounts sending abnormal volumes, watches the mail queue, and helps you hold or suspend a compromised account before your IPs get blacklisted.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Spam &amp; Phishing</span></div>
+      <div class="shot-body">
+        <div class="m-card"><h4>Outbound senders (last hour)</h4>
+          <div class="m-row"><span>user42 → 1,240 msgs</span><span class="m-badge b-dg">suspicious</span></div>
+          <div class="m-row"><span>shop → 86 msgs</span><span class="m-badge b-ok">normal</span></div>
+          <div class="m-row"><span>blog → 12 msgs</span><span class="m-badge b-ok">normal</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — outbound spam detection</div>
+  </div>
+
+  <!-- 9 SITE DOCTOR -->
+  <div class="sec break">
+    <h2><span class="n">9</span> Site Doctor</h2>
+    <p>Site Doctor checks a domain end-to-end (DNS → HTTP → redirects) and, when a site is down or stuck in a redirect loop, proposes — and can apply — a fix. It un-hardens locked files first, applies fixes incrementally, and re-checks until the site is up.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Site Doctor</span></div>
+      <div class="shot-body">
+        <div class="m-card"><div class="m-row" style="border:0"><span class="m-dot" style="background:var(--dng)"></span><b>example.com</b><span class="m-badge b-dg">Redirect loop</span></div>
+          <div class="m-msub" style="margin-left:17px">DNS ok · HTTPS → too many redirects (310)</div>
+          <div style="margin-top:8px"><span class="m-pill">Fix .htaccess</span><span class="m-pill">Fix WP site URL</span><span class="m-btn" style="float:right">Fix it</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — Site Doctor diagnosis &amp; fix</div>
+    <h3>How to use</h3>
+    <ul class="steps"><li>Enter or pick a domain → Site Doctor runs the checks.</li><li>Review the diagnosis and the proposed fixes.</li><li>Click <b>Fix it</b> — fixes are applied incrementally and verified; everything is reversible.</li></ul>
+  </div>
+
+  <!-- 10 TUNE-UP -->
+  <div class="sec">
+    <h2><span class="n">10</span> Server Tune-up</h2>
+    <p>The Tune-up page scans your engines (MySQL, Apache, PHP, CSF, Imunify, SSH) and lists safe performance &amp; security improvements. An <b>Optimization score</b> sits at the top; each time you apply a recommendation it disappears and the score rises. Every change is backed up, validated, and reversible.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Server Tune-up</span></div>
+      <div class="shot-body">
+        <div class="m-card" style="display:flex;align-items:center;gap:14px"><div class="ring"><div class="in">76</div></div><div><b style="color:var(--ink)">Optimization score · B</b><div class="m-msub">1 high · 3 medium · 2 low open — apply to raise it</div></div></div>
+        <div class="m-card"><h4>MySQL / MariaDB</h4>
+          <div class="m-row"><span>Enable OPcache</span><span class="m-badge" style="background:#eef2ff;color:var(--accent);margin-left:auto">Apply</span></div>
+          <div class="m-row"><span>innodb_buffer_pool_size → 4G</span><span class="m-badge" style="background:#eef2ff;color:var(--accent);margin-left:auto">Apply</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — Tune-up with optimization score</div>
+    <h3>How to use</h3>
+    <ul class="steps"><li>Open Server Tune-up — review your score and the open recommendations.</li><li>Click <b>Apply</b> on any item — it's backed up, applied, validated, then removed from the list.</li><li>Or use <b>AI optimize</b> to get tailored, safety-flagged suggestions for selected engines.</li></ul>
+  </div>
+
+  <!-- 11 ALERTS -->
+  <div class="sec break">
+    <h2><span class="n">11</span> Alerts &amp; notifications</h2>
+    <p>Get told the moment something matters — via <b>WhatsApp</b>, <b>Telegram</b> or <b>email</b>. Connect a channel once, choose which events alert you, and SM Pro batches emergencies so you're not spammed.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Notifications</span></div>
+      <div class="shot-body">
+        <div class="m-card"><h4>Channels</h4>
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>WhatsApp<span class="m-badge b-ok">connected</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>Telegram<span class="m-badge b-ok">connected</span></div>
+          <div class="m-row"><span class="m-dot" style="background:#cbd5e1"></span>Email (SMTP)<span class="m-badge" style="background:#eef1f6;color:#64748b;margin-left:auto">set up</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — alert channels</div>
+  </div>
+
+  <!-- 12 HUB -->
+  <div class="sec">
+    <h2><span class="n">12</span> Multi-Server Hub</h2>
+    <p>On the top plan, link several servers and watch them from one place — a single status board across your fleet, with each box reporting its health, version and alerts back to the Hub by mutual consent.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Hub</span></div>
+      <div class="shot-body">
+        <div class="m-card">
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>srv1.example.com<span class="sub" style="margin-left:auto">load 0.4 · v1.0.198</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--ok)"></span>srv2.example.com<span class="sub" style="margin-left:auto">load 0.9 · v1.0.198</span></div>
+          <div class="m-row"><span class="m-dot" style="background:var(--warn)"></span>srv3.example.com<span class="sub" style="margin-left:auto">disk 86% · v1.0.198</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">Illustration — fleet view</div>
+  </div>
+
+  <!-- 13 UPDATES -->
+  <div class="sec">
+    <h2><span class="n">13</span> Updates</h2>
+    <p>SM Pro updates itself securely: every release is cryptographically signed and integrity-checked before it's applied. Turn on auto-update to always run the latest, or update manually from the Updates page.</p>
+    <div class="shot">
+      <div class="shot-bar"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="shot-brand">Safety Monitor Pro</span><span class="shot-pg">Updates</span></div>
+      <div class="shot-body">
+        <div class="m-card"><div class="m-row" style="border:0"><span class="m-dot" style="background:var(--ok)"></span><b>You're up to date</b><span class="m-badge b-ok">v1.0.198</span></div><div class="m-msub" style="margin-left:17px">Auto-update: on · signature verified</div></div>
+      </div>
+    </div>
+    <div class="cap">Illustration — Updates</div>
+  </div>
+
+  <!-- 14 TIPS -->
+  <div class="sec break">
+    <h2><span class="n">14</span> Tips &amp; best practices</h2>
+    <div class="feat">
+      <div>Keep auto-update on for the latest fixes.</div>
+      <div>Add your own IP to the firewall allowlist before enforcing.</div>
+      <div>Connect WhatsApp/Telegram so you hear about issues instantly.</div>
+      <div>Run Server Tune-up after install to raise your score.</div>
+      <div>Use Site Doctor first when a customer reports a down site.</div>
+      <div>Add an AI provider key to unlock guided fixes.</div>
+    </div>
+  </div>
+
+  <!-- 15 FAQ -->
+  <div class="sec">
+    <h2><span class="n">15</span> FAQ &amp; support</h2>
+    <h3>Can I move my license to another server?</h3>
+    <p class="sub">Each key is bound to one server. Contact support to release and re-bind it to a new machine.</p>
+    <h3>Will applying a fix break my server?</h3>
+    <p class="sub">No — every apply is backed up first, validated, and reversible. Access-risk changes (SSH/firewall) always require explicit confirmation.</p>
+    <h3>What happens if the license server is briefly unreachable?</h3>
+    <p class="sub">Nothing — the plugin keeps running on a grace period and recovers automatically when the connection returns.</p>
+    <h3>How do I get help?</h3>
+    <p class="sub">Use the support contact from your purchase. Have your license key and server hostname ready.</p>
+  </div>
+
+  <div class="foot">Safety Monitor Pro · User Guide · v1.0.198 · © 2026 · Illustrations are representative of the interface.</div>
+</div>
+</body>
+</html>

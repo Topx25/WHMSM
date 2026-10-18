@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety Monitor — License Server (mockup)</title>
+<style>
+:root{
+  --bg:#f4f6fb;--card:#fff;--ink:#1f2733;--muted:#6b7686;--line:#e6eaf1;
+  --good:#1f9d55;--good-bg:#e9f8ef;--warn:#c47f17;--warn-bg:#fdf6e7;--dang:#d93b3b;--dang-bg:#fdecec;
+  --brand:#3b5bdb;--brand-bg:#eef2ff;--side:#10182b;--side-ink:#cfd8ef;--sidew:230px;--toph:54px;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+a{color:inherit;text-decoration:none}
+.top{position:fixed;top:0;left:0;right:0;height:var(--toph);z-index:30;display:flex;align-items:center;gap:12px;background:var(--side);color:#fff;padding:0 18px;border-bottom:1px solid #1d2740}
+.top .brand{display:flex;align-items:center;gap:10px;font-weight:700}
+.top .brand small{font-weight:400;color:var(--side-ink);font-size:11px}
+.top .sp{flex:1}
+.top .tag{font-size:11px;background:#23304d;padding:3px 10px;border-radius:20px;color:var(--side-ink)}
+.side{position:fixed;top:var(--toph);left:0;bottom:0;width:var(--sidew);background:var(--side);color:var(--side-ink);padding:14px 10px;overflow:auto}
+.side .grp{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#5d6b8c;padding:14px 12px 6px}
+.lnk{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;cursor:pointer;color:var(--side-ink);font-size:13.5px;border-left:3px solid transparent}
+.lnk:hover{background:#1a2740;color:#fff}
+.lnk.on{background:#1a2740;color:#fff;border-left-color:var(--brand)}
+.lnk .ic{width:18px;text-align:center}
+.main{margin-left:var(--sidew);padding:calc(var(--toph) + 22px) 28px 40px}
+h1{font-size:20px;font-weight:700;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi .v{font-size:28px;font-weight:700;margin-top:4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:15px;font-weight:700;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:11px 10px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:none}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.mut{color:var(--muted)}
+.b{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.b.ok{background:var(--good-bg);color:var(--good)}
+.b.exp{background:var(--dang-bg);color:var(--dang)}
+.b.new{background:var(--warn-bg);color:var(--warn)}
+.b.live{background:var(--good);color:#fff}
+.act{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;color:var(--ink)}
+.act:hover{border-color:var(--brand);color:var(--brand)}
+.btn{border:none;background:var(--brand);color:#fff;border-radius:9px;padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+.in,.sel{height:38px;border:1px solid var(--line);border-radius:9px;padding:0 12px;font-size:13.5px;background:#fff;color:var(--ink);width:100%}
+.row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px;max-width:520px}
+.fld{display:flex;flex-direction:column;gap:6px}
+.fld span{font-size:12px;color:var(--muted)}
+.ck{display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-right:16px}
+.filters{display:flex;gap:10px;margin-bottom:14px}
+.hide{display:none}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px}
+.dot.g{background:var(--good)}.dot.b{background:var(--brand)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand">🛡️ Safety Monitor <small>License Server</small></div>
+  <div class="sp"></div>
+  <span class="tag">v1.0.71 live</span>
+  <span class="tag">topx1.host@gmail.com</span>
+</div>
+
+<nav class="side">
+  <div class="grp">Overview</div>
+  <div class="lnk on" data-v="dash"><span class="ic">▦</span> Dashboard</div>
+  <div class="grp">Licensing</div>
+  <div class="lnk" data-v="lic"><span class="ic">🔑</span> Licenses</div>
+  <div class="lnk" data-v="srv"><span class="ic">🖥</span> Servers</div>
+  <div class="lnk" data-v="new"><span class="ic">＋</span> Create license</div>
+  <div class="lnk" data-v="logs"><span class="ic">≣</span> API logs</div>
+  <div class="grp">Distribution</div>
+  <div class="lnk" data-v="rel"><span class="ic">⬚</span> Releases</div>
+  <div class="grp">System</div>
+  <div class="lnk" data-v="set"><span class="ic">⚙</span> Settings</div>
+</nav>
+
+<main class="main">
+
+  <section data-view="dash">
+    <h1>Dashboard</h1>
+    <p class="sub">Safety Monitor Pro — licensing overview</p>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Active licenses</div><div class="v">37</div></div>
+      <div class="kpi"><div class="l">Expired</div><div class="v" style="color:var(--dang)">4</div></div>
+      <div class="kpi"><div class="l">Downloads used</div><div class="v">41</div></div>
+      <div class="kpi"><div class="l">Latest version</div><div class="v" style="font-size:22px">1.0.71</div></div>
+    </div>
+    <div class="card">
+      <h2>Recent activity</h2>
+      <table><tbody>
+        <tr><td><span class="dot g"></span>check · <span class="b ok">ok</span></td><td class="mono">SM-2026-38AB…1062</td><td class="mut">178.63.134.16</td><td class="mut">License valid</td><td class="mut">16:44</td></tr>
+        <tr><td><span class="dot b"></span>download · <span class="b ok">ok</span></td><td class="mono">SM-2026-6505…52C2</td><td class="mut">167.233.29.168</td><td class="mut">Served smpro-latest</td><td class="mut">16:36</td></tr>
+        <tr><td><span class="dot g"></span>authorize · <span class="b ok">ok</span></td><td class="mono">SM-2026-38AB…1062</td><td class="mut">178.63.134.16</td><td class="mut">Action authorized</td><td class="mut">16:33</td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <section data-view="lic" class="hide">
+    <h1>Licenses</h1>
+    <p class="sub">All Safety Monitor license keys</p>
+    <div class="row">
+      <input class="in" style="max-width:260px" placeholder="🔍  Search key / owner / IP…">
+      <button class="btn" data-go="new">＋ Create license</button>
+    </div>
+    <div class="card" style="padding:6px 8px">
+      <table>
+        <thead><tr><th>Key</th><th>Owner</th><th>Status</th><th>Downloads</th><th>Bound server</th><th>Expires</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">SM-2026-38AB…1062</td><td>topx1.host</td><td><span class="b ok">active</span></td><td>1 / 1</td><td class="mut">178.63.134.16</td><td>2027-06</td><td><button class="act">Edit</button> <button class="act">Reset DL</button></td></tr>
+          <tr><td class="mono">SM-2026-6505…52C2</td><td>client-a</td><td><span class="b ok">active</span></td><td>1 / 1</td><td class="mut">167.233.29.168</td><td>2027-02</td><td><button class="act">Edit</button> <button class="act">Reset DL</button></td></tr>
+          <tr><td class="mono">SM-2026-91C2…77A0</td><td>client-b</td><td><span class="b new">unbound</span></td><td>0 / 1</td><td class="mut">—</td><td>2027-04</td><td><button class="act">Edit</button> <button class="act">Reset DL</button></td></tr>
+          <tr><td class="mono">SM-2025-44DE…0F31</td><td>client-c</td><td><span class="b exp">expired</span></td><td>1 / 1</td><td class="mut">45.86.x.x</td><td>2026-05</td><td><button class="act">Edit</button> <button class="act">Reset DL</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section data-view="new" class="hide">
+    <h1>Create license</h1>
+    <p class="sub">One unified form (replaces create / create-v2 / create-safety-v2 / activate-sm)</p>
+    <div class="card">
+      <div class="grid2">
+        <label class="fld"><span>Product</span><select class="sel"><option>Safety Monitor Pro</option></select></label>
+        <label class="fld"><span>Plan</span><select class="sel"><option>Standard</option><option>Pro</option><option>Trial (30 days)</option></select></label>
+        <label class="fld"><span>Owner / email</span><input class="in" placeholder="client@example.com"></label>
+        <label class="fld"><span>Expiry date</span><input class="in" placeholder="2027-06-17"></label>
+      </div>
+      <div style="margin-top:16px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Enabled features</div>
+        <label class="ck"><input type="checkbox" checked> intrusion</label>
+        <label class="ck"><input type="checkbox" checked> ai</label>
+        <label class="ck"><input type="checkbox" checked> whatsapp</label>
+        <label class="ck"><input type="checkbox" checked> telegram</label>
+        <label class="ck"><input type="checkbox"> cooler / load-guard</label>
+      </div>
+      <div style="margin-top:20px"><button class="btn">🔑 Generate license key</button></div>
+    </div>
+  </section>
+
+  <section data-view="logs" class="hide">
+    <h1>API logs</h1>
+    <p class="sub">check · authorize · download · heartbeat</p>
+    <div class="filters">
+      <select class="sel" style="width:150px"><option>All actions</option><option>check</option><option>download</option><option>authorize</option></select>
+      <select class="sel" style="width:130px"><option>All results</option><option>ok</option><option>fail</option></select>
+      <input class="in" style="width:200px" placeholder="Search key / IP…">
+    </div>
+    <div class="card" style="padding:6px 8px">
+      <table>
+        <thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Key</th><th>IP</th><th>Message</th></tr></thead>
+        <tbody>
+          <tr><td class="mut">2026-06-17 16:44:58</td><td>check</td><td><span class="b ok">ok</span></td><td class="mono">…1062</td><td class="mut">178.63.134.16</td><td class="mut">License valid</td></tr>
+          <tr><td class="mut">2026-06-17 16:36:24</td><td>download</td><td><span class="b ok">ok</span></td><td class="mono">…52C2</td><td class="mut">167.233.29.168</td><td class="mut">Served smpro-latest.tar.gz</td></tr>
+          <tr><td class="mut">2026-06-17 16:33:05</td><td>authorize:wa_act</td><td><span class="b ok">ok</span></td><td class="mono">…1062</td><td class="mut">178.63.134.16</td><td class="mut">Action authorized</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section data-view="rel" class="hide">
+    <h1>Releases</h1>
+    <p class="sub">Signed plugin packages served to customers</p>
+    <div class="card" style="max-width:460px">
+      <div class="row" style="margin-bottom:8px"><span class="mut" style="font-size:13px">Current — served to customers</span><span class="b live">LIVE</span></div>
+      <div style="font-size:30px;font-weight:700">1.0.71</div>
+      <div class="mut" style="font-size:12px;margin-top:4px">smpro-latest.tar.gz · RSA-signed ✓ · 991 KB</div>
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <button class="btn">⬆ Publish new build</button>
+        <button class="btn ghost">↩ Rollback to 1.0.62</button>
+      </div>
+    </div>
+  </section>
+
+  <section data-view="set" class="hide">
+    <h1>Settings</h1>
+    <p class="sub">License server configuration</p>
+    <div class="card" style="max-width:480px">
+      <table>
+        <tr><td>📧 Admin login</td><td class="mut">Email OTP — topx1.host@gmail.com</td></tr>
+        <tr><td>💬 WhatsApp gateway</td><td class="mut">Configured</td></tr>
+        <tr><td>✉️ SMTP / postfix</td><td class="mut">Active · SPF set</td></tr>
+        <tr><td>🔏 Signing key</td><td class="mut">Offline · public.pem pinned</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section data-view="srv" class="hide">
+    <h1>Servers / Installations</h1>
+    <p class="sub">Every server running Safety Monitor — click a row for full details &amp; remote actions</p>
+    <div class="filters">
+      <input class="in" style="width:240px" placeholder="🔍  Search license / host / IP…">
+      <select class="sel" style="width:140px"><option>All statuses</option><option>online</option><option>stale</option><option>suspended</option></select>
+    </div>
+    <div class="card" style="padding:6px 8px">
+      <table>
+        <thead><tr><th>License</th><th>Host</th><th>IP</th><th>Version</th><th>Load</th><th>Last check</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr class="srvrow" style="cursor:pointer"><td class="mono">SM-2026-38AB…1062</td><td>dc2.efadh.com</td><td class="mut">178.63.134.16</td><td>1.0.71</td><td>3.1</td><td class="mut">2m ago</td><td><span class="b ok">online</span></td></tr>
+          <tr class="srvrow" style="cursor:pointer"><td class="mono">SM-2026-6505…52C2</td><td>srv-a.client.net</td><td class="mut">167.233.29.168</td><td>1.0.62</td><td>0.8</td><td class="mut">14m ago</td><td><span class="b ok">online</span></td></tr>
+          <tr class="srvrow" style="cursor:pointer"><td class="mono">SM-2026-91C2…77A0</td><td>web1.client-b.com</td><td class="mut">45.86.12.9</td><td>1.0.62</td><td>6.4</td><td class="mut">3h ago</td><td><span class="b new">stale</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section data-view="srvdetail" class="hide">
+    <div class="row"><h1 style="margin:0">dc2.efadh.com</h1><button class="act" data-go="srv">← Back to servers</button></div>
+    <p class="sub mono">SM-2026-38AB-8E0B-0019-1062 · <span class="b ok">online</span></p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+      <div class="card">
+        <h2>🖥 Server specs</h2>
+        <table>
+          <tr><td class="mut">Hostname</td><td>dc2.efadh.com</td></tr>
+          <tr><td class="mut">Main IP</td><td class="mono">178.63.134.16</td></tr>
+          <tr><td class="mut">MAC address</td><td class="mono">a4:bf:01:9c:7d:e2</td></tr>
+          <tr><td class="mut">OS / Panel</td><td>AlmaLinux 10.2 · cPanel 136</td></tr>
+          <tr><td class="mut">CPU</td><td>96 cores</td></tr>
+          <tr><td class="mut">RAM</td><td>256 GB</td></tr>
+          <tr><td class="mut">Load (now / 15m)</td><td>3.1 / 2.7</td></tr>
+          <tr><td class="mut">Uptime</td><td>33 days</td></tr>
+          <tr><td class="mut">Fingerprint</td><td class="mono">a91f…6c4d</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h2>🔑 License details</h2>
+        <table>
+          <tr><td class="mut">Owner</td><td>topx1.host</td></tr>
+          <tr><td class="mut">Plan</td><td>Pro</td></tr>
+          <tr><td class="mut">Status</td><td><span class="b ok">active</span></td></tr>
+          <tr><td class="mut">Features</td><td>intrusion · ai · whatsapp · telegram</td></tr>
+          <tr><td class="mut">Working version</td><td>1.0.71</td></tr>
+          <tr><td class="mut">First download</td><td>2026-06-15 14:33</td></tr>
+          <tr><td class="mut">Last check</td><td>2026-06-17 16:44</td></tr>
+          <tr><td class="mut">Expires</td><td>2027-06-15</td></tr>
+          <tr><td class="mut">Downloads</td><td>1 / 1</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⚡ Remote actions</h2>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn">⬆ Push update → 1.0.71</button>
+        <button class="btn ghost">↻ Restart license (re-activate)</button>
+        <button class="act">✎ Edit license</button>
+        <button class="act">↺ Reset download</button>
+        <button class="act">⏸ Suspend</button>
+        <button class="act">📅 Renew / extend</button>
+        <button class="act">🔓 Clear binding (re-bind)</button>
+      </div>
+      <p class="mut" style="font-size:12px;margin:12px 0 0">Push update &amp; Restart are delivered on the server's next check-in (pull-based — no inbound port needed on the customer box).</p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function(){
+  var navs=document.querySelectorAll('.lnk'),secs=document.querySelectorAll('section[data-view]');
+  function show(v){
+    secs.forEach(function(s){s.classList.toggle('hide',s.getAttribute('data-view')!==v);});
+    navs.forEach(function(b){b.classList.toggle('on',b.getAttribute('data-v')===v);});
+    window.scrollTo(0,0);
+  }
+  navs.forEach(function(b){b.addEventListener('click',function(){show(b.getAttribute('data-v'));});});
+  document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){show(b.getAttribute('data-go'));});});
+  document.querySelectorAll('.srvrow').forEach(function(r){r.addEventListener('click',function(){show('srvdetail');});});
+})();
+</script>
+</body>
+</html>

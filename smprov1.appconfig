@@ -1,0 +1,7 @@
+appname=smprov1
+displayname=Safety Monitor Pro DEV
+url=/cgi/addons/smprov1/index.cgi
+appdescription=Safety Monitor Pro - Development Build
+service=whostmgr
+user=root
+acls=all

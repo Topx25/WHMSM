@@ -1,0 +1,9 @@
+#!/bin/sh
+REC="${SMPRO_TEST_REC:-/tmp/smpro_rec}"; mkdir -p "$REC" 2>/dev/null || true
+printf '%s\n' "$*" >> "$REC/curl.calls"
+out=""; prev=""
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+if [ -n "$SMPRO_FIX_CURL" ] && [ -f "$SMPRO_FIX_CURL" ]; then
+  if [ -n "$out" ]; then cp "$SMPRO_FIX_CURL" "$out"; else cat "$SMPRO_FIX_CURL"; fi
+fi
+exit "${SMPRO_FIX_CURL_RC:-0}"

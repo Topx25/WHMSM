@@ -1,0 +1,248 @@
+<div class="dzC">
+<style>
+.dzC{--bg:#f4f5f7;--surface:#ffffff;--sb:#0f172a;--sb2:#1e293b;--text:#1e293b;--muted:#64748b;--faint:#94a3b8;--line:#e2e8f0;--line2:#eef1f5;--accent:#3b5bdb;--accent2:#6979f8;--ok:#15803d;--okbg:#dcfce7;--warn:#b45309;--warnbg:#fef3c7;--dang:#b91c1c;--dangbg:#fee2e2;--new:#6979f8;--newbg:#e0e7ff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--text);background:var(--bg);width:980px;margin:0 auto;display:flex;font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.dzC *{box-sizing:border-box;margin:0;padding:0}
+.dzC svg{display:block;flex-shrink:0}
+/* sidebar */
+.dzC .sb{width:212px;background:var(--sb);color:#cbd5e1;display:flex;flex-direction:column;flex-shrink:0;padding:0}
+.dzC .brand{display:flex;align-items:center;gap:10px;padding:18px 18px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+.dzC .brand .lg{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+.dzC .brand .bn{font-size:13px;font-weight:650;color:#fff;letter-spacing:.1px}
+.dzC .brand .bs{font-size:10.5px;color:var(--faint);letter-spacing:.4px;text-transform:uppercase;margin-top:1px}
+.dzC .nav{padding:12px 12px;display:flex;flex-direction:column;gap:1px;flex:1}
+.dzC .nlbl{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:#64748b;padding:8px 10px 5px;font-weight:600}
+.dzC .ni{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;color:#cbd5e1;font-size:12.5px;font-weight:500;cursor:pointer;transition:background .12s,color .12s;text-decoration:none}
+.dzC .ni svg{stroke:#94a3b8;transition:stroke .12s}
+.dzC .ni:hover{background:rgba(255,255,255,.06);color:#fff}
+.dzC .ni:hover svg{stroke:#cbd5e1}
+.dzC .ni.on{background:var(--accent);color:#fff;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.dzC .ni.on svg{stroke:#fff}
+.dzC .sbf{padding:10px 12px 14px;border-top:1px solid rgba(255,255,255,.07)}
+.dzC .ni.out:hover{background:rgba(185,28,28,.18);color:#fecaca}
+.dzC .ni.out:hover svg{stroke:#fca5a5}
+/* main */
+.dzC .main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.dzC .top{height:56px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 22px;flex-shrink:0}
+.dzC .crumb{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
+.dzC .crumb b{color:var(--text);font-weight:600}
+.dzC .crumb .sep{color:var(--faint)}
+.dzC .tr{display:flex;align-items:center;gap:14px}
+.dzC .search{display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;width:200px;color:var(--faint);font-size:12px}
+.dzC .icbtn{width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--surface);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:background .12s,border-color .12s}
+.dzC .icbtn:hover{background:var(--bg);border-color:#cbd5e1}
+.dzC .dot-n{position:absolute;top:6px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--accent);border:1.5px solid var(--surface)}
+.dzC .avt{display:flex;align-items:center;gap:9px;padding:4px 8px 4px 4px;border:1px solid var(--line);border-radius:9px;cursor:pointer;transition:background .12s}
+.dzC .avt:hover{background:var(--bg)}
+.dzC .av{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#475569,#1e293b);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:650}
+.dzC .avn{font-size:12px;font-weight:600;line-height:1.1}
+.dzC .avr{font-size:10.5px;color:var(--muted)}
+/* page */
+.dzC .page{padding:22px;overflow:auto}
+.dzC .phead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+.dzC .ptitle{font-size:21px;font-weight:680;letter-spacing:-.3px}
+.dzC .psub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.dzC .acts{display:flex;gap:8px;flex-shrink:0}
+.dzC .btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:8px 13px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--text);cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s}
+.dzC .btn svg{stroke:var(--muted)}
+.dzC .btn:hover{background:var(--bg);border-color:#cbd5e1}
+.dzC .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(59,91,219,.3)}
+.dzC .btn.pri svg{stroke:#fff}
+.dzC .btn.pri:hover{background:#2f4ec0;border-color:#2f4ec0}
+/* kpi */
+.dzC .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.dzC .kpi{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:14px;transition:border-color .12s,box-shadow .12s}
+.dzC .kpi:hover{border-color:#cbd5e1;box-shadow:0 2px 8px rgba(15,23,42,.05)}
+.dzC .kico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:11px;background:#eef2ff}
+.dzC .kico svg{stroke:var(--accent)}
+.dzC .kico.g{background:var(--okbg)} .dzC .kico.g svg{stroke:var(--ok)}
+.dzC .kico.r{background:var(--dangbg)} .dzC .kico.r svg{stroke:var(--dang)}
+.dzC .kico.s{background:#e2e8f0} .dzC .kico.s svg{stroke:#475569}
+.dzC .kico.w{background:var(--warnbg)} .dzC .kico.w svg{stroke:var(--warn)}
+.dzC .knum{font-size:25px;font-weight:700;letter-spacing:-.5px;line-height:1}
+.dzC .klbl{font-size:11.5px;color:var(--muted);margin-top:5px;font-weight:500}
+.dzC .ktr{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:600;margin-top:9px;padding:2px 6px;border-radius:5px}
+.dzC .ktr.up{color:var(--ok);background:var(--okbg)}
+.dzC .ktr.dn{color:var(--dang);background:var(--dangbg)}
+.dzC .ktr.fl{color:var(--muted);background:var(--bg)}
+/* grid */
+.dzC .grid{display:grid;grid-template-columns:1.55fr 1fr;gap:12px;align-items:start}
+.dzC .card{background:var(--surface);border:1px solid var(--line);border-radius:11px}
+.dzC .ch{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line2)}
+.dzC .ct{font-size:13px;font-weight:650}
+.dzC .ca{font-size:11.5px;color:var(--accent);font-weight:600;cursor:pointer;text-decoration:none}
+.dzC .ca:hover{text-decoration:underline}
+/* activity */
+.dzC .row{display:flex;align-items:center;gap:11px;padding:9px 16px;border-bottom:1px solid var(--line2);transition:background .1s}
+.dzC .row:last-child{border-bottom:0}
+.dzC .row:hover{background:#fafbfc}
+.dzC .sd{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dzC .sd.ok{background:var(--ok)} .dzC .sd.wn{background:var(--warn)} .dzC .sd.dg{background:var(--dang)} .dzC .sd.ac{background:var(--accent)} .dzC .sd.nu{background:var(--accent2)}
+.dzC .rico{width:26px;height:26px;border-radius:7px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.dzC .rico svg{stroke:var(--muted)}
+.dzC .rbody{flex:1;min-width:0}
+.dzC .ract{font-size:12.5px;font-weight:600}
+.dzC .rtgt{font-size:11px;color:var(--muted);font-family:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dzC .bdg{font-size:10px;font-weight:650;padding:2.5px 7px;border-radius:20px;letter-spacing:.2px;white-space:nowrap;flex-shrink:0}
+.dzC .bdg.ok{background:var(--okbg);color:var(--ok)}
+.dzC .bdg.wn{background:var(--warnbg);color:var(--warn)}
+.dzC .bdg.dg{background:var(--dangbg);color:var(--dang)}
+.dzC .bdg.nu{background:var(--newbg);color:#4338ca}
+.dzC .bdg.ac{background:#eef2ff;color:var(--accent)}
+.dzC .rtime{font-size:11px;color:var(--faint);width:30px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+/* status bars */
+.dzC .stk{padding:14px 16px;display:flex;flex-direction:column;gap:13px}
+.dzC .st .stl{display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-bottom:6px}
+.dzC .st .stn{display:flex;align-items:center;gap:7px;font-weight:600}
+.dzC .st .stv{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+.dzC .st .stv b{color:var(--text);font-weight:700}
+.dzC .bar{height:7px;border-radius:5px;background:var(--line2);overflow:hidden}
+.dzC .bf{height:100%;border-radius:5px}
+.dzC .leg{width:9px;height:9px;border-radius:3px;flex-shrink:0}
+/* product */
+.dzC .prod{padding:14px 16px;display:flex;flex-direction:column;gap:9px}
+.dzC .pr{display:flex;align-items:center;gap:11px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;transition:border-color .12s,background .12s}
+.dzC .pr:hover{border-color:#cbd5e1;background:#fafbfc}
+.dzC .pr .pic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.dzC .pr .pic.a{background:#eef2ff} .dzC .pr .pic.a svg{stroke:var(--accent)}
+.dzC .pr .pic.b{background:var(--okbg)} .dzC .pr .pic.b svg{stroke:var(--ok)}
+.dzC .pr .pn{font-size:12.5px;font-weight:650}
+.dzC .pr .ps{font-size:11px;color:var(--muted);margin-top:1px}
+.dzC .pr .pc{margin-left:auto;font-size:18px;font-weight:700;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+</style>
+
+<!-- SIDEBAR -->
+<aside class="sb">
+<div class="brand">
+<div class="lg"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+<div><div class="bn">AiTech</div><div class="bs">Licensing</div></div>
+</div>
+<nav class="nav">
+<div class="nlbl">Overview</div>
+<a class="ni on"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</a>
+<a class="ni"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>Licenses</a>
+<a class="ni"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Create License</a>
+<a class="ni"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8 12 3l8.5 5v8L12 21l-8.5-5z"/><path d="M3.5 8 12 13l8.5-5M12 13v8"/></svg>Plans</a>
+<a class="ni"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Servers</a>
+<a class="ni"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v6M9 10l3 3 3-3"/></svg>Releases</a>
+<a class="ni"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" opacity="0"/><path d="M7 8h10M7 12h10M7 16h6"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>Logs</a>
+<a class="ni"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>SMTP</a>
+</nav>
+<div class="sbf">
+<a class="ni out"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>Logout</a>
+</div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+<div class="top">
+<div class="crumb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 12 3l9 9M5 10v10h14V10"/></svg><span>Home</span><span class="sep">/</span><b>Dashboard</b></div>
+<div class="tr">
+<div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg><span>Search licenses…</span></div>
+<div class="icbtn"><span class="dot-n"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+<div class="avt"><div class="av">AO</div><div><div class="avn">Admin</div><div class="avr">Operator</div></div><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+</div>
+</div>
+
+<div class="page">
+<!-- header -->
+<div class="phead">
+<div>
+<div class="ptitle">Dashboard</div>
+<div class="psub">License activity, server health, and account distribution at a glance.</div>
+</div>
+<div class="acts">
+<button class="btn pri"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Create license</button>
+<button class="btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Servers</button>
+<button class="btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h10M7 12h10M7 16h6"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>Logs</button>
+</div>
+</div>
+
+<!-- KPIs -->
+<div class="kpis">
+<div class="kpi">
+<div class="kico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+<div class="knum">142</div><div class="klbl">Total licenses</div>
+<span class="ktr up"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+6 this week</span>
+</div>
+<div class="kpi">
+<div class="kico g"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></div>
+<div class="knum">96</div><div class="klbl">Active</div>
+<span class="ktr up"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+4</span>
+</div>
+<div class="kpi">
+<div class="kico r"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9h2v6H9zM13 9h2v6h-2z"/></svg></div>
+<div class="knum">12</div><div class="klbl">Suspended</div>
+<span class="ktr dn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>+2</span>
+</div>
+<div class="kpi">
+<div class="kico s"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg></div>
+<div class="knum">3</div><div class="klbl">Reporting servers</div>
+<span class="ktr fl"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>stable</span>
+</div>
+<div class="kpi">
+<div class="kico w"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+<div class="knum">18</div><div class="klbl">Trials</div>
+<span class="ktr up"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>+3</span>
+</div>
+</div>
+
+<!-- grid -->
+<div class="grid">
+<!-- recent activity -->
+<div class="card">
+<div class="ch"><div class="ct">Recent activity</div><a class="ca">View all logs</a></div>
+<div class="row"><span class="sd ok"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></div><div class="rbody"><div class="ract">License check</div><div class="rtgt">dc2.efadh.com</div></div><span class="bdg ok">ok</span><span class="rtime">34s</span></div>
+<div class="row"><span class="sd ac"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></div><div class="rbody"><div class="ract">Server paired</div><div class="rtgt">srv1.cprapid.com</div></div><span class="bdg ac">paired</span><span class="rtime">2m</span></div>
+<div class="row"><span class="sd ok"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg></div><div class="rbody"><div class="ract">License activated</div><div class="rtgt">SM-2026-6505</div></div><span class="bdg ok">active</span><span class="rtime">7m</span></div>
+<div class="row"><span class="sd ac"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></div><div class="rbody"><div class="ract">Release download</div><div class="rtgt">dc2.efadh.com</div></div><span class="bdg ac">v1.0.191</span><span class="rtime">15m</span></div>
+<div class="row"><span class="sd dg"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg></div><div class="rbody"><div class="ract">License revoked</div><div class="rtgt">SM-2026-4127</div></div><span class="bdg dg">suspended</span><span class="rtime">1h</span></div>
+<div class="row"><span class="sd nu"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="rbody"><div class="ract">License created</div><div class="rtgt">Hany Ahmed</div></div><span class="bdg nu">new</span><span class="rtime">1h</span></div>
+<div class="row"><span class="sd ok"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg></div><div class="rbody"><div class="ract">Telemetry received</div><div class="rtgt">srv1.cprapid.com</div></div><span class="bdg ok">ok</span><span class="rtime">2h</span></div>
+<div class="row"><span class="sd wn"></span><div class="rico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg></div><div class="rbody"><div class="ract">License check</div><div class="rtgt">dc2.efadh.com</div></div><span class="bdg wn">grace</span><span class="rtime">3h</span></div>
+</div>
+
+<!-- right column -->
+<div style="display:flex;flex-direction:column;gap:12px">
+<div class="card">
+<div class="ch"><div class="ct">Licenses by status</div></div>
+<div class="stk">
+<div class="st">
+<div class="stl"><div class="stn"><span class="leg" style="background:var(--ok)"></span>Active</div><div class="stv"><b>96</b> · 68%</div></div>
+<div class="bar"><div class="bf" style="width:68%;background:var(--ok)"></div></div>
+</div>
+<div class="st">
+<div class="stl"><div class="stn"><span class="leg" style="background:var(--warn)"></span>Expired</div><div class="stv"><b>22</b> · 15%</div></div>
+<div class="bar"><div class="bf" style="width:15%;background:var(--warn)"></div></div>
+</div>
+<div class="st">
+<div class="stl"><div class="stn"><span class="leg" style="background:var(--accent2)"></span>New</div><div class="stv"><b>12</b> · 8%</div></div>
+<div class="bar"><div class="bf" style="width:8%;background:var(--accent2)"></div></div>
+</div>
+<div class="st">
+<div class="stl"><div class="stn"><span class="leg" style="background:var(--dang)"></span>Suspended</div><div class="stv"><b>12</b> · 8%</div></div>
+<div class="bar"><div class="bf" style="width:8%;background:var(--dang)"></div></div>
+</div>
+</div>
+</div>
+
+<div class="card">
+<div class="ch"><div class="ct">By product</div><a class="ca">Details</a></div>
+<div class="prod">
+<div class="pr">
+<div class="pic a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+<div><div class="pn">Safety Monitor</div><div class="ps">WHM protection plugin</div></div>
+<div class="pc">118</div>
+</div>
+<div class="pr">
+<div class="pic b"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div>
+<div><div class="pn">MailShield</div><div class="ps">Mail security suite</div></div>
+<div class="pc">24</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+</div>

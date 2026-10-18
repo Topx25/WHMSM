@@ -1,0 +1,173 @@
+<!--
+  cpanel_session_rules.xml — what a granted cPanel session means.
+
+  The whole point of this file is the distinction the stock ruleset has no way to make: NOT EVERY GRANTED SESSION
+  IS SOMEBODY TYPING A PASSWORD. cPanel reuses `handle_form_login` for sessions derived from an authentication
+  that already happened, and `path` is what separates them:
+
+      path=form                     somebody typed the password into the login form.   THIS is the finding.
+      path=loadsession              a session opened on behalf of an identity - the account owner opening one of
+                                    its own mailboxes, or root opening a customer's cPanel. No password was used.
+      method=handle_auth_transfer   WHM's "Log in as User".
+      method=create_user_session    a session minted through the API by root.
+      possessed=1                   the operator is inside the account.
+
+  Deciding by method alone, measured on two production servers, reported 68 sessions as an accepted account
+  password when no password had been presented — among them "root opening a customer account" and a dozen
+  "mailbox opened by its own cPanel account". Those are the owner of the server doing their job. Alert on them and
+  the operator learns to ignore this rule group, which is the only thing worse than not having it.
+
+  Install:
+      cp cpanel_session_rules.xml /var/ossec/etc/rules/
+      /var/ossec/bin/wazuh-control restart
+
+  Rule ids use the 100200-100299 block (custom range). Change them if that block is taken.
+-->
+<group name="cpanel,authentication,">
+
+  <!-- ============================================================= base: decoded, not yet interesting -->
+  <rule id="100200" level="0">
+    <decoded_as>cpanel-session</decoded_as>
+    <description>cPanel session event.</description>
+  </rule>
+
+  <!-- ============================================================= the operator, doing their job -->
+  <!--
+    Level 0 on purpose. This is the single most important rule in the file, and it fires the most: it is what
+    stops the reseller's own working day from arriving as a page of compromise alerts. Raise it to 3 if you want
+    an audit trail of operator access; never raise it to an alerting level.
+  -->
+  <rule id="100201" level="0">
+    <if_sid>100200</if_sid>
+    <match type="pcre2">\sNEW\s.*(?:possessed=[1-9]|method=handle_auth_transfer|path=loadsession|method=CREATE_WEBMAIL_SESSION_FOR_MAIL_USER)</match>
+    <description>cPanel session opened by the operator for $(dstuser) - no account password was used.</description>
+  </rule>
+
+  <rule id="100202" level="0">
+    <if_sid>100200</if_sid>
+    <match type="pcre2">\sNEW\s.*method=create_user_session</match>
+    <description>cPanel session minted through the API for $(dstuser).</description>
+  </rule>
+
+  <!-- ============================================================= a password was actually presented -->
+  <rule id="100210" level="3">
+    <if_sid>100200</if_sid>
+    <match type="pcre2">\sNEW\s.*method=handle_form_login.*path=form</match>
+    <description>cPanel: the password for $(dstuser) was accepted from $(srcip).</description>
+    <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!--
+    Webmail, separately, because it is the commonest compromise route on shared hosting and because it is the one
+    that gets dropped: these methods do not look like a login to anything that pattern-matches on "LOGIN".
+  -->
+  <rule id="100211" level="3">
+    <if_sid>100200</if_sid>
+    <match type="pcre2">\sNEW\s.*method=CREATE_WEBMAIL_SESSION_FOR_SELF</match>
+    <description>Webmail: the password for mailbox $(dstuser) was accepted from $(srcip).</description>
+    <group>authentication_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- ============================================================= the findings -->
+  <!--
+    ONE ACCOUNT, MANY ADDRESSES. This is the signal that actually found the live compromises: a single account
+    signed into from 33 different addresses across four continents in a week. No individual login looks wrong -
+    the password IS correct - so nothing that examines one event at a time can see it. Wazuh can, and this is the
+    one thing it does that a per-server plugin cannot do as well.
+
+    Tune `frequency` to the estate: a shop owner on a phone plus an office is 2-3 addresses a day, not 8.
+  -->
+  <rule id="100220" level="10" frequency="8" timeframe="86400">
+    <if_matched_sid>100210</if_matched_sid>
+    <same_user />
+    <different_srcip />
+    <description>cPanel: $(dstuser) signed in from 8+ different addresses in a day - the password is shared or leaked.</description>
+    <group>authentication_success,attack,</group>
+  </rule>
+
+  <rule id="100221" level="10" frequency="8" timeframe="86400">
+    <if_matched_sid>100211</if_matched_sid>
+    <same_user />
+    <different_srcip />
+    <description>Webmail: mailbox $(dstuser) signed in from 8+ different addresses in a day - the password is leaked.</description>
+    <group>authentication_success,attack,</group>
+  </rule>
+
+  <!--
+    A CORRECT PASSWORD AFTER A RUN OF WRONG ONES. The refusals are in login_log and the success is here, so this
+    correlation is only possible once both files are being read - which is the reason this decoder exists. This
+    is what the Netcraft phishing case looked like in the logs: 15+ failures from many addresses, then one
+    success, then a file upload two minutes later.
+  -->
+  <rule id="100222" level="12" frequency="6" timeframe="3600">
+    <if_matched_sid>11001</if_matched_sid>
+    <if_sid>100210</if_sid>
+    <same_user />
+    <description>cPanel: the password for $(dstuser) was accepted after repeated failures - treat as guessed.</description>
+    <group>authentication_success,authentication_failures,attack,</group>
+  </rule>
+
+  <!-- ============================================================= session endings worth knowing about -->
+  <rule id="100230" level="5">
+    <if_sid>100200</if_sid>
+    <field name="status">^badpass$</field>
+    <description>cPanel: wrong password for $(dstuser) from $(srcip).</description>
+    <group>authentication_failed,pci_dss_10.2.4,</group>
+  </rule>
+
+  <rule id="100231" level="6">
+    <if_sid>100200</if_sid>
+    <field name="status">^tokendenied$</field>
+    <description>cPanel: session token refused for $(dstuser) from $(srcip) - a stale or forged security token.</description>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="100232" level="0">
+    <if_sid>100200</if_sid>
+    <field name="status">^(?:logout|expire|loginsuccess|loadsession)$</field>
+    <description>cPanel session ended for $(dstuser) ($(status)).</description>
+  </rule>
+
+  <!--
+    A PASSWORD CHANGE ends the sessions that used the old one, and cPanel records that here. It is worth a rule
+    for two opposite reasons: it is how you confirm a reset you ordered actually took effect, and an unexpected
+    one is an attacker locking the owner out of their own account.
+  -->
+  <rule id="100233" level="5">
+    <if_sid>100200</if_sid>
+    <field name="status">^password_change$</field>
+    <description>cPanel: the password for $(dstuser) was changed - existing sessions were ended.</description>
+    <group>account_changed,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="100234" level="5">
+    <if_sid>100200</if_sid>
+    <field name="status">^suspend$</field>
+    <description>cPanel: account $(dstuser) was suspended - its sessions were ended.</description>
+    <group>account_changed,</group>
+  </rule>
+
+  <rule id="100235" level="10">
+    <if_sid>100200</if_sid>
+    <field name="status">^killacct$</field>
+    <description>cPanel: account $(dstuser) was TERMINATED.</description>
+    <group>account_changed,</group>
+  </rule>
+
+  <!--
+    THE CATCH-ALL, AND WHY IT IS NOT OPTIONAL.
+
+    A log line that matches no rule does not appear anywhere. It is not an error and nothing counts it, so a
+    session event cPanel starts writing after the next update would simply never be seen again — and the dashboard
+    would look exactly the same as it does now. That is the same failure this whole integration exists because of:
+    something that cannot be seen, presented as nothing happening.
+
+    Level 0 means it raises no alert. Its job is to make coverage countable: query for rule 100240 and a number
+    above zero means cPanel is writing something these rules do not understand yet.
+  -->
+  <rule id="100240" level="0">
+    <if_sid>100200</if_sid>
+    <description>cPanel session event not yet classified - these rules do not cover this line shape.</description>
+  </rule>
+
+</group>

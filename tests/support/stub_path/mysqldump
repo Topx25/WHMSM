@@ -1,0 +1,4 @@
+#!/bin/sh
+REC="${SMPRO_TEST_REC:-/tmp/smpro_rec}"; mkdir -p "$REC" 2>/dev/null || true
+printf '%s\n' "$*" >> "$REC/mysqldump.calls"
+exit 0

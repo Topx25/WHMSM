@@ -1,0 +1,15 @@
+[2026-09-16 16:25:56 +0200] info [cpaneld] 203.0.113.10 NEW shopone:Mz5iDI7Es0LJa2NI address=203.0.113.10,app=cpaneld,creator=shopone,method=handle_form_login,path=form,possessed=0
+[2026-09-16 16:12:37 +0200] info [whostmgrd] 203.0.113.11 NEW root:7y3Bo2IAzHhOocwZ address=203.0.113.11,app=whostmgrd,creator=root,method=handle_form_login,path=form,possessed=0
+[2026-09-16 11:08:10 +0200] info [webmaild] 203.0.113.12 NEW info@example.test:iuwvKvaBQiYaV9WX address=203.0.113.12,app=webmaild,creator=info@example.test,method=handle_form_login,path=form,possessed=0
+[2026-09-15 10:21:44 +0200] info [cpaneld] 2001:db8:1:2:3:4:5:6 NEW shoptwo:a1B2c3D4e5F6g7H8 address=2001:db8:1:2:3:4:5:6,app=cpaneld,creator=shoptwo,method=handle_form_login,path=form,possessed=0
+[2026-09-14 09:03:12 +0200] info [cpaneld] 203.0.113.13 NEW info@example.test:QQ1w2e3r4t5y6u7i address=203.0.113.13,app=webmaild,creator=info@example.test,method=CREATE_WEBMAIL_SESSION_FOR_SELF,possessed=0
+[2026-09-14 09:05:31 +0200] info [cpaneld] 203.0.113.14 NEW info@example.test:ZZ1w2e3r4t5y6u7i address=203.0.113.14,app=webmaild,creator=shopone,method=CREATE_WEBMAIL_SESSION_FOR_MAIL_USER,possessed=0
+[2026-06-03 11:00:26 +0200] info [whostmgrd] 203.0.113.15 NEW shopthree:p92kMEybovShFLGj address=203.0.113.15,app=cpaneld,creator=root,method=handle_auth_transfer,path=xfercpanel
+[2026-05-15 16:41:07 +0200] info [xml-api] internal NEW root:ww7nIgSOtOwuwxxL:create_user_session address=,app=Whostmgr::API::1::Session,creator=root,method=create_user_session
+[2026-04-30 15:12:04 +0200] info [cpaneld] 203.0.113.16 NEW shopfour:BB1w2e3r4t5y6u7i address=203.0.113.16,app=cpaneld,creator=shopfour,method=handle_form_login,path=loadsession:shopfour:BB1w2e3r4t5y6u7i,possessed=1,possessor=root
+[2026-04-30 15:14:20 +0200] info [cpaneld] 203.0.113.17 NEW shopfive:CC1w2e3r4t5y6u7i address=203.0.113.17,app=cpaneld,creator=root,method=handle_form_login,path=loadsession:shopfive:CC1w2e3r4t5y6u7i,possessed=0
+[2026-04-30 15:18:02 +0200] info [cpaneld] 203.0.113.18 NEW shopfive:DD1w2e3r4t5y6u7i address=203.0.113.18,app=cpaneld,creator=shopfive,method=handle_form_login,path=loadsession:shopfive:DD1w2e3r4t5y6u7i,possessed=0
+[2026-09-16 16:15:37 +0200] info [whostmgrd] 203.0.113.11 PURGE root:7y3Bo2IAzHhOocwZ tokendenied [Too many token failures (3/3)]
+[2026-09-16 10:53:49 +0200] info [cpsrvd] internal PURGE info@example.test:vxk6TDDozlR1k03E expire
+[2026-04-30 15:12:04 +0200] info [cpaneld] 203.0.113.16 PURGE shopfour:BB1w2e3r4t5y6u7i logout
+[2026-04-30 16:54:55 +0200] info [cpaneld] 203.0.113.19 PURGE shopsix:EE1w2e3r4t5y6u7i badpass

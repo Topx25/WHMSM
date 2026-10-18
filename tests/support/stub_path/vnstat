@@ -1,0 +1,6 @@
+#!/bin/sh
+REC="${SMPRO_TEST_REC:-/tmp/smpro_rec}"; mkdir -p "$REC" 2>/dev/null || true
+printf '%s\n' "$*" >> "$REC/vnstat.calls"
+eval f="\$SMPRO_FIX_VNSTAT"
+[ -n "$f" ] && [ -f "$f" ] && cat "$f"
+exit 0

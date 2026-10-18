@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety Monitor Pro — Complete Plugin Workflow</title>
+<style>
+  :root{
+    --ink:#0f1b33; --ink2:#1f2733; --muted:#5b6678; --faint:#8a93a6; --line:#e3e7ef; --bg:#eef1f7; --card:#ffffff;
+    --mon:#3b5bdb; --sec:#dc2626; --mail:#d97706; --ops:#0ea5b7; --intel:#7c5cff; --alert:#db2777; --fleet:#4f46e5; --sys:#475569;
+    --ok:#15803d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink2);background:var(--bg);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{max-width:1000px;margin:0 auto;padding:26px}
+  h1{font-size:26px;margin:0;color:#fff;font-weight:800;letter-spacing:-.3px}
+  h2{font-size:17px;margin:0 0 12px;color:var(--ink);font-weight:800;display:flex;align-items:center;gap:9px}
+  h2 .n{width:24px;height:24px;border-radius:7px;background:var(--ink);color:#fff;font-size:13px;display:inline-flex;align-items:center;justify-content:center;font-weight:800}
+  .sub{color:var(--muted);font-size:13px}
+  .cover{background:linear-gradient(135deg,#10182b,#22305a);border-radius:16px;padding:26px 28px;margin-bottom:18px;color:#cdd8ef}
+  .cover .lock{display:inline-flex;align-items:center;gap:10px;margin-bottom:8px}
+  .cover .lock svg{width:30px;height:30px}
+  .cover .meta{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+  .pill{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 11px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff}
+  .sec{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  /* horizontal flow */
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .step{flex:1;min-width:120px;background:#f7f9fc;border:1px solid var(--line);border-radius:11px;padding:11px 12px;text-align:center;position:relative}
+  .step .t{font-weight:800;color:var(--ink);font-size:13px}
+  .step .d{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:20px;padding:0 6px;font-weight:800}
+  /* vertical numbered flow */
+  .vflow{display:flex;flex-direction:column;gap:0}
+  .vstep{display:flex;gap:13px;align-items:flex-start;padding:9px 0}
+  .vstep .num{flex:none;width:26px;height:26px;border-radius:50%;background:var(--mon);color:#fff;font-weight:800;font-size:12.5px;display:flex;align-items:center;justify-content:center}
+  .vstep .body{flex:1;border-bottom:1px dashed var(--line);padding-bottom:9px}
+  .vstep:last-child .body{border-bottom:0}
+  .vstep .body b{color:var(--ink)}
+  .vstep .body .m{color:var(--muted);font-size:12px;margin-top:2px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:#f1f5f9;color:#334155;padding:1px 6px;border-radius:5px}
+  /* module grid */
+  .cats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .cat{border:1px solid var(--line);border-radius:12px;padding:12px 13px;border-left-width:5px}
+  .cat h3{margin:0 0 8px;font-size:13.5px;font-weight:800;color:var(--ink)}
+  .cat .mods{display:flex;flex-wrap:wrap;gap:6px}
+  .mod{font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:7px;background:#f1f5f9;color:#334155}
+  /* state ladder */
+  .ladder{display:flex;flex-direction:column;gap:10px}
+  .state{border-radius:11px;padding:12px 14px;border:1px solid var(--line);border-left-width:5px}
+  .state b{font-size:13.5px}
+  .state .m{font-size:12px;color:var(--muted);margin-top:3px}
+  .tag{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:6px;margin-left:6px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .lg{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--ink2)}
+  .sw{width:12px;height:12px;border-radius:3px}
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .note{font-size:12px;color:var(--muted);margin-top:10px}
+  .foot{text-align:center;color:var(--faint);font-size:11px;margin-top:10px}
+  @page{size:A4;margin:12mm}
+  @media print{ body{background:#fff} .page{padding:0;max-width:none} .sec,.cover{box-shadow:none} .sec{break-inside:avoid} .cat,.state,.vstep{break-inside:avoid} h2{break-after:avoid} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="lock">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#7fa0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <h1>Safety Monitor Pro</h1>
+    </div>
+    <div class="sub" style="color:#aebbe0">Complete plugin workflow — install, licensing, runtime, modules, enforcement &amp; updates</div>
+    <div class="meta">
+      <span class="pill">WHM / cPanel plugin</span>
+      <span class="pill">Version 1.0.198</span>
+      <span class="pill">License: AiTech (RSA-signed)</span>
+      <span class="pill">2026-06-24</span>
+    </div>
+  </div>
+
+  <!-- LEGEND -->
+  <div class="sec">
+    <h2><span class="n">★</span> Module color key</h2>
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--mon)"></span>Monitoring</span>
+      <span class="lg"><span class="sw" style="background:var(--sec)"></span>Security</span>
+      <span class="lg"><span class="sw" style="background:var(--mail)"></span>Mail</span>
+      <span class="lg"><span class="sw" style="background:var(--ops)"></span>Ops &amp; Tools</span>
+      <span class="lg"><span class="sw" style="background:var(--intel)"></span>Intelligence</span>
+      <span class="lg"><span class="sw" style="background:var(--alert)"></span>Alerts</span>
+      <span class="lg"><span class="sw" style="background:var(--fleet)"></span>Fleet</span>
+      <span class="lg"><span class="sw" style="background:var(--sys)"></span>System</span>
+    </div>
+  </div>
+
+  <!-- 1. MACRO LIFECYCLE -->
+  <div class="sec">
+    <h2><span class="n">1</span> Macro lifecycle</h2>
+    <div class="flow">
+      <div class="step"><div class="t">Purchase</div><div class="d">Storefront → key issued</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">Install</div><div class="d">One-liner (UA-gated)</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">Activate</div><div class="d">Key + fingerprint</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">Bind</div><div class="d">Locked to the server</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">Operate</div><div class="d">Daily use · modules</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">Auto-update</div><div class="d">Signed + pinned</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step" style="background:#fff4f4;border-color:#f3c0c0"><div class="t" style="color:var(--sec)">Enforce</div><div class="d">Always-on guard</div></div>
+    </div>
+  </div>
+
+  <!-- 2. INSTALL & ACTIVATION -->
+  <div class="sec">
+    <h2><span class="n">2</span> Install &amp; license activation</h2>
+    <div class="vflow">
+      <div class="vstep"><div class="num">1</div><div class="body"><b>Customer receives the license key</b> by email / WhatsApp (auto-sent on serial creation), with the install one-liner.</div></div>
+      <div class="vstep"><div class="num">2</div><div class="body"><b>Runs the installer</b> — <span class="mono">curl -A "…SafetyMonitorPro/installer" …/install.sh | bash -s -- &lt;KEY&gt;</span><div class="m">Custom UA bypasses Cloudflare; plain curl is blocked.</div></div></div>
+      <div class="vstep"><div class="num">3</div><div class="body"><b>Installer computes the server identity</b> — main IP (<span class="mono">/var/cpanel/mainip</span>) + hardware fingerprint <span class="mono">sha256(machine-id|hostname)</span> → <b>POST /api/download</b>.</div></div>
+      <div class="vstep"><div class="num">4</div><div class="body"><b>License server validates &amp; binds</b> — checks key (not expired/suspended/tampered), <b>binds on first download</b> (ip+host+fingerprint), enforces single-download, then <b>streams the obfuscated tarball</b> + <span class="mono">X-Smpro-SHA256</span>.</div></div>
+      <div class="vstep"><div class="num">5</div><div class="body"><b>Installer verifies &amp; deploys</b> — checks SHA, extracts, registers the WHM addon (icon + ACLs + entry URL).</div></div>
+      <div class="vstep"><div class="num">6</div><div class="body"><b>First open → activation</b> — License page → <b>POST /api/check</b> → server returns an <b>RSA-signed verdict</b> (status, expiry, features[], bound ip/fp, signed timestamp, feat_key, pair_key). Plugin verifies the signature against the pinned public key &amp; caches it in <span class="mono">state.json</span>.</div></div>
+    </div>
+  </div>
+
+  <!-- 3. RUNTIME ARCHITECTURE -->
+  <div class="sec">
+    <h2><span class="n">3</span> Runtime architecture</h2>
+    <div class="flow">
+      <div class="step"><div class="t">WHM</div><div class="d">Admin opens the addon</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">index.cgi</div><div class="d">bash wrapper → cPanel PHP</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">index.php</div><div class="d">router + boot</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">modules/&lt;page&gt;</div><div class="d">the requested feature</div></div>
+    </div>
+    <div class="note"><b>Boot gates (every request):</b> defines → <b>license gate</b> (is_valid / dormant / tamper-lock) → <b>integrity gate</b> (signed manifest + critical-file hashes) → module loader. <b>Background:</b> the notify cron runs the license heartbeat (before the gate) + workers (login-guard, cooler, backup-retry, hub, update-check, telemetry/pairing beacon).</div>
+  </div>
+
+  <!-- 4. MODULE MAP -->
+  <div class="sec">
+    <h2><span class="n">4</span> Module map</h2>
+    <div class="cats">
+      <div class="cat" style="border-left-color:var(--mon)"><h3 style="color:var(--mon)">Monitoring</h3><div class="mods"><span class="mod">Dashboard</span><span class="mod">Server Health</span><span class="mod">Load Monitor</span><span class="mod">Top Processes</span><span class="mod">Disk / Storage</span><span class="mod">Network Traffic</span><span class="mod">Hardware &amp; Platform</span><span class="mod">cPanel Services</span></div></div>
+      <div class="cat" style="border-left-color:var(--sec)"><h3 style="color:var(--sec)">Security</h3><div class="mods"><span class="mod">Firewall Status</span><span class="mod">Account Audit</span><span class="mod">Intrusion / Imunify</span><span class="mod">Forensics / Audit</span><span class="mod">PHP Harden</span><span class="mod">Security Health</span></div></div>
+      <div class="cat" style="border-left-color:var(--mail)"><h3 style="color:var(--mail)">Mail</h3><div class="mods"><span class="mod">Spam &amp; Phishing</span><span class="mod">Email Queue</span></div></div>
+      <div class="cat" style="border-left-color:var(--ops)"><h3 style="color:var(--ops)">Ops &amp; Tools</h3><div class="mods"><span class="mod">Site Doctor</span><span class="mod">Server Tune-up</span><span class="mod">Database Cleanup</span><span class="mod">Backup Monitor</span><span class="mod">Analytics / Reports</span><span class="mod">Reports Center</span></div></div>
+      <div class="cat" style="border-left-color:var(--intel)"><h3 style="color:var(--intel)">Intelligence</h3><div class="mods"><span class="mod">AI Providers (BYO key)</span></div></div>
+      <div class="cat" style="border-left-color:var(--alert)"><h3 style="color:var(--alert)">Alerts</h3><div class="mods"><span class="mod">Notifications</span><span class="mod">Telegram Bot</span><span class="mod">WhatsApp</span></div></div>
+      <div class="cat" style="border-left-color:var(--fleet)"><h3 style="color:var(--fleet)">Fleet</h3><div class="mods"><span class="mod">Multi-Server Hub</span></div></div>
+      <div class="cat" style="border-left-color:var(--sys)"><h3 style="color:var(--sys)">System</h3><div class="mods"><span class="mod">License</span><span class="mod">Updates</span><span class="mod">Plugin Control</span><span class="mod">Protection Profiles</span><span class="mod">Terms &amp; Legal</span></div></div>
+    </div>
+    <div class="note">Each module is gated by the license's signed <span class="mono">features[]</span> — a plan that doesn't include a feature hides its page entirely.</div>
+  </div>
+
+  <!-- 5. ENFORCEMENT & ANTI-TAMPER -->
+  <div class="sec">
+    <h2><span class="n">5</span> License enforcement &amp; anti-tamper</h2>
+    <div class="ladder">
+      <div class="state" style="border-left-color:var(--mail);background:#fffaf2"><b>Transport outage</b><span class="tag" style="background:#fef3c7;color:#92500e">reversible</span><div class="m">License server unreachable → 48h graduated grace (banner escalates, heavy workers pause) → keeps running, auto-recovers on reconnect.</div></div>
+      <div class="state" style="border-left-color:var(--sys);background:#f7f9fc"><b>Commercial stop</b> (expired / suspended / revoked)<span class="tag" style="background:#e2e8f0;color:#475569">reversible</span><div class="m">A real "no" for 48h → whole plugin goes dormant (UI locked, workers stop). NOT uninstalled — renewing clears it automatically.</div></div>
+      <div class="state" style="border-left-color:var(--sec);background:#fff4f4"><b>Tamper</b> (hosts-blackhole + no valid signature)<span class="tag" style="background:#fee2e2;color:#b91c1c">destructive</span><div class="m">Immediate silent full-lock (every page) → after 24h → self-uninstall, unless the operator issues a server-side reset. Admin is alerted (WhatsApp + email); a dead-man cron is the backstop.</div></div>
+      <div class="state" style="border-left-color:var(--intel);background:#faf7ff"><b>Pairing beacon</b> (rolling per-license code)<span class="tag" style="background:#ede9fe;color:#6b3fa0">reversible · opt-in</span><div class="m">A disguised rolling code proves possession of a per-license secret. Sustained mismatch → admin-reasoned reversible stop (self-heals on a valid beacon; operator can Re-pair / rotate the secret).</div></div>
+    </div>
+    <div class="note"><b>Root-adversary hardening:</b> grace measured from the server-signed timestamp (not the local clock) · monotonic clock guard (anti-rollback) · in-process integrity manifest (patching one gate doesn't disable protection) · server-side clone-thrash detection. <b>Honest ceiling:</b> a self-hosted plugin on customer-root can still be patched at the PHP level — the absolute fix is a bytecode encoder (ionCube).</div>
+  </div>
+
+  <!-- 6. UPDATE CHANNEL -->
+  <div class="sec">
+    <h2><span class="n">6</span> Secure update channel</h2>
+    <div class="flow">
+      <div class="step"><div class="t">Update cron</div><div class="d">checks daily</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">/api/version</div><div class="d">honors per-license pin</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">/api/download</div><div class="d">license + fingerprint gated</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">Verify</div><div class="d">.sig + SHA + manifest</div></div>
+      <div class="arrow">&#8594;</div>
+      <div class="step"><div class="t">Apply</div><div class="d">atomic swap</div></div>
+    </div>
+    <div class="note">Releases are published as <span class="mono">smpro-latest.tar.gz</span> (+ offline RSA <span class="mono">.sig</span>) with a signed <span class="mono">integrity.json</span>. A per-license <span class="mono">pin_version</span> lets the operator stage rollouts (e.g. one canary box) before promoting the fleet. Tampered files → <b>Protected Mode</b>.</div>
+  </div>
+
+  <!-- 7. LICENSE SERVER SIDE -->
+  <div class="sec">
+    <h2><span class="n">7</span> License server (operator side)</h2>
+    <div class="twocol">
+      <div>
+        <b style="color:var(--ink)">Security core</b>
+        <ul style="margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px;line-height:1.7">
+          <li>Offline RSA private key signs every verdict — never on any client.</li>
+          <li>Fingerprint-authoritative binding + automatic IP re-bind.</li>
+          <li>Single-download per key (reset per row); SHA + UA gates.</li>
+          <li>Admin login via email OTP.</li>
+        </ul>
+      </div>
+      <div>
+        <b style="color:var(--ink)">Admin panel &amp; automation</b>
+        <ul style="margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px;line-height:1.7">
+          <li>Dashboard · Licenses · Plans · Servers · Releases · Logs · Settings.</li>
+          <li>Create license → auto-deliver key + install command (email / WhatsApp).</li>
+          <li>Per-license policy: pin version, escalation, pairing, reset, full-stop.</li>
+          <li>Provision API for the storefront (provision / renew / revoke / status).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">Safety Monitor Pro · Complete plugin workflow · v1.0.198 · Confidential</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,394 @@
+@@@SERVERS_EXT@@@
+<?php
+/**
+ * servers_ext.php — "Servers / Installations" admin tab.
+ * Shows the telemetry each licensed plugin reports (license_telemetry) joined to the license.
+ * Licenses are GROUPED BY PHYSICAL SERVER (bound_hostname + bound_ip): a server that runs
+ * more than one product (e.g. Safety Monitor + MailShield) shows as ONE card listing all its
+ * products, instead of a duplicate card per license. Per-license remote actions (update /
+ * restart / revoke / edit) stay available inside the card.
+ * Reuses panel helpers: db(), h(), csrf_token(), require_admin(), require_csrf(), redirect(), layout_start/end().
+ */
+if (!function_exists('db')) return;
+
+function srv_route(string $path): bool {
+    $m = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    if ($path === '/servers' && $m === 'GET')          { srv_page(); return true; }
+    if ($path === '/servers/cmd' && $m === 'POST')     { srv_cmd();  return true; }
+    if ($path === '/servers/cmd-status' && $m === 'GET') { srv_cmd_status(); return true; }
+    return false;
+}
+
+/** Live status of a queued command (for the push progress bar). */
+function srv_cmd_status(): void {
+    require_admin();
+    header('Content-Type: application/json');
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id <= 0) { echo json_encode(['ok' => false]); exit; }
+    $r = null;
+    if ($q = db()->prepare("SELECT command, status, result, sent_at, done_at FROM license_commands WHERE id=? LIMIT 1")) {
+        $q->bind_param('i', $id); $q->execute(); $r = $q->get_result()->fetch_assoc();
+    }
+    if (!$r) { echo json_encode(['ok' => true, 'status' => 'gone']); exit; }   // row removed (e.g. superseded)
+    echo json_encode(['ok' => true, 'command' => $r['command'], 'status' => $r['status'], 'result' => (string)$r['result']]);
+    exit;
+}
+
+function srv_human_uptime($s) { $s = (int)$s; if ($s <= 0) return '—'; $d = floor($s / 86400); $h = floor(($s % 86400) / 3600); return $d > 0 ? ($d . 'd ' . $h . 'h') : ($h . 'h'); }
+function srv_ago($dt) { if (!$dt) return '—'; $ts = strtotime($dt); if (!$ts) return h($dt); $s = time() - $ts; if ($s < 60) return $s . 's ago'; if ($s < 3600) return floor($s / 60) . 'm ago'; if ($s < 86400) return floor($s / 3600) . 'h ago'; return floor($s / 86400) . 'd ago'; }
+
+function srv_cmd(): void {
+    require_admin(); require_csrf();
+    $ajax = ($_POST['ajax'] ?? '') === '1';
+    $key = trim((string)($_POST['license_key'] ?? ''));
+    $cmd = (string)($_POST['cmd'] ?? '');
+    $id = 0;
+    if ($key !== '' && in_array($cmd, ['update', 'restart', 'revoke', 'reset', 'disable', 'enable'], true)) {
+        $args = $cmd === 'update' ? preg_replace('/[^0-9.]/', '', (string)($_POST['args'] ?? '')) : '';
+        // supersede any earlier pending command of the same type (so a newer push wins; no pile-up)
+        if ($c = db()->prepare("DELETE FROM license_commands WHERE license_key=? AND command=? AND status='pending'")) {
+            $c->bind_param('ss', $key, $cmd); $c->execute();
+        }
+        if ($st = db()->prepare("INSERT INTO license_commands (license_key, command, args, status) VALUES (?,?,?, 'pending')")) {
+            $st->bind_param('sss', $key, $cmd, $args); $st->execute(); $id = (int)db()->insert_id;
+        }
+        if ($cmd === 'revoke') {
+            if ($u = db()->prepare("UPDATE licenses SET status='suspended', updated_at=NOW() WHERE license_key=?")) { $u->bind_param('s', $key); $u->execute(); }
+            if ($d = db()->prepare("DELETE FROM license_telemetry WHERE license_key=?")) { $d->bind_param('s', $key); $d->execute(); }
+        }
+        // RESET: admin investigated a flagged tamper → bring the license back to active + clear the TAMPER notes.
+        // The queued 'reset' command tells the plugin to clear its sticky tamper marker and resume.
+        if ($cmd === 'reset') {
+            if ($u = db()->prepare("UPDATE licenses SET status='active', notes=TRIM(CONCAT_WS(' ', COALESCE(NULLIF(notes,''),''), ?)), updated_at=NOW() WHERE license_key=?")) {
+                $note = '[reset ' . date('Y-m-d H:i') . ']'; $u->bind_param('ss', $note, $key); $u->execute();
+            }
+        }
+        if (function_exists('log_event')) log_event($key, $cmd === 'revoke' ? 'revoke' : 'queue_command', 'ok', $cmd . ($args !== '' ? ' ' . $args : ''), []);
+    }
+    if ($ajax) { header('Content-Type: application/json'); echo json_encode(['ok' => $id > 0, 'id' => $id, 'cmd' => $cmd]); exit; }
+    redirect('/servers');
+}
+
+/** Group key = the physical server. Bound host+ip is shared by every product on a box;
+ *  unbound licenses fall back to their own key so each still gets a card. */
+function srv_group_key(array $r): string {
+    $host = strtolower(trim((string)($r['bound_hostname'] ?: $r['hostname'] ?: '')));
+    $ip   = strtolower(trim((string)($r['bound_ip'] ?: $r['server_ip'] ?: '')));
+    if ($host !== '' || $ip !== '') return 'hi:' . $host . '|' . $ip;
+    $mac = strtolower(trim((string)($r['mac'] ?? '')));
+    if ($mac !== '') return 'mac:' . $mac;
+    return 'lk:' . (string)$r['license_key'];
+}
+
+/** Available smpro release versions (newest first) for the per-server "push version" picker. */
+function srv_versions(): array {
+    $out = [];
+    foreach (glob('/opt/aitech-license-server/releases/smpro-*.tar.gz') ?: [] as $f)
+        if (preg_match('/smpro-([0-9][0-9.]*)\.tar\.gz$/', basename($f), $m)) $out[$m[1]] = 1;
+    $out = array_keys($out);
+    usort($out, fn($a, $b) => version_compare($b, $a));
+    return $out;
+}
+
+function srv_page(): void {
+    require_admin();
+    layout_start('Servers');
+    $srvVers = srv_versions();
+
+    $rows = [];
+    if ($res = @db()->query("SELECT l.id, l.license_key, l.client_name, l.status, l.plan, l.bound_ip, l.bound_hostname, l.bound_fingerprint, l.expires_at, l.last_check_at, l.plugin_enabled,
+            t.hostname, t.server_ip, t.mac, t.os, t.panel, t.cpu_cores, t.ram_mb, t.uptime_sec, t.load1, t.load15, t.version, t.reported_at
+            FROM licenses l LEFT JOIN license_telemetry t ON t.license_key = l.license_key
+            WHERE l.status <> 'suspended'
+            ORDER BY (t.reported_at IS NULL), t.reported_at DESC LIMIT 500")) {
+        while ($r = $res->fetch_assoc()) $rows[] = $r;
+    }
+    $pending = [];
+    if ($pc = @db()->query("SELECT license_key, command FROM license_commands WHERE status='pending'")) while ($p = $pc->fetch_assoc()) $pending[$p['license_key']][] = $p['command'];
+
+    // ── group licenses by physical server ─────────────────────────────────
+    $groups = [];
+    foreach ($rows as $r) $groups[srv_group_key($r)][] = $r;
+
+    $serverCount = count($groups);
+    $licenseCount = count($rows);
+    $reporting = 0; $online = 0;
+    foreach ($groups as $g) {
+        $hasTel = false; $fresh = false;
+        foreach ($g as $r) if (!empty($r['reported_at'])) { $hasTel = true; if ((time() - strtotime($r['reported_at'])) < 1800) $fresh = true; }
+        if ($hasTel) $reporting++;
+        if ($fresh) $online++;
+    }
+
+    echo '<section class="hero"><div><h1>&#128421; Servers / Installations</h1><p>Telemetry reported by each licensed server. Servers running more than one product are shown as a single card listing all their products.</p></div></section>';
+    echo '<div class="grid">'
+       . '<div class="stat"><div class="num">' . $serverCount . '</div><div class="label">Servers</div></div>'
+       . '<div class="stat"><div class="num">' . $licenseCount . '</div><div class="label">Product licenses</div></div>'
+       . '<div class="stat"><div class="num">' . $reporting . '</div><div class="label">Reporting telemetry</div></div>'
+       . '<div class="stat"><div class="num" style="color:#1f9d55">' . $online . '</div><div class="label">Online (&lt;30m)</div></div></div>';
+    if (!$rows) { echo '<div class="card">No licenses yet.</div>'; layout_end(); return; }
+
+    $fact = fn($k, $v) => '<div class="srv-f"><span>' . h($k) . '</span><b>' . ($v === '' || $v === null ? '—' : h($v)) . '</b></div>';
+
+    echo '<div class="srv-cards">';
+    foreach ($groups as $g) {
+        // info row = the freshest telemetry in the group (fallback: first)
+        $info = $g[0];
+        foreach ($g as $r) {
+            if (!empty($r['reported_at']) && (empty($info['reported_at']) || strtotime($r['reported_at']) > strtotime($info['reported_at']))) $info = $r;
+        }
+        $host = $info['hostname'] ?: ($info['bound_hostname'] ?: '—');
+        $reported = !empty($info['reported_at']);
+        $fresh = $reported && (time() - strtotime($info['reported_at'])) < 1800;
+        $dot = !$reported ? '#94a3b8' : ($fresh ? '#1f9d55' : '#d97706');
+
+        echo '<div class="card srv-card">';
+        echo '<div class="srv-head"><span class="srv-dot" style="background:' . $dot . '"></span>'
+           . '<div style="flex:1;min-width:0"><div class="srv-host">' . h($host) . '</div>'
+           . '<code style="font-size:11px;color:#94a3b8">' . h($info['bound_ip'] ?: $info['server_ip'] ?: '') . '</code></div>'
+           . '<span class="badge" style="background:#eef2ff;color:#3b5bdb">' . count($g) . ' product' . (count($g) > 1 ? 's' : '') . '</span></div>';
+
+        // shared hardware facts (from the freshest telemetry row)
+        echo '<div class="srv-grid">'
+           . $fact('IP (reported)', $info['server_ip'] ?: $info['bound_ip'])
+           . $fact('MAC', $info['mac'])
+           . $fact('OS', $info['os'])
+           . $fact('Panel', $info['panel'])
+           . $fact('CPU cores', $info['cpu_cores'] ? (int)$info['cpu_cores'] : '')
+           . $fact('RAM', $info['ram_mb'] ? round($info['ram_mb'] / 1024, 1) . ' GB' : '')
+           . $fact('Load (1/15m)', $info['load1'] !== null ? ($info['load1'] . ' / ' . $info['load15']) : '')
+           . $fact('Uptime', $info['uptime_sec'] ? srv_human_uptime($info['uptime_sec']) : '')
+           . $fact('Last seen', srv_ago($info['reported_at'] ?: $info['last_check_at']))
+           . '</div>';
+
+        // per-product list
+        echo '<div class="srv-prods">';
+        foreach ($g as $r) {
+            $key = (string)$r['license_key'];
+            $short = substr($key, 0, 17) . '…' . substr($key, -4);
+            $stcls = $r['status'] === 'active' ? 'active' : ($r['status'] === 'suspended' ? 'suspended' : ($r['status'] === 'expired' ? 'expired' : ''));
+            $pend = !empty($pending[$key]) ? '<span class="badge" style="background:#fdf6e7;color:#c47f17">queued: ' . h(implode(',', $pending[$key])) . '</span>' : '';
+            $label = $r['client_name'] ?: 'license';
+            echo '<div class="srv-prod">';
+            $peb = (!isset($r['plugin_enabled']) || $r['plugin_enabled']) ? '<span class="badge active">plugin on</span>' : '<span class="badge suspended">plugin OFF</span>';
+            echo '<div class="srv-prod-top"><span class="badge ' . $stcls . '">' . h($r['status']) . '</span>' . $peb
+               . '<b>' . h($label) . '</b>'
+               . ($r['plan'] ? '<span class="srv-tag">plan: ' . h($r['plan']) . '</span>' : '')
+               . ($r['version'] ? '<span class="srv-tag">v' . h($r['version']) . '</span>' : '')
+               . ($r['expires_at'] ? '<span class="srv-tag">exp ' . h(substr($r['expires_at'], 0, 10)) . '</span>' : '')
+               . '</div>';
+            echo '<div class="srv-prod-key"><code>' . h($short) . '</code>'
+               . ($r['bound_fingerprint'] ? ' · fp ' . h(substr($r['bound_fingerprint'], 0, 12)) . '…' : '') . '</div>';
+            $verOpts = '<option value="">Latest</option>' . implode('', array_map(fn($v) => '<option value="' . h($v) . '">v' . h($v) . '</option>', $srvVers));
+            $pid = preg_replace('/[^A-Za-z0-9]/', '', $key);
+            echo '<form method="post" action="/servers/cmd" class="srv-prod-act" data-pid="' . $pid . '">'
+               . '<input type="hidden" name="csrf" value="' . h(csrf_token()) . '"><input type="hidden" name="license_key" value="' . h($key) . '">'
+               . '<select name="args" title="Version to push to THIS server (blank = latest)" style="padding:4px 6px;font-size:12px;border-radius:7px;border:1px solid #d8dee9;background:#fff">' . $verOpts . '</select>'
+               . '<button type="button" class="srv-push" data-pid="' . $pid . '" title="Push the selected version to this server (applied on its next check-in)">&#11014; Push</button>'
+               . '<button type="button" class="srv-restart" data-pid="' . $pid . '" title="Force re-activation on this server (applied on its next check-in)">&#8635; Restart</button>'
+               . '<button type="button" class="srv-revoke danger" data-pid="' . $pid . '" title="Suspend this license — the plugin locks on its next check-in">&#9940; Revoke</button>'
+               . '<button type="button" class="srv-reset" data-pid="' . $pid . '" title="Clear a tamper flag after investigation — re-activates the license and cancels the 24h auto-uninstall on next check-in">&#10227; Reset</button>'
+               . '<button type="button" class="srv-stop danger" data-pid="' . $pid . '" title="Force a full stop of the plugin on this server (next check-in) — reversible with Restart/Reset">&#9209; Full stop</button>'
+               . '<a class="btn" href="/licenses/edit?id=' . (int)$r['id'] . '" style="background:#fff;color:#3b5bdb;border:1px solid #d8dee9">Edit</a>'
+               . '</form>'
+               . '<div id="prog_' . $pid . '" class="srv-prog" style="display:none"></div>'
+               . ($pend ? '<div style="margin-top:6px">' . $pend . '</div>' : '');
+            echo '</div>';
+        }
+        echo '</div>'; // .srv-prods
+        echo '</div>'; // .srv-card
+    }
+    echo '</div>';
+
+    echo '<style>.srv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}'
+       . '.srv-card{padding:16px 18px}.srv-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}'
+       . '.srv-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}.srv-host{font-size:16px;font-weight:800;color:#0f1b33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+       . '.srv-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#eef1f6;border:1px solid #eef1f6;border-radius:10px;overflow:hidden;margin-top:6px}'
+       . '.srv-f{background:#fff;padding:7px 11px}.srv-f span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8}.srv-f b{font-size:13px;color:#1f2733}'
+       . '.srv-prods{margin-top:12px;display:flex;flex-direction:column;gap:10px}'
+       . '.srv-prod{border:1px solid #eef1f6;border-radius:10px;padding:10px 12px;background:#fbfcfe}'
+       . '.srv-prod-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.srv-prod-top b{font-size:13.5px;color:#0f1b33}'
+       . '.srv-tag{font-size:11px;color:#64748b;background:#eef1f6;border-radius:6px;padding:2px 7px}'
+       . '.srv-prod-key{font-size:11px;color:#94a3b8;margin:6px 0 8px}'
+       . '.srv-prod-act{margin:0;display:flex;gap:6px;flex-wrap:wrap}'
+       . '.srv-prog{margin-top:8px;border:1px solid #e6eaf1;border-radius:9px;padding:9px 11px;background:#fbfcff}'
+       . '.srv-prog .sp-row{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700}'
+       . '.srv-prog .sp-bar{height:8px;border-radius:6px;background:#eef1f6;overflow:hidden;margin-top:7px}'
+       . '.srv-prog .sp-fill{height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,#3b5bdb,#5b78f0);transition:width .5s ease}'
+       . '.srv-prog.ok .sp-fill{background:#1f9d55}.srv-prog.fail .sp-fill{background:#d93b3b}'
+       . '.srv-prog .sp-sub{font-size:11.5px;color:#6b7686;margin-top:5px}'
+       . '.srv-prog .sp-spin{width:13px;height:13px;border:2px solid #c7d0e0;border-top-color:#3b5bdb;border-radius:50%;animation:spspin .8s linear infinite;flex-shrink:0}'
+       . '@keyframes spspin{to{transform:rotate(360deg)}}</style>';
+    echo '<script>var SRV_CSRF=' . json_encode(csrf_token()) . ';(function(){'
+       . 'function setp(pid,pct,label,sub,cls,spin){var b=document.getElementById("prog_"+pid);if(!b)return;b.style.display="";b.className="srv-prog"+(cls?" "+cls:"");'
+       // label + sub are set via textContent (NOT innerHTML) so a plugin-supplied command-ack "result" can never inject HTML/JS into the admin panel
+       . 'b.innerHTML=\'<div class="sp-row">\'+(spin?\'<span class="sp-spin"></span>\':(cls==="ok"?"✅ ":(cls==="fail"?"⚠ ":"")))+\'<span class="sp-label"></span></div><div class="sp-bar"><div class="sp-fill"></div></div><div class="sp-sub"></div>\';'
+       . 'var lb=b.querySelector(".sp-label");if(lb)lb.textContent=label||"";'
+       . 'var fl=b.querySelector(".sp-fill");if(fl)fl.style.width=(pct|0)+"%";'
+       . 'var sb=b.querySelector(".sp-sub");if(sb){if(sub){sb.textContent=sub;}else{sb.style.display="none";}}}'
+       . 'function poll(pid,id,tries,doneLabel){'
+       . 'fetch("/servers/cmd-status?id="+id,{cache:"no-store"}).then(function(r){return r.json();}).then(function(j){'
+       . 'var s=(j&&j.status)||"";'
+       . 'if(s==="done"){setp(pid,100,doneLabel||"Done",(j.result||"Applied on the server."),"ok",false);return;}'
+       . 'if(s==="failed"){setp(pid,100,"Failed",(j.result||"The server reported an error."),"fail",false);return;}'
+       . 'if(s==="gone"){setp(pid,100,"Superseded","Replaced by a newer command.","",false);return;}'
+       . 'if(s==="sent"){setp(pid,70,"Delivered — applying…","The server pulled the command and is applying it.","",true);}'
+       . 'else{setp(pid,30,"Queued — waiting for the server","The server checks in every ~15 min; it runs then.",null,true);}'
+       . 'if(tries>0)setTimeout(function(){poll(pid,id,tries-1,doneLabel);},5000);'
+       . 'else setp(pid,s==="sent"?70:30,"Still working…","Taking longer than usual — it will finish on the next check-in. You can leave this page.",null,true);'
+       . '}).catch(function(){if(tries>0)setTimeout(function(){poll(pid,id,tries-1,doneLabel);},5000);});}'
+       . 'function send(btn,cmd,ver,confirmMsg,sending,doneLabel,reloadOnOk){'
+       . 'if(confirmMsg&&!confirm(confirmMsg))return;'
+       . 'var pid=btn.getAttribute("data-pid");var form=btn.closest("form");'
+       . 'btn.disabled=true;setp(pid,15,sending,"",null,true);'
+       . 'var fd=new URLSearchParams();fd.set("csrf",SRV_CSRF);fd.set("ajax","1");fd.set("license_key",form.querySelector("input[name=license_key]").value);fd.set("cmd",cmd);fd.set("args",ver||"");'
+       . 'fetch("/servers/cmd",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString(),cache:"no-store"}).then(function(r){return r.json();}).then(function(j){'
+       . 'btn.disabled=false;'
+       . 'if(j&&j.ok){ if(reloadOnOk){setp(pid,100,doneLabel,"","ok",false);setTimeout(function(){location.reload();},1500);} else if(j.id){setp(pid,30,"Queued — waiting for the server","The server checks in every ~15 min; it runs then.",null,true);poll(pid,j.id,60,doneLabel);} else {setp(pid,100,doneLabel,"","ok",false);} }'
+       . 'else{setp(pid,100,"Could not queue the command","","fail",false);}'
+       . '}).catch(function(){btn.disabled=false;setp(pid,100,"Request failed","","fail",false);});}'
+       . 'document.querySelectorAll(".srv-push").forEach(function(btn){btn.addEventListener("click",function(){var sel=btn.closest("form").querySelector("select[name=args]");var ver=sel?sel.value:"";send(btn,"update",ver,"Push "+(ver?("version "+ver):"the latest version")+" to this server? It installs on the next check-in (~15 min).","Sending push…","Installed on the server",false);});});'
+       . 'document.querySelectorAll(".srv-restart").forEach(function(btn){btn.addEventListener("click",function(){send(btn,"restart","","Restart (re-activate) this server\'s plugin on its next check-in?","Sending restart…","Restarted (re-registered)",false);});});'
+       . 'document.querySelectorAll(".srv-revoke").forEach(function(btn){btn.addEventListener("click",function(){send(btn,"revoke","","Revoke this license? It is suspended immediately and the plugin locks on its next check-in.","Revoking…","Revoked — license suspended",true);});});'
+       . 'document.querySelectorAll(".srv-reset").forEach(function(btn){btn.addEventListener("click",function(){send(btn,"reset","","Reset this license after investigating a tamper flag? It re-activates and cancels the 24h auto-uninstall on next check-in.","Sending reset…","Reset — license re-activated",true);});});'
+       . 'document.querySelectorAll(".srv-stop").forEach(function(btn){btn.addEventListener("click",function(){send(btn,"disable","","Force a FULL STOP of the plugin on this server? All functions stop on next check-in. Reversible with Restart/Reset.","Stopping…","Full stop queued",true);});});'
+       . '})();</script>';
+    echo '<p style="color:#64748b;font-size:13px">Telemetry reported by plugin v1.0.96+. Commands queue &amp; run on the next license check, then clear.</p>';
+    layout_end();
+}
+@@@TELEMETRY_EXT@@@
+<?php
+/**
+ * telemetry_ext.php — Phase A of the Servers/Installations tab.
+ * Additive only: stores the latest telemetry snapshot a plugin reports on /api/check,
+ * and delivers any pending pull-based command (update/restart/revoke) back to the plugin.
+ * Reuses the app's db() (mysqli). Never touches licensing/signing logic.
+ *
+ * Wire-up in public/index.php:
+ *   require_once __DIR__ . '/telemetry_ext.php';   // near the other _ext requires
+ * and in api_activate_or_check(), right before the final json_response of the OK path:
+ *   if (function_exists('smlic_telemetry_ingest')) smlic_telemetry_ingest($licenseKey, $data, $serverIp, $hostname);
+ *   $cmd = function_exists('smlic_command_pop') ? smlic_command_pop($licenseKey) : null;
+ *   $resp = ['ok'=>true,'status'=>'active','license'=>$signed]; if ($cmd) $resp['command'] = $cmd;
+ *   json_response($resp);
+ */
+
+if (!function_exists('db')) return;   // only meaningful inside the app
+
+/** Idempotent schema creation — runs once (guarded by a flag file), reuses the app db(). */
+function smlic_telemetry_migrate(): void {
+    $flag = __DIR__ . '/../storage/.telemetry_migrated';
+    if (is_file($flag)) return;
+    try {
+        db()->query("CREATE TABLE IF NOT EXISTS license_telemetry (
+            license_key VARCHAR(90) NOT NULL PRIMARY KEY, hostname VARCHAR(255) DEFAULT NULL,
+            server_ip VARCHAR(45) DEFAULT NULL, mac VARCHAR(64) DEFAULT NULL, os VARCHAR(120) DEFAULT NULL,
+            panel VARCHAR(80) DEFAULT NULL, cpu_cores INT DEFAULT NULL, ram_mb INT DEFAULT NULL,
+            uptime_sec BIGINT DEFAULT NULL, load1 DECIMAL(7,2) DEFAULT NULL, load15 DECIMAL(7,2) DEFAULT NULL,
+            version VARCHAR(20) DEFAULT NULL, reported_at DATETIME DEFAULT NULL, INDEX idx_reported_at (reported_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        db()->query("CREATE TABLE IF NOT EXISTS license_commands (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY, license_key VARCHAR(90) NOT NULL,
+            command ENUM('update','restart','revoke') NOT NULL, args VARCHAR(190) DEFAULT NULL,
+            status ENUM('pending','sent','done','failed') NOT NULL DEFAULT 'pending', result TEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME DEFAULT NULL, done_at DATETIME DEFAULT NULL,
+            INDEX idx_key_status (license_key, status), INDEX idx_created_at (created_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        @file_put_contents($flag, date('c'));
+    } catch (\Throwable $e) { /* will retry next request until the flag is written */ }
+}
+smlic_telemetry_migrate();
+
+/** UPSERT the latest telemetry snapshot for a license. All fields optional + bounded. */
+function smlic_telemetry_ingest(string $key, array $data, string $serverIp, string $hostname): void {
+    if ($key === '') return;
+    $t = ($data['telemetry'] ?? null);
+    if (!is_array($t)) $t = $data;   // accept flat or nested under "telemetry"
+    $s   = fn($v, $n) => ($v === null || $v === '') ? null : substr((string)$v, 0, $n);
+    $i   = fn($v) => ($v === null || $v === '') ? null : (int)$v;
+    $f2  = fn($v) => ($v === null || $v === '') ? null : round((float)$v, 2);
+    $mac = $s($t['mac'] ?? null, 64);
+    $os  = $s($t['os'] ?? null, 120);
+    $pan = $s($t['panel'] ?? null, 80);
+    $cor = $i($t['cpu_cores'] ?? null);
+    $ram = $i($t['ram_mb'] ?? null);
+    $up  = $i($t['uptime_sec'] ?? null);
+    $l1  = $f2($t['load1'] ?? null);
+    $l15 = $f2($t['load15'] ?? null);
+    $ver = $s($t['version'] ?? ($data['plugin_version'] ?? null), 20);
+    $host = $s($hostname, 255);
+    $ip   = $s($serverIp, 45);
+    $sql = "INSERT INTO license_telemetry
+              (license_key, hostname, server_ip, mac, os, panel, cpu_cores, ram_mb, uptime_sec, load1, load15, version, reported_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?, NOW())
+            ON DUPLICATE KEY UPDATE
+              hostname=VALUES(hostname), server_ip=VALUES(server_ip), mac=COALESCE(VALUES(mac),mac),
+              os=COALESCE(VALUES(os),os), panel=COALESCE(VALUES(panel),panel),
+              cpu_cores=COALESCE(VALUES(cpu_cores),cpu_cores), ram_mb=COALESCE(VALUES(ram_mb),ram_mb),
+              uptime_sec=VALUES(uptime_sec), load1=VALUES(load1), load15=VALUES(load15),
+              version=COALESCE(VALUES(version),version), reported_at=NOW()";
+    try {
+        $st = db()->prepare($sql);
+        if (!$st) return;
+        $st->bind_param('ssssssiiidds', $key, $host, $ip, $mac, $os, $pan, $cor, $ram, $up, $l1, $l15, $ver);
+        $st->execute();
+    } catch (\Throwable $e) { /* telemetry is best-effort — never break a license check */ }
+}
+
+/** Duplicate-binding guard: is another license already bound to this exact IP + hostname?
+ *  Returns the other license_key (string) if taken, or null. Used to refuse a 2nd serial on the same server. */
+function smlic_server_taken($key, $ip, $host, $fp = null) {
+    $ip = trim((string)$ip); $host = trim((string)$host); $fp = trim((string)$fp);
+    if ($fp === '') return null; // product-aware: dedup by fingerprint
+    try {
+        $st = db()->prepare("SELECT license_key FROM licenses WHERE license_key <> ? AND bound_fingerprint = ? AND status <> 'expired' LIMIT 1");
+        if (!$st) return null;
+        $st->bind_param('ss', $key, $fp); $st->execute();
+        $r = $st->get_result()->fetch_assoc();
+        return $r ? (string)$r['license_key'] : null;
+    } catch (\Throwable $e) { return null; }
+}
+
+/** Pop the oldest pending command for a license, mark it 'sent', return it (or null). */
+function smlic_command_pop(string $key): ?array {
+    if ($key === '') return null;
+    try {
+        $st = db()->prepare("SELECT id, command, args FROM license_commands WHERE license_key=? AND status='pending' ORDER BY id ASC LIMIT 1");
+        if (!$st) return null;
+        $st->bind_param('s', $key); $st->execute();
+        $r = $st->get_result()->fetch_assoc();
+        if (!$r) return null;
+        $up = db()->prepare("UPDATE license_commands SET status='sent', sent_at=NOW() WHERE id=?");
+        $id = (int)$r['id']; $up->bind_param('i', $id); $up->execute();
+        return ['id' => (int)$r['id'], 'command' => (string)$r['command'], 'args' => (string)($r['args'] ?? '')];
+    } catch (\Throwable $e) { return null; }
+}
+
+/** Mark a command done/failed (called from a future /api/command-ack; defined now for completeness). */
+function smlic_command_ack(int $id, string $status, string $result = ''): void {
+    if (!in_array($status, ['done', 'failed'], true)) return;
+    try {
+        $st = db()->prepare("UPDATE license_commands SET status=?, result=?, done_at=NOW() WHERE id=?");
+        $st->bind_param('ssi', $status, $result, $id); $st->execute();
+    } catch (\Throwable $e) {}
+}
+@@@ROUTES@@@
+660:        echo '<a href="/servers">Servers</a>';
+1493:    require_once __DIR__ . '/servers_ext.php';
+@@@TELSCHEMA@@@
+@@@PHPLOG@@@
+  thrown in /opt/aitech-license-server/public/servers_ext.php on line 52
+[21-Jun-2026 15:03:11 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Data truncated for column 'command' at row 1 in /opt/aitech-license-server/public/servers_ext.php:52
+Stack trace:
+#0 /opt/aitech-license-server/public/servers_ext.php(52): mysqli_stmt->execute()
+#1 /opt/aitech-license-server/public/servers_ext.php(16): srv_cmd()
+#2 /opt/aitech-license-server/public/index.php(1497): srv_route()
+#3 {main}
+  thrown in /opt/aitech-license-server/public/servers_ext.php on line 52
+[21-Jun-2026 15:03:48 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Data truncated for column 'command' at row 1 in /opt/aitech-license-server/public/servers_ext.php:52
+Stack trace:
+#0 /opt/aitech-license-server/public/servers_ext.php(52): mysqli_stmt->execute()
+#1 /opt/aitech-license-server/public/servers_ext.php(16): srv_cmd()
+#2 /opt/aitech-license-server/public/index.php(1497): srv_route()
+#3 {main}
+  thrown in /opt/aitech-license-server/public/servers_ext.php on line 52
