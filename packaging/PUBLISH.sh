@@ -149,3 +149,6 @@ else
   echo \"STABLE : \$(cat VERSION 2>/dev/null) (UNTOUCHED - pass --stable to move it)\"
 fi
 "
+
+# Publish the readable source to the private repository. Never fails the release.
+bash "$(dirname "$0")/push-source.sh" "$VER" || echo "source push did not complete (the release itself is fine)"
