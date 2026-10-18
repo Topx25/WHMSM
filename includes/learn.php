@@ -39,9 +39,73 @@ function smpro_lr_save(string $name, array $v): void {
     if (@file_put_contents($t, json_encode($v, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE)) !== false) { @chmod($t, 0600); @rename($t, $f); }
 }
 function smpro_lr_cfg(): array {
-    $c = smpro_lr_load('config') + ['auto' => 'report', 'recent_days' => 30];
+    $c = smpro_lr_load('config') + ['auto' => 'report', 'recent_days' => 30, 'share' => 'on'];
     if (!in_array($c['auto'], ['report', 'quarantine_exact'], true)) $c['auto'] = 'report';
+    if (!in_array($c['share'], ['on', 'off'], true)) $c['share'] = 'on';
     return $c;
+}
+
+/* ---------------- sharing lessons between servers (patterns only) ----------------
+ * What leaves this server: for each lesson this operator confirmed - its kind, its key and its label - and how
+ * often it matched here. A hash key is a sha256 and a size; a hidden-folder key is a folder name and an extension;
+ * a behaviour key is a set of tags. A PLACE lesson is never sent (a site's own folder names are its business), and
+ * neither are incidents: no path, no account, no file content, no address ever goes out. What comes back is the
+ * pool: lessons other operators confirmed, which this server then reports on but never acts on by itself. "Not
+ * malicious" here is reported back, so a mistaken lesson is withdrawn for everyone. */
+function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour']; }
+/** The outgoing list: patterns of lessons confirmed HERE, plus "wrong" votes on shared ones. */
+function smpro_lr_share_payload(array $L): array {
+    $out = [];
+    foreach ($L as $l) {
+        if (!in_array($l['type'] ?? '', smpro_lr_share_types(), true)) continue;
+        $shared = ($l['source'] ?? '') === 'shared';
+        if (!$shared && ($l['state'] ?? 'on') !== 'on') continue;                  // a lesson this operator switched off is not vouched for
+        if (!$shared && empty($l['incidents'])) continue;                            // only what was confirmed here
+        if ($shared && empty($l['fp'])) continue;                                    // a shared lesson is only reported back when it was wrong here
+        // A hash lesson's local label names the file's path on THIS server: it never leaves. The outgoing label is
+        // built from the key alone; any other label that carries a home or document-root path is dropped too.
+        $label = (string)$l['label'];
+        if ($l['type'] === 'hash') $label = 'An exact file confirmed as malware (' . (int)(explode(':', (string)$l['key'])[1] ?? 0) . ' bytes)';
+        elseif (preg_match('#/home[0-9]*/|public_html|/var/www#', $label)) $label = '';
+        $out[] = ['type' => (string)$l['type'], 'key' => substr((string)$l['key'], 0, 190), 'label' => substr($label, 0, 200), 'hits' => (int)($l['hits'] ?? 0), 'fp' => (int)($l['fp'] ?? 0)];
+        if (count($out) >= 500) break;
+    }
+    return $out;
+}
+/** Merge the pool the server returned: new shared lessons come in (report-only), withdrawn ones go. */
+function smpro_lr_share_merge(array $L, array $pool): array {
+    $seen = []; $new = 0;
+    foreach ($pool as $p) {
+        $type = (string)($p['type'] ?? ''); $key = (string)($p['key'] ?? '');
+        if (!in_array($type, smpro_lr_share_types(), true) || $key === '' || strlen($key) > 190) continue;
+        $id = substr(sha1($type . '|' . $key), 0, 12); $seen[$id] = true;
+        if (isset($L[$id])) { if (($L[$id]['source'] ?? '') === 'shared') $L[$id]['shared'] = ['servers' => (int)($p['servers'] ?? 0), 'seen' => time()]; continue; }   // a local lesson keeps its own standing
+        $L[$id] = ['id' => $id, 'type' => $type, 'key' => $key, 'label' => substr((string)($p['label'] ?? ''), 0, 200), 'state' => 'on', 'created' => time(), 'incidents' => [], 'hits' => 0, 'fp' => 0,
+                   'source' => 'shared', 'shared' => ['servers' => (int)($p['servers'] ?? 0), 'seen' => time()]];
+        $new++;
+    }
+    foreach ($L as $id => $l) if (($l['source'] ?? '') === 'shared' && !isset($seen[$id]) && empty($l['fp'])) unset($L[$id]);   // withdrawn upstream (a lesson marked wrong here stays, off, as the record of that)
+    return [$L, $new];
+}
+/** One exchange with the license server. Returns what happened; never throws. */
+function smpro_lr_share(): array {
+    $cfg = smpro_lr_cfg();
+    if ($cfg['share'] !== 'on') return ['ok' => false, 'why' => 'sharing is off'];
+    if (!function_exists('smpro_lic_api') || !function_exists('smpro_lic_key') || !function_exists('smpro_lic_payload')) return ['ok' => false, 'why' => 'no license client'];
+    $key = smpro_lic_key(); if (trim($key) === '') return ['ok' => false, 'why' => 'no license key'];
+    if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) return ['ok' => false, 'why' => 'plugin disabled'];
+    $L = smpro_lr_lessons();
+    $p = smpro_lic_payload($key); unset($p['telemetry']);
+    $p['lessons'] = smpro_lr_share_payload($L);
+    [$code, $j] = smpro_lic_api('/api/lessons', $p, 25, (string)(smpro_lic_state()['srv_ip'] ?? ''));
+    $st = smpro_lr_load('share'); $st['last'] = time(); $st['sent'] = count($p['lessons']); $st['code'] = (int)$code;
+    if (!is_array($j) || empty($j['ok'])) { $st['err'] = is_array($j) ? (string)($j['error'] ?? 'refused') : 'no answer'; smpro_lr_save('share', $st); return ['ok' => false, 'why' => $st['err']]; }
+    [$L, $new] = smpro_lr_share_merge($L, (array)($j['pool'] ?? []));
+    smpro_lr_save('lessons', $L);
+    $st['err'] = ''; $st['pool'] = count((array)($j['pool'] ?? [])); $st['servers'] = (int)($j['servers'] ?? 0); $st['new'] = $new; smpro_lr_save('share', $st);
+    if ($new > 0) @touch(smpro_lr_dir() . '/hunt_wanted');
+    if (function_exists('smpro_audit')) @smpro_audit('learn_share', ['sent' => $st['sent'], 'pool' => $st['pool'], 'new' => $new]);
+    return ['ok' => true, 'sent' => $st['sent'], 'pool' => $st['pool'], 'new' => $new, 'servers' => $st['servers']];
 }
 
 /* ---------------- where sites live ---------------- */
@@ -183,7 +247,7 @@ function smpro_lr_candidates(string $root, int $sinceDays): array {
 }
 /** One full hunt. Writes learn/findings.json; returns it. */
 function smpro_lr_hunt(int $budget = 500): array {
-    $t0 = time(); $L = smpro_lr_lessons(); $cfg = smpro_lr_cfg();
+    $t0 = time(); $L = smpro_lr_lessons(); $cfg = smpro_lr_cfg(); $GLOBALS['smpro_lr_L'] = $L;
     $allow = array_flip(smpro_lr_load('allow'));
     $on = array_filter($L, fn($l) => ($l['state'] ?? 'on') === 'on');
     $hashes = []; $sizes = []; $rels = []; $dots = []; $behav = [];
@@ -198,7 +262,7 @@ function smpro_lr_hunt(int $budget = 500): array {
         if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($p)) return;
         $sha = (string)@hash_file('sha256', $p); if ($sha !== '' && isset($allow[$sha])) return;
         if (!isset($found[$p])) $found[$p] = ['path' => $p, 'user' => $user, 'sha' => $sha, 'size' => (int)@filesize($p), 'mtime' => (int)@filemtime($p), 'lessons' => [], 'why' => []];
-        if (!in_array($lid, $found[$p]['lessons'], true)) { $found[$p]['lessons'][] = $lid; $found[$p]['why'][] = $why; }
+        if (!in_array($lid, $found[$p]['lessons'], true)) { $found[$p]['lessons'][] = $lid; $found[$p]['why'][] = $why . (((($GLOBALS['smpro_lr_L'][$lid]['source'] ?? '') === 'shared')) ? ' (a lesson shared by another server)' : ''); }
     };
     $roots = smpro_lr_docroots(); $homes = [];
     // A hunt that hit its budget left a cursor: this round carries on after the sites already covered, keeping their
@@ -244,7 +308,7 @@ function smpro_lr_hunt(int $budget = 500): array {
     if ($partial) { smpro_lr_save('cursor', ['at' => time(), 'lessons' => count($on), 'done' => $doneRoots, 'found' => array_values($found)]); @touch(smpro_lr_dir() . '/hunt_wanted'); }
     else @unlink(smpro_lr_dir() . '/cursor.json');
     if ($cfg['auto'] === 'quarantine_exact' && !(function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) && !(function_exists('smpro_ctl_disabled') && smpro_ctl_disabled())) {
-        foreach ($res['findings'] as $f) foreach ($f['lessons'] as $lid) if (($L[$lid]['type'] ?? '') === 'hash') { smpro_lr_quarantine($f['path'], 'auto: exact file of a confirmed incident'); break; }
+        foreach ($res['findings'] as $f) foreach ($f['lessons'] as $lid) if (($L[$lid]['type'] ?? '') === 'hash' && ($L[$lid]['source'] ?? '') !== 'shared' && !empty($L[$lid]['incidents'])) { smpro_lr_quarantine($f['path'], 'auto: exact file of a confirmed incident'); break; }
     }
     return $res;
 }
@@ -338,6 +402,7 @@ function smpro_lr_kill(int $pid): array {
 function smpro_lr_tick(): void {
     smpro_lr_save('procs', ['at' => time(), 'rows' => smpro_lr_procs()]);
     $last = (int)(smpro_lr_load('findings')['at'] ?? 0);
+    if (time() - (int)(smpro_lr_load('share')['last'] ?? 0) > 6 * 3600) smpro_lr_share();
     $L = smpro_lr_lessons();
     if ($L && (is_file(smpro_lr_dir() . '/hunt_wanted') || time() - $last > 86400)) smpro_lr_hunt(500);
 }
