@@ -9,7 +9,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 // --- Identity ---
 define('SMPRO_NAME',        'Safety Monitor Pro');
 define('SMPRO_SLUG',        'smpro');
-define('SMPRO_VERSION',     '1.1.10-beta336');
+define('SMPRO_VERSION',     '1.1.10-beta337');
 
 /* Safety Lock — the account-side page. These five names are read by bin/register_cpuser.sh, which finds them
  * by TEXT in this file. They were left behind when the account side was merged into this build: the files all

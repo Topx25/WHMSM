@@ -29,6 +29,18 @@ if (!function_exists('smpro_gl_run') || !function_exists('smpro_gl_cfg')) exit;
 $cfg = smpro_gl_cfg();
 if (empty($cfg['enabled'])) exit;          // the cron should already be gone; never act if it is not
 
+// The kernel set and its rule are put back from the state file every run (after `csf -r` or a reboot the kernel
+// has forgotten them); csfpost.sh calls this with --restore right after CSF reloads, and stops there.
+if (function_exists('smpro_gl_use_set') && smpro_gl_use_set()) {
+    try {
+        // A lock armed before the kernel set existed still has its old csf.deny lines (one per port per address):
+        // move them over once, here, so every server gets the relief without anyone pressing Save.
+        if (smpro_gs_legacy_count(SMPRO_GL_DENY) > 0) smpro_gl_set_up($cfg);
+        else smpro_gs_restore(smpro_gl_ports_for($cfg));
+    } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('geologin_set_restore', $e); }
+}
+if (in_array('--restore', (array)($argv ?? []), true)) exit;
+
 try {
     // Three passes, twenty seconds apart, inside the one-minute cron: an address that got in is acted on within
     // ~20 s instead of up to two minutes. Each pass is one tail of the login feed - cheap - and the passes stop

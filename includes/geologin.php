@@ -29,6 +29,9 @@ if (!defined('SMPRO_GL_CFG'))   define('SMPRO_GL_CFG',   SMPRO_VARLIB . '/geolog
 if (!defined('SMPRO_GL_STATE')) define('SMPRO_GL_STATE', SMPRO_VARLIB . '/geologin_state.json');
 if (!defined('SMPRO_GL_DENY'))  define('SMPRO_GL_DENY',  '/etc/csf/csf.deny');
 if (!defined('SMPRO_GL_MARK'))  define('SMPRO_GL_MARK',  'smpro-geologin');
+// The firewall side lives in a kernel set when the server can keep one (includes/geoset.php); csf.deny lines are the fallback.
+if (!function_exists('smpro_gs_available')) { $gsf = __DIR__ . '/geoset.php'; if (is_file($gsf)) require_once $gsf; }
+function smpro_gl_use_set(): bool { return function_exists('smpro_gs_available') && smpro_gs_available(); }
 
 /**
  * The doors this locks, and the ones it must never touch.
@@ -94,7 +97,10 @@ function smpro_gl_cfg_save(array $patch): array {
     // "armed" without installing anything to act is how this feature spent its life showing ARMED while
     // csf.deny held none of its rules.
     if (function_exists('smpro_gl_cron_sync')) smpro_gl_cron_sync();
-    if (!empty($c['enabled']) && !defined('SMPRO_TEST_SRC')) smpro_gl_ensure_deny_limit();   // the lock's rules need room in csf.deny
+    if (!empty($c['enabled']) && !defined('SMPRO_TEST_SRC')) {
+        if (smpro_gl_use_set()) smpro_gl_set_up($c);               // the kernel set, its rule, the CSF hook, and any old csf.deny lines moved over
+        else smpro_gl_ensure_deny_limit();                          // fallback: the lock's rules need room in csf.deny
+    }
     return smpro_gl_cfg();
 }
 /** Ports typed by the operator: integers 1-65535, never the web ports, deduplicated and sorted. */
@@ -237,6 +243,7 @@ function smpro_gl_denyin_snapshot(bool $refresh = false): array {
 /** Is a written rule really in the kernel? A line in csf.deny alone is a request. */
 function smpro_gl_rule_live(string $ip, bool $refresh = false): bool {
     if ($ip === '') return false;
+    if (smpro_gl_use_set()) return smpro_gs_has($ip) && smpro_gs_rule_live(smpro_gs_is6($ip));
     $snap = smpro_gl_denyin_snapshot($refresh);
     return isset($snap[strtolower($ip)]);
 }
@@ -245,6 +252,14 @@ function smpro_gl_rule_live(string $ip, bool $refresh = false): bool {
 function smpro_gl_block(string $ip, string $cc, string $account, array $cfg): array {
     $ports = smpro_gl_ports_for($cfg);
     if (!$ports) return ['ok' => false, 'added' => 0, 'msg' => 'no login ports selected'];
+    if (smpro_gl_use_set()) {
+        $why = 'login from ' . ($cc ?: '??') . ' not allowed' . ($account !== '' ? ' for ' . $account : '') . ' ' . date('Y-m-d');
+        $r = smpro_gs_add($ip, max(1, (int)($cfg['ttl_days'] ?? 30)) * 86400, $cc, $account, $why, $ports);
+        $live = !empty($r['ok']) && smpro_gl_rule_live($ip, true);   // read the kernel back: an entry is only "closed" when the set AND the rule hold
+        if (!$live && function_exists('smpro_audit')) @smpro_audit('geologin_block_not_live', ['ip' => $ip, 'backend' => 'set', 'msg' => (string)$r['msg']]);
+        return ['ok' => $live, 'added' => $live ? count($ports) : 0, 'live' => $live,
+                'msg' => $live ? (count($ports) . ' login port(s) closed for ' . $ip) : ('set entry written for ' . $ip . ' but NOT live in the firewall - ' . (string)$r['msg'])];
+    }
     if (!@is_file(SMPRO_GL_DENY) || !@is_writable(SMPRO_GL_DENY)) return ['ok' => false, 'added' => 0, 'msg' => 'csf.deny is not writable'];
     $have = (string)@file_get_contents(SMPRO_GL_DENY);
     $why = 'login from ' . ($cc ?: '??') . ' not allowed' . ($account !== '' ? ' for ' . $account : '') . ' ' . date('Y-m-d');
@@ -267,7 +282,8 @@ function smpro_gl_block(string $ip, string $cc, string $account, array $cfg): ar
 
 /** Remove every rule this feature wrote — all of them, or just one address. Nothing else is touched. */
 function smpro_gl_unblock(string $ip = ''): array {
-    if (!@is_file(SMPRO_GL_DENY) || !@is_writable(SMPRO_GL_DENY)) return ['ok' => false, 'removed' => 0, 'msg' => 'csf.deny is not writable'];
+    $fromSet = smpro_gl_use_set() ? smpro_gs_del($ip) : 0;
+    if (!@is_file(SMPRO_GL_DENY) || !@is_writable(SMPRO_GL_DENY)) return ['ok' => $fromSet > 0, 'removed' => $fromSet, 'msg' => $fromSet ? ($fromSet . ' address(es) removed from the kernel set') : 'csf.deny is not writable'];
     $dl = function_exists('smpro_csf_deny_lock') ? smpro_csf_deny_lock() : null;   // held across read -> rewrite
     $lines = file(SMPRO_GL_DENY, FILE_IGNORE_NEW_LINES) ?: [];
     $keep = []; $removed = 0;
@@ -283,12 +299,13 @@ function smpro_gl_unblock(string $ip = ''): array {
         $csf = function_exists('smpro_csf_bin') ? smpro_csf_bin() : '';
         if ($csf !== '') @shell_exec('timeout 60 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');
     }
-    return ['ok' => true, 'removed' => $removed, 'msg' => $removed . ' rule line(s) removed'];
+    return ['ok' => true, 'removed' => $removed + $fromSet, 'msg' => ($fromSet ? $fromSet . ' address(es) removed from the kernel set' : '') . ($removed ? ($fromSet ? '; ' : '') . $removed . ' rule line(s) removed' : ($fromSet ? '' : 'nothing to remove'))];
 }
 
 /** What this feature currently has in the firewall, grouped by address. */
 function smpro_gl_active(): array {
     $out = [];
+    if (smpro_gl_use_set()) foreach (smpro_gs_active(false) as $r) $out[$r['ip']] = $r;
     foreach ((array)@file(SMPRO_GL_DENY, FILE_IGNORE_NEW_LINES) as $l) {
         if (strpos((string)$l, SMPRO_GL_MARK) === false) continue;
         if (!preg_match('/s=([0-9a-fA-F:.]+)/', (string)$l, $m)) continue;
@@ -296,6 +313,7 @@ function smpro_gl_active(): array {
         $out[$ip]['ip'] = $ip;
         $out[$ip]['ports'][] = preg_match('/d=(\d+)/', (string)$l, $pm) ? (int)$pm[1] : 0;
         if (preg_match('/# ' . preg_quote(SMPRO_GL_MARK, '/') . '\s+(.*)$/', (string)$l, $wm)) $out[$ip]['why'] = trim($wm[1]);
+        $out[$ip]['backend'] = 'csf.deny';
     }
     return array_values($out);
 }
@@ -416,6 +434,7 @@ function smpro_gl_run(bool $force_dryrun = false): array {
 function smpro_gl_expire(): array {
     $cfg = smpro_gl_cfg();
     $days = max(1, (int)$cfg['ttl_days']);
+    $fromSet = smpro_gl_use_set() ? smpro_gs_expire() : 0;   // the kernel already dropped them; this forgets the reasons
     $cutoff = date('Y-m-d', time() - $days * 86400);
     $dl = function_exists('smpro_csf_deny_lock') ? smpro_csf_deny_lock() : null;   // held across read -> rewrite
     $lines = (array)@file(SMPRO_GL_DENY, FILE_IGNORE_NEW_LINES);
@@ -430,7 +449,16 @@ function smpro_gl_expire(): array {
         $csf = function_exists('smpro_csf_bin') ? smpro_csf_bin() : '';
         if ($csf !== '') @shell_exec('timeout 60 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');
     }
-    return ['ok' => true, 'removed' => $removed];
+    return ['ok' => true, 'removed' => $removed + $fromSet];
+}
+
+/** Arming on a server with a kernel set: the set and its rule, the CSF hook, and any old csf.deny lines moved over. */
+function smpro_gl_set_up(array $cfg): array {
+    $ports = smpro_gl_ports_for($cfg); $out = [];
+    $out['restore'] = smpro_gs_restore($ports);
+    $out['hook'] = smpro_gs_hook_install();
+    $out['migrate'] = smpro_gs_migrate(SMPRO_GL_DENY, max(1, (int)($cfg['ttl_days'] ?? 30)), $ports);
+    return $out;
 }
 
 

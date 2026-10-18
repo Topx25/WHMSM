@@ -983,6 +983,8 @@ $glOn    = !empty($glCfg['enabled']);
 $glActive= function_exists('smpro_gl_active_live') ? smpro_gl_active_live() : smpro_gl_active();
 $glDenyLimit = (preg_match('/^DENY_IP_LIMIT\s*=\s*"(\d+)"/m', (string)@file_get_contents('/etc/csf/csf.conf'), $glDm)) ? (int)$glDm[1] : 0;
 $glDenyLines = count((array)@file('/etc/csf/csf.deny'));
+$glUseSet = function_exists('smpro_gl_use_set') && smpro_gl_use_set();   // kernel set: no csf.deny lines, no limit to hit
+$glLegacyLines = $glUseSet ? count(array_filter($glActive, fn($a) => ($a['backend'] ?? '') === 'csf.deny')) : 0;
 ?>
 <div class="card" id="gl" style="padding:0;overflow:hidden;margin:0 0 14px">
   <div class="tp-th"><b>&#127757; Country Login Lock</b>
@@ -1092,7 +1094,10 @@ $glDenyLines = count((array)@file('/etc/csf/csf.deny'));
     <?php if ($glActive): ?>
     <details class="gl-fold" style="margin-top:12px">
       <summary style="cursor:pointer;font-size:13px;font-weight:700;list-style:none;display:flex;align-items:center;gap:8px"><span class="fw-chev gl-chev">&#9656;</span>Addresses whose login ports are closed by this lock <span class="meta" style="font-weight:400">(<?= count($glActive) ?> address<?= count($glActive) === 1 ? '' : 'es' ?> &middot; click to show)</span></summary>
-    <?php if ($glDenyLimit && $glDenyLines >= $glDenyLimit): ?>
+    <?php if ($glUseSet): ?>
+      <div class="meta" style="margin:6px 0;font-size:12px">&#10003; Held in a kernel set (<?= count($glActive) - $glLegacyLines ?> address<?= (count($glActive) - $glLegacyLines) === 1 ? '' : 'es' ?>, one firewall rule per 15 ports, each entry expires on its own) &mdash; nothing is written to csf.deny, so this lock cannot fill it or push other blocks out.<?= $glLegacyLines ? ' ' . (int)$glLegacyLines . ' old csf.deny line(s) are still waiting to be moved over (Save does it).' : '' ?></div>
+    <?php endif; ?>
+    <?php if ($glDenyLimit && $glDenyLines >= $glDenyLimit && !$glUseSet): ?>
       <div style="margin:6px 0;padding:9px 11px;border-radius:8px;border:1px solid rgba(220,38,38,.4);background:rgba(220,38,38,.07);font-size:12.5px">
         <b>&#9888; csf.deny has <?= (int)$glDenyLines ?> lines and CSF's DENY_IP_LIMIT is <?= (int)$glDenyLimit ?>.</b> CSF silently drops the oldest lines beyond the limit, so rules written here can disappear. The lock raises the limit the next time it writes a rule; to do it now, press Save on the lock.
       </div>
