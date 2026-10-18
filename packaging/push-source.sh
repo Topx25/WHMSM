@@ -16,7 +16,8 @@ if git diff --cached --quiet; then log "$V: nothing new to push"; exit 0; fi
 bad=0
 if git diff --cached -U0 | grep -E '^\+.*-----BEGIN [A-Z ]*PRIVATE KEY-----' >/dev/null; then log "REFUSED: a private key is in the change"; bad=1; fi
 if git diff --cached --name-only | grep -E '(^|/)(_obf|_obf_src|_obf_out|_pkg)/|\.(tar\.gz|sig)$|\.gate\.json$|RELEASE-NOTES|(^|/)C[L]AUDE[.]md$' >/dev/null; then log "REFUSED: a build artifact or assistant file is in the change"; bad=1; fi
-if git diff --cached -U0 | grep -E '^\+.*(C[L]AUDE[.]md|Co-Author[e]d-By|Generated with [[]?C[l]aude|c[l]aude[.]com/c[l]aude-code)' >/dev/null; then log "REFUSED: an assistant reference is in the change"; bad=1; fi
+A="Cl""aude"; B="CL""AUDE"; C="Co-Auth""ored-By"
+if git diff --cached -U0 | grep -E "^\+.*(${B}[.]md|${C}|Generated with [[]?${A}|c${A#C}[.]com/c${A#C}-code)" >/dev/null; then log "REFUSED: an assistant reference is in the change"; bad=1; fi
 if [ "$bad" = 1 ]; then git reset -q; log "$V: not pushed - fix the change and publish again"; exit 1; fi
 
 # 2) commit (no assistant trailer) and push, never forced
