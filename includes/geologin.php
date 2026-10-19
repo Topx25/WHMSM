@@ -32,6 +32,8 @@ if (!defined('SMPRO_GL_MARK'))  define('SMPRO_GL_MARK',  'smpro-geologin');
 // The firewall side lives in a kernel set when the server can keep one (includes/geoset.php); csf.deny lines are the fallback.
 if (!function_exists('smpro_gs_available')) { $gsf = __DIR__ . '/geoset.php'; if (is_file($gsf)) require_once $gsf; }
 function smpro_gl_use_set(): bool { return function_exists('smpro_gs_available') && smpro_gs_available(); }
+// VPN exits and hosting ranges (includes/netkind.php): a correct password from there is a stolen one, whatever the country.
+if (!function_exists('smpro_nk_kind')) { $nkf = __DIR__ . '/netkind.php'; if (is_file($nkf)) require_once $nkf; }
 
 /**
  * The doors this locks, and the ones it must never touch.
@@ -66,6 +68,7 @@ function smpro_gl_defaults(): array {
         'evict'      => true,
         'on_failed'  => 'ignore',   // a wrong password from there is ordinary noise: ignore | block
         'ttl_days'   => 30,         // how long a rule stands before the sweeper removes it
+        'netkind'    => 'report',   // a sign-in from a VPN exit or a hosting network, even from an allowed country: report | block | off
     ];
 }
 
@@ -86,6 +89,7 @@ function smpro_gl_cfg(): array {
         $pa[$u] = smpro_gl_clean_cc((array)$list);
     }
     $c['per_account'] = $pa;
+    $c['netkind'] = in_array((string)($c['netkind'] ?? 'report'), ['report', 'block', 'off'], true) ? (string)$c['netkind'] : 'report';
     return $c;
 }
 function smpro_gl_cfg_save(array $patch): array {
@@ -253,7 +257,7 @@ function smpro_gl_block(string $ip, string $cc, string $account, array $cfg): ar
     $ports = smpro_gl_ports_for($cfg);
     if (!$ports) return ['ok' => false, 'added' => 0, 'msg' => 'no login ports selected'];
     if (smpro_gl_use_set()) {
-        $why = 'login from ' . ($cc ?: '??') . ' not allowed' . ($account !== '' ? ' for ' . $account : '') . ' ' . date('Y-m-d');
+        $why = 'login from ' . ($cc ?: '??') . (function_exists('smpro_nk_kind') && ($k = smpro_nk_kind($ip)) !== '' ? ' via ' . (smpro_nk_kinds()[$k] ?? $k) : '') . ' not allowed' . ($account !== '' ? ' for ' . $account : '') . ' ' . date('Y-m-d');
         $r = smpro_gs_add($ip, max(1, (int)($cfg['ttl_days'] ?? 30)) * 86400, $cc, $account, $why, $ports);
         $live = !empty($r['ok']) && smpro_gl_rule_live($ip, true);   // read the kernel back: an entry is only "closed" when the set AND the rule hold
         if (!$live && function_exists('smpro_audit')) @smpro_audit('geologin_block_not_live', ['ip' => $ip, 'backend' => 'set', 'msg' => (string)$r['msg']]);
@@ -338,7 +342,7 @@ function smpro_gl_run(bool $force_dryrun = false): array {
     $cfg = smpro_gl_cfg();
     $dry = $force_dryrun || !empty($cfg['dryrun'])
         || (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run());
-    $res = ['ok' => true, 'dryrun' => $dry, 'enabled' => !empty($cfg['enabled']),
+    $res = ['ok' => true, 'dryrun' => $dry, 'enabled' => !empty($cfg['enabled']), 'reported' => [],
             'hits' => [], 'blocked' => [], 'skipped' => [], 'scanned' => 0, 'msg' => ''];
     if (empty($cfg['enabled'])) { $res['msg'] = 'Country Login Lock is off.'; return $res; }
 
@@ -393,11 +397,29 @@ function smpro_gl_run(bool $force_dryrun = false): array {
         $cc = smpro_gl_country($ip);
 
         if ($cc === '') { $res['skipped'][] = ['ip' => $ip, 'why' => 'country unknown — never treated as not allowed']; continue; }
-        if (in_array($cc, $allowed, true)) continue;
+        // A VPN exit or a hosting range is treated like a country that is not allowed - a customer signs in from home
+        // or a phone, an attacker from a tunnel or a rented box. Only when the lists are on this server: with no list
+        // the kind is unknown, and unknown is never "not allowed".
+        $nkMode = (string)($cfg['netkind'] ?? 'report');
+        $nk = ($nkMode !== 'off' && function_exists('smpro_nk_kind')) ? smpro_nk_kind($ip) : '';
+        $foreign = !in_array($cc, $allowed, true);
+        if (!$foreign && $nk === '') continue;
         if (($why = smpro_gl_exempt($ip)) !== '') { $res['skipped'][] = ['ip' => $ip, 'cc' => $cc, 'why' => $why]; continue; }
 
-        $hit = ['ts' => $ts ?: time(), 'ip' => $ip, 'cc' => $cc, 'account' => $account, 'success' => $ok];
+        $hit = ['ts' => $ts ?: time(), 'ip' => $ip, 'cc' => $cc, 'account' => $account, 'success' => $ok, 'kind' => $nk];
         $res['hits'][] = $hit;
+
+        if (!$foreign && $nkMode === 'report') {   // an allowed country through a VPN / hosting network: said, not yet acted on
+            $res['reported'][] = $hit + ['msg' => 'sign-in from ' . (smpro_nk_kinds()[$nk] ?? $nk) . ' in an allowed country - reported only (set VPN / hosting networks to "block" to act)'];
+            if ($ok && !isset($done['nk:' . $ip]) && function_exists('smpro_notify')) {
+                @smpro_notify('geologin_netkind', 'Sign-in through ' . (smpro_nk_kinds()[$nk] ?? $nk) . ' for ' . ($account ?: 'this server'),
+                    'The password for ' . ($account ?: 'an account') . ' was accepted from ' . $ip . ' (' . $cc . '), which is ' . (smpro_nk_kinds()[$nk] ?? $nk) . '. '
+                  . 'Customers sign in from home or a phone; a tunnel or a rented server with a correct password usually means the password is known to somebody else. '
+                  . 'The Country Login Lock is set to report this, not block it.');
+                $done['nk:' . $ip] = ['ts' => time(), 'cc' => $cc, 'account' => $account, 'kind' => $nk];
+            }
+            continue;
+        }
 
         $action = $ok ? (string)$cfg['on_success'] : (string)$cfg['on_failed'];
         if ($action !== 'block') continue;

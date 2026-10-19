@@ -292,6 +292,7 @@ if ($reqMethod === 'POST' && in_array((string)($_POST['fw_action'] ?? ''), ['gl_
                 'dryrun'     => !empty($_POST['dryrun']),
                 'evict'      => !empty($_POST['evict']),
                 'custom_ports' => smpro_gl_clean_ports((string)($_POST['custom_ports'] ?? '')),
+                'netkind'      => in_array((string)($_POST['netkind'] ?? ''), ['report', 'block', 'off'], true) ? (string)$_POST['netkind'] : 'report',
             ];
             // Per-account overrides, one per line: account = CC,CC
             $pa = [];
@@ -1075,6 +1076,10 @@ $glLegacyLines = $glUseSet ? count(array_filter($glActive, fn($a) => ($a['backen
       <label class="lm-chkl"><input type="checkbox" id="glDry"<?= !empty($glCfg['dryrun']) ? ' checked' : '' ?>> <span>Dry run &mdash; report only, write nothing</span></label>
       <?php /* Closing the port stops the NEXT connection. On a successful sign-in the one that matters is the one
            already open - somebody is inside now, and a firewall rule behind them leaves them working. */ ?>
+      <?php $nkSt = function_exists('smpro_nk_status') ? smpro_nk_status() : ['ready' => false, 'sets' => false, 'kinds' => []]; $nkMode = (string)($glCfg['netkind'] ?? 'report'); ?>
+      <label class="lm-chkl" style="display:block;margin:6px 0" title="A customer signs in from home or a phone; a correct password used through a VPN exit or from a rented server usually means the password is known to somebody else. The lists of such networks are published data, refreshed daily."><b>VPN / hosting networks</b>, even from an allowed country:
+        <select id="glNetkind" class="tp-in" style="margin-left:6px"><option value="report"<?= $nkMode === 'report' ? ' selected' : '' ?>>report only</option><option value="block"<?= $nkMode === 'block' ? ' selected' : '' ?>>close the login ports (as for a country not allowed)</option><option value="off"<?= $nkMode === 'off' ? ' selected' : '' ?>>ignore</option></select>
+        <span class="meta"><?= $nkSt['ready'] ? (int)($nkSt['kinds']['vpn']['lines'] ?? 0) . ' VPN + ' . (int)($nkSt['kinds']['hosting']['lines'] ?? 0) . ' hosting ranges' . ($nkSt['sets'] ? ', in the kernel' : ', file lookup') . ', list from ' . smpro_h(date('Y-m-d', (int)($nkSt['kinds']['vpn']['at'] ?? 0))) : 'the lists are not on this server yet - the worker fetches them within a minute; until then the kind is unknown and nothing is treated as a VPN' ?></span></label>
       <label class="lm-chkl"><input type="checkbox" id="glEvict"<?= !empty($glCfg['evict']) ? ' checked' : '' ?>>
         <span><b>End the session too</b> &mdash; drop the connection, sign the panel session out and stop the process, not just close the port</span></label>
       <button class="tp-btn primary" id="glSave" type="button">Save</button>
@@ -2268,6 +2273,7 @@ table.gr-tbl tr.gr-live td{background:rgba(220,38,38,.06)}
     if(on) fd.set('enabled','1'); if(dry) fd.set('dryrun','1');
     fd.set('evict',document.getElementById('glEvict').checked?'1':'0');
     var gp=document.getElementById('glPorts'); if(gp) fd.set('custom_ports',gp.value);
+    var gk=document.getElementById('glNetkind'); if(gk) fd.set('netkind',gk.value);
     svcs().forEach(function(v){fd.append('services[]',v);});
     post(fd,function(j){
       if(j&&j.ok){show('<b style="color:#059669">'+esc(j.msg)+'</b>'); setTimeout(function(){location.reload();},900);}
