@@ -47,3 +47,8 @@ if (function_exists('posix_geteuid') && posix_geteuid() === 0 && is_dir('/proc/s
     }
 }
 hasnt(str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/shharden.php')), "'cookieipvalidation' =>", 'U9: cPanel sessions are never bound to the IP (a front proxy flips it and logs everyone out)');
+// CSF's CC_ALLOW is an ACCEPT placed before every deny: a listed country can never be blocked
+$shsrc = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/shharden.php'));
+has($shsrc, "'csf_cc_allow'   => ['Country exemption that voids every block', 'smpro_shh_fix_cc_allow'],", 'U10: a non-empty CC_ALLOW is a hardening fix with Undo');
+has($shsrc, "\$c = preg_replace('/^(\s*CC_ALLOW\s*=\s*)\"[^\"]*\"/m', '\${1}\"\"', (string)@file_get_contents(\$f), 1);", 'U10: the fix empties CC_ALLOW and nothing else (CC_ALLOW_PORTS stays)');
+has($shsrc, "if (trim(\$st) !== 'active') { @copy(\$bak, \$f); smpro_shh_csf_reload(); return [false, 'LFD did not come back — csf.conf put back', []]; }", 'U10: a reload that leaves LFD down puts the old file back');

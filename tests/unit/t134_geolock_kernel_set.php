@@ -32,6 +32,8 @@ has($src, "if (strpos(\$l, '-j ALLOWIN') !== false) { \$pos = \$n + 1; break; }"
 has($src, "\$dl = function_exists('smpro_csf_deny_lock') ? smpro_csf_deny_lock() : null;", 'W7: the migration rewrites csf.deny under the shared lock');
 hasnt($src, "'80'", 'W8: no port number is written in the backend; the lock\'s own port list decides, and 80/443 are stripped from any group');
 has($src, "if (defined('SMPRO_TEST_SRC') && !defined('SMPRO_GS_TEST_LIVE')) return (\$ok = false);", 'W9: a test never touches the kernel unless it says so');
+has($src, "\$f = is_file('/usr/local/csf/bin/csfpost.sh') ? '/usr/local/csf/bin/csfpost.sh' : '/etc/csf/csfpost.sh';", 'W13: the hook goes into the csfpost.sh CSF actually runs (its own order of preference)');
+has($src, "\$new = \$first . \"\\n\" . trim(\$block) . \"\\n\" . ltrim(implode(\"\\n\", \$out), \"\\n\");", 'W13: and at the top, above another product\'s early exit');
 $tick = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/geologin_tick.php'));
 has($tick, "smpro_gs_restore(smpro_gl_ports_for(\$cfg))", 'W10: the worker puts the set and rule back every minute');
 has($tick, "if (in_array('--restore', (array)(\$argv ?? []), true)) exit;", 'W10: and csfpost.sh can ask for just that');

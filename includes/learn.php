@@ -13,6 +13,9 @@
  *   behaviour - what the code does, read after undoing string escapes: fetches code from the network and runs it,
  *               runs commands from request input, writes request data into files while walking folders, heavy
  *               escaping around a dynamic run. Learned as the set of behaviours the confirmed file had.
+ *   docblock  - the comment header the file opens with. A planted family keeps its invented header ("Advanced
+ *               Application Engine", a fake plugin author) across variants whose hash and code shape differ, and the
+ *               header is what a scanner reading behaviour alone misses when the command and its input sit far apart.
  *
  * Separately, and without any lesson, a process check finds what a file scan cannot: an account process whose
  * program runs from memory or was deleted after start, a process whose name disagrees with its program, and a
@@ -52,7 +55,7 @@ function smpro_lr_cfg(): array {
  * neither are incidents: no path, no account, no file content, no address ever goes out. What comes back is the
  * pool: lessons other operators confirmed, which this server then reports on but never acts on by itself. "Not
  * malicious" here is reported back, so a mistaken lesson is withdrawn for everyone. */
-function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour']; }
+function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour', 'docblock']; }
 /** The outgoing list: patterns of lessons confirmed HERE, plus "wrong" votes on shared ones. */
 function smpro_lr_share_payload(array $L): array {
     $out = [];
@@ -140,6 +143,15 @@ function smpro_lr_decode(string $code): string {
     $d = preg_replace('/["\']\s*\.\s*["\']/', '', (string)$d);
     return (string)$d;
 }
+/** The header comment a file opens with, normalised: lower case, one space, no punctuation noise. '' when there is
+ *  none or it is too short to be a signature (a bare "<?php" or a one-word comment is not one). */
+function smpro_lr_docblock(string $code): string {
+    if (!preg_match('#^\s*<\?php\s*(?:/\*\*?(.*?)\*/|//(.*?)\n)#s', substr($code, 0, 4096), $m)) return '';
+    $t = strtolower(preg_replace('/[^a-z0-9 ]+/i', ' ', (string)($m[1] !== '' ? $m[1] : ($m[2] ?? ''))));
+    $t = trim(preg_replace('/\s+/', ' ', $t));
+    return strlen($t) >= 40 ? $t : '';
+}
+function smpro_lr_docblock_key(string $code): string { $t = smpro_lr_docblock($code); return $t === '' ? '' : sha1($t); }
 /** Behaviour tags of a piece of code. Classes of action, never names. */
 function smpro_lr_tags(string $code): array {
     $raw = $code; $d = strtolower(smpro_lr_decode($code)); $t = [];
@@ -208,6 +220,8 @@ function smpro_lr_learn_file(string $read, string $where, string $source): array
         foreach (array_keys($roots) as $r) if ($r !== $root && @is_file($r . '/' . $rel)) { $have++; if ($have >= 3 && $have > count($roots) * 0.05) break; }
         if (!($have >= 3 && $have > count($roots) * 0.05)) $ids[] = smpro_lr_lesson_add($L, 'relpath', $rel, "A file at $rel inside a site", $inc);
     }
+    $head = smpro_lr_docblock((string)@file_get_contents($read, false, null, 0, 4096));
+    if ($head !== '') $ids[] = smpro_lr_lesson_add($L, 'docblock', sha1($head), 'A file opening with the header "' . substr($head, 0, 70) . (strlen($head) > 70 ? '…' : '') . '"', $inc);
     $tags = smpro_lr_tags((string)@file_get_contents($read, false, null, 0, 1048576));
     $code0 = (string)@file_get_contents($read, false, null, 0, 1048576);
     if (smpro_lr_tags_strong($tags, $code0) !== '') $ids[] = smpro_lr_lesson_add($L, 'behaviour', implode('+', $tags), 'Code that ' . smpro_lr_tags_strong($tags, $code0) . ' (' . implode(', ', $tags) . ')', $inc);
@@ -250,12 +264,13 @@ function smpro_lr_hunt(int $budget = 500): array {
     $t0 = time(); $L = smpro_lr_lessons(); $cfg = smpro_lr_cfg(); $GLOBALS['smpro_lr_L'] = $L;
     $allow = array_flip(smpro_lr_load('allow'));
     $on = array_filter($L, fn($l) => ($l['state'] ?? 'on') === 'on');
-    $hashes = []; $sizes = []; $rels = []; $dots = []; $behav = [];
+    $hashes = []; $sizes = []; $rels = []; $dots = []; $behav = []; $docs = [];
     foreach ($on as $id => $l) {
         if ($l['type'] === 'hash') { [$h, $s] = explode(':', $l['key']) + ['', '0']; $hashes[$h] = $id; $sizes[(int)$s] = true; }
         elseif ($l['type'] === 'relpath') $rels[$l['key']] = $id;
         elseif ($l['type'] === 'dotdir') { [$dd, $ext] = explode(':', $l['key']) + ['', '']; $dots[$dd . ':' . $ext] = $id; }
         elseif ($l['type'] === 'behaviour') $behav[$l['key']] = $id;
+        elseif ($l['type'] === 'docblock') $docs[$l['key']] = $id;
     }
     $found = []; $done = 0; $partial = false;
     $add = function (string $p, string $user, string $lid, string $why) use (&$found, $allow) {
@@ -281,6 +296,7 @@ function smpro_lr_hunt(int $budget = 500): array {
             if (isset($sizes[$sz])) { $h = (string)@hash_file('sha256', $p); if (isset($hashes[$h])) $add($p, $user, $hashes[$h], 'the exact file of a confirmed incident'); }
             $rel = substr($p, strlen($root) + 1); $first = explode('/', $rel)[0]; $ext = strtolower((string)pathinfo($p, PATHINFO_EXTENSION));
             if ($first !== '' && $first[0] === '.' && strpos($rel, '/') !== false && isset($dots[$first . ':' . $ext])) $add($p, $user, $dots[$first . ':' . $ext], "a .$ext script inside $first/");
+            if ($docs && $sz < 1048576) { $dk = smpro_lr_docblock_key((string)@file_get_contents($p, false, null, 0, 4096)); if ($dk !== '' && isset($docs[$dk])) $add($p, $user, $docs[$dk], 'opens with the same header as a confirmed incident'); }
             if ($behav && $sz < 1048576) {
                 $code1 = (string)@file_get_contents($p, false, null, 0, 1048576); $tags = smpro_lr_tags($code1);
                 $s = smpro_lr_tags_strong($tags, $code1);
@@ -295,6 +311,7 @@ function smpro_lr_hunt(int $budget = 500): array {
         foreach ([$h . '/tmp', $h . '/.cagefs/tmp'] as $td) foreach (glob($td . '/*.php') ?: [] as $p) {
             if (is_link($p) || !is_file($p)) continue;
             $code2 = (string)@file_get_contents($p, false, null, 0, 1048576); $tags = smpro_lr_tags($code2); $s = smpro_lr_tags_strong($tags, $code2);
+            $dk = smpro_lr_docblock_key($code2); if ($dk !== '' && isset($docs[$dk])) { $add($p, $u, $docs[$dk], 'opens with the same header as a confirmed incident'); continue; }
             $sz = (int)@filesize($p); $h2 = isset($sizes[$sz]) ? (string)@hash_file('sha256', $p) : '';
             if ($h2 !== '' && isset($hashes[$h2])) $add($p, $u, $hashes[$h2], 'the exact file of a confirmed incident');
             elseif ($s !== '') $add($p, $u, 'tmp', 'a script in the account\'s temporary folder that ' . $s);
@@ -397,10 +414,20 @@ function smpro_lr_kill(int $pid): array {
     return ['ok' => (bool)$ok, 'msg' => $ok ? 'Stopped. What it was is kept in ' . $ev : 'Could not stop it.'];
 }
 
+/** A new lesson kind only helps if the files already in the store teach it too: relearn them once per schema version. */
+function smpro_lr_relearn_store(): int {
+    $want = '2'; $f = smpro_lr_dir() . '/schema.ver';
+    if (trim((string)@file_get_contents($f)) === $want) return 0;
+    $n = 0;
+    foreach (smpro_lr_quarantined(2000) as $q) { if (!empty($q['restored']) || !is_file((string)$q['kept'])) continue; smpro_lr_learn_file((string)$q['kept'], (string)$q['orig'], 'relearn'); $n++; }
+    @file_put_contents($f, $want);
+    return $n;
+}
 /* ---------------- schedule ---------------- */
 /** One tick (every ten minutes): note hidden processes, and hunt when a lesson is new or the last hunt is a day old. */
 function smpro_lr_tick(): void {
     smpro_lr_save('procs', ['at' => time(), 'rows' => smpro_lr_procs()]);
+    smpro_lr_relearn_store();
     $last = (int)(smpro_lr_load('findings')['at'] ?? 0);
     if (time() - (int)(smpro_lr_load('share')['last'] ?? 0) > 6 * 3600) smpro_lr_share();
     $L = smpro_lr_lessons();

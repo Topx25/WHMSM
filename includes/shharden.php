@@ -101,6 +101,26 @@ function smpro_shh_csf_gaps(): ?array {
 // reaches cPanel sometimes as 127.0.0.1 and sometimes as their own address, and any IP binding then ends every session
 // within minutes (seen on a production server the day it was applied).
 function smpro_shh_tweak_want(): array { return ['maxemailsperhour' => '500', 'emailsperdaynotify' => '1000']; }
+/** CSF's CC_ALLOW is not "let these countries in" - it is "never block these countries": CSF puts it as an ACCEPT
+ *  jump BEFORE csf.allow, csf.deny and every rule the plugin writes, so a block on an address from a listed country
+ *  is silently void. A production server had 22 countries there, including the ones its attackers came from, and
+ *  90 lock blocks that never did anything. "Reach the login ports from these countries" is CC_ALLOW_PORTS, which
+ *  stays as it is. Returns the current value when it is non-empty, else ''. */
+function smpro_shh_csf_cc_allow(): ?string {
+    $f = '/etc/csf/csf.conf'; if (!is_readable($f)) return null;
+    return preg_match('/^\s*CC_ALLOW\s*=\s*"([^"]*)"/m', (string)@file_get_contents($f), $m) ? trim($m[1]) : null;
+}
+function smpro_shh_fix_cc_allow(): array {
+    $cur = smpro_shh_csf_cc_allow(); if ($cur === null) return [false, 'CSF is not installed', []];
+    if ($cur === '') return [true, 'already empty', []];
+    $f = '/etc/csf/csf.conf'; $bak = smpro_shh_keep($f); if ($bak === null) return [false, 'could not back up csf.conf', []];
+    $c = preg_replace('/^(\s*CC_ALLOW\s*=\s*)"[^"]*"/m', '${1}""', (string)@file_get_contents($f), 1);
+    if (@file_put_contents($f, $c) === false) return [false, 'could not write csf.conf', []];
+    smpro_shh_csf_reload();
+    [$rc, $st] = smpro_shh_x('systemctl is-active lfd', 5);
+    if (trim($st) !== 'active') { @copy($bak, $f); smpro_shh_csf_reload(); return [false, 'LFD did not come back — csf.conf put back', []]; }
+    return [true, 'CC_ALLOW emptied (was "' . $cur . '"); every block now applies to those countries too; firewall reloaded', [['file', $f, $bak], ['csf']]];
+}
 function smpro_shh_tweak_gaps(): ?array {
     $f = '/var/cpanel/cpanel.config'; if (!is_readable($f)) return null;
     $c = (string)@file_get_contents($f); $g = [];
@@ -254,6 +274,7 @@ function smpro_shh_fixes(): array {
         'php_urlinclude' => ['PHP allow_url_include Off', 'smpro_shh_fix_php'],
         'csf_harden'     => ['CSF/LFD hardening', 'smpro_shh_fix_csf'],
         'mail_caps'      => ['Outgoing mail caps', 'smpro_shh_fix_tweaks'],
+        'csf_cc_allow'   => ['Country exemption that voids every block', 'smpro_shh_fix_cc_allow'],
         'imunify_harden' => ['Imunify360 protection settings', 'smpro_shh_fix_imunify'],
     ];
 }
@@ -313,6 +334,14 @@ function smpro_shh_checks(): array {
             $cg ? count($cg) . ' CSF setting(s) weaker than recommended.' : 'Distributed-attack and mail-script detection, syslog restriction and SSH connection limits are on.',
             'Without LF_DISTATTACK a password-spraying botnet that uses one try per address is never blocked; without LF_SCRIPT_ALERT a hacked site that sends spam is never reported; without SSH connection limits brute force runs at line speed.',
             $cg ? 'Apply: csf.conf is kept, the values are changed, and the firewall reloads. If LFD does not come back, the old file is put back automatically.' : 'No action needed.', $ev, $cg ? 'csf_harden' : ''); }
+    $cca = smpro_shh_csf_cc_allow();
+    if ($cca !== null) {
+        $C[] = smpro_sh_mk('Country exemption that voids every block (CSF CC_ALLOW)', $cca !== '' ? 'critical' : 'ok',
+            $cca !== '' ? 'CC_ALLOW lists ' . count(array_filter(explode(',', $cca))) . ' countr' . (count(array_filter(explode(',', $cca))) === 1 ? 'y' : 'ies') . ': addresses there can never be blocked.' : 'CC_ALLOW is empty.',
+            'CSF places CC_ALLOW as an ACCEPT before csf.allow, csf.deny and every rule this plugin writes. An attacker from a listed country passes every block - the Country Login Lock, Intrusion Monitor, WP Guard and manual denies all become void for that country. Letting countries REACH the login ports is CC_ALLOW_PORTS, a different setting that is left as it is.',
+            $cca !== '' ? 'Apply: CC_ALLOW is emptied (csf.conf kept first) and the firewall reloads; if LFD does not come back the old file is put back automatically. Undo restores it.' : 'No action needed.',
+            $cca !== '' ? 'CC_ALLOW = "' . $cca . '"' : '', $cca !== '' ? 'csf_cc_allow' : '');
+    }
     $tg = smpro_shh_tweak_gaps();
     if ($tg !== null) { $ev = ''; foreach ($tg as $k => [$c, $v]) $ev .= "$k = '" . $c . "' (want '$v')\n";
         $C[] = smpro_sh_mk('Outgoing mail caps', $tg ? 'warning' : 'ok',

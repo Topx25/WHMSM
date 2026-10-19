@@ -34,12 +34,20 @@ is_eq(smpro_lr_tags_strong(smpro_lr_tags($shell), $shell), 'runs system commands
 $cfgf = '<?php define("DB_HOST","localhost"); require_once __DIR__ . "/vendor/autoload.php";';
 is_eq(smpro_lr_tags_strong(smpro_lr_tags($cfgf)), '', 'C4: configuration code is not malicious');
 
+// the header lesson: a planted family keeps its invented header across variants
+$v1 = "<?php\n/**\n * Advanced Application Engine\n * Core component for language updates and framework localized system sync.\n */\nclass Registry_Data_Adapter { private \$dataset; function run() { \$this->dataset = \$_POST['q']; } function go() { \$p = proc_open(\$this->dataset . ' 2>&1', [], \$pipes); } }";
+$v2 = str_replace('Registry_Data_Adapter', 'Registry_Data_Bridge', $v1) . "\n// variant\n";
+is_eq(smpro_lr_docblock_key($v1), smpro_lr_docblock_key($v2), 'H1: two variants with different code and hash share one header key');
+ok(smpro_lr_docblock_key($v1) !== '' && smpro_lr_docblock("<?php\n// hi\n") === '' && smpro_lr_docblock("<?php echo 1;") === '', 'H2: a short or missing header is no signature');
+ok(smpro_lr_docblock_key($v1) !== smpro_lr_docblock_key("<?php\n/**\n * Plugin Name: WP Guard\n * Description: Login security for WordPress - brute-force auto-ban and more.\n */"), 'H3: a different header is a different key');
 // learn → hunt → quarantine → restore, on a fake site in a temp home (no docroot: only hash and behaviour lessons)
 $h = sys_get_temp_dir() . '/t133_' . getmypid(); $site = "$h/site"; @mkdir($site, 0755, true);
 $bad = "$site/x.php"; file_put_contents($bad, $loader);
 $ids = smpro_lr_learn_file($bad, "/home/t133u/public_html/x.php", 'test');
 $L = smpro_lr_lessons();
 is_eq(in_array('hash', array_map(fn($i) => $L[$i]['type'], $ids), true) && in_array('behaviour', array_map(fn($i) => $L[$i]['type'], $ids), true), true, 'L1: the file taught an exact-file and a behaviour lesson');
+$hv = "$site/h.php"; file_put_contents($hv, $v1); $hids = smpro_lr_learn_file($hv, "/home/t133u/public_html/h.php", 'test'); $L = smpro_lr_lessons();
+ok(in_array('docblock', array_map(fn($i) => $L[$i]['type'], $hids), true), 'L1b: a file with an invented header taught a header lesson');
 is_eq(is_file(smpro_lr_dir() . '/hunt_wanted'), true, 'L2: a new lesson asks for a hunt');
 $fp = (string)hash_file('sha256', $bad);
 smpro_lr_mark_fp($fp);

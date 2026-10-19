@@ -6,7 +6,7 @@ require_once SMPRO_BASE . '/includes/learn.php';
 /** t135 - lessons are shared between servers as PATTERNS only: nothing that identifies a site, an account, a file's
  *  contents or an address leaves; a shared lesson is reported here and never acts by itself; a "wrong" vote goes back. */
 $src = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/learn.php'));
-has($src, "function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour']; }", 'S1: only hash, hidden-folder and behaviour lessons are shared - never a place inside a site');
+has($src, "function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour', 'docblock']; }", 'S1: only hash, hidden-folder, behaviour and header lessons are shared - never a place inside a site');
 has($src, "unset(\$p['telemetry']);", 'S2: the license payload goes without the telemetry block');
 has($src, "&& (\$L[\$lid]['source'] ?? '') !== 'shared' && !empty(\$L[\$lid]['incidents'])", 'S3: automatic quarantine needs a lesson confirmed HERE, never a shared one');
 has($src, "if (time() - (int)(smpro_lr_load('share')['last'] ?? 0) > 6 * 3600) smpro_lr_share();", 'S4: the worker exchanges every six hours');

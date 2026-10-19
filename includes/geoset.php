@@ -209,13 +209,24 @@ function smpro_gs_migrate(string $denyFile, int $ttlDays, array $ports): array {
 /* ---------------- CSF hook: restore right after CSF reloads (the worker covers the gap otherwise) ---------------- */
 function smpro_gs_hook_install(): bool {
     if (defined('SMPRO_TEST_SRC')) return true;
-    $f = '/etc/csf/csfpost.sh'; if (!is_dir('/etc/csf')) return false;
+    if (!is_dir('/etc/csf')) return false;
+    // The file CSF actually runs, in CSF's own order of preference: /usr/local/csf/bin/csfpost.sh wins over
+    // /etc/csf/csfpost.sh when both exist. A production server had both, our line sat in the one CSF never ran, and
+    // every reload emptied the set until the worker's next minute.
+    $f = is_file('/usr/local/csf/bin/csfpost.sh') ? '/usr/local/csf/bin/csfpost.sh' : '/etc/csf/csfpost.sh';
     $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : '/usr/local/cpanel/3rdparty/bin/php';
     $block = "\n# " . SMPRO_GS_TAG . " set restore (Safety Monitor Pro): put the Country Login Lock back after CSF reloaded its rules\n"
            . "timeout 60 $php " . SMPRO_BASE . "/bin/geologin_tick.php --restore >/dev/null 2>&1 || true\n";
     $cur = @is_file($f) ? (string)@file_get_contents($f) : "#!/usr/bin/env bash\n";
-    if (strpos($cur, SMPRO_GS_TAG . ' set restore') !== false) return true;
-    if (@file_put_contents($f, rtrim($cur, "\n") . "\n" . $block, LOCK_EX) === false) return false;   // appended: another product's lines stay as they are
+    // Right after the shebang, not at the end: another product's csfpost.sh on a server with nftables ended with
+    // `exit 0` before our appended lines ever ran, and the lock stayed down until the worker's next minute.
+    $lines = explode("\n", $cur); $out = []; $i = 0; $had = false;
+    while ($i < count($lines)) { if (strpos($lines[$i], '# ' . SMPRO_GS_TAG . ' set restore') === 0) { $had = true; $i += 2; continue; } $out[] = $lines[$i]; $i++; }
+    $atTop = $had && isset($lines[1]) && strpos($lines[1], '# ' . SMPRO_GS_TAG . ' set restore') === 0;
+    if ($atTop) return true;
+    $first = ($out && strpos($out[0], '#!') === 0) ? array_shift($out) : '#!/usr/bin/env bash';
+    $new = $first . "\n" . trim($block) . "\n" . ltrim(implode("\n", $out), "\n");
+    if (@file_put_contents($f, rtrim($new, "\n") . "\n", LOCK_EX) === false) return false;   // the other product's lines stay as they are, below ours
     @chmod($f, 0700);
     return true;
 }
