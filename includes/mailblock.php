@@ -126,11 +126,17 @@ function smpro_mb_other_layers(): array {
                 'active' => ($mode !== '' && $mode !== 'report_only'),
                 'detail' => 'Per-account outbound spam rate limiting' . ($mode !== '' ? ' (mode: ' . $mode . ')' : '') . '. Blocks compromised accounts, not individual senders.'];
     }
-    // MailGuard — third-party mail protection plugin.
-    if (@is_dir('/etc/mailguard')) {
-        $L[] = ['key' => 'mailguard', 'name' => 'MailGuard', 'kind' => 'Mail protection plugin',
-                'active' => @is_file('/etc/mailguard/config.json'),
-                'detail' => 'Third-party mail-protection plugin. Complements, does not overlap, SM Pro\'s sender-address list.'];
+    // MailGuard - outgoing-mail protection. It reads AND writes this very list and places its own Exim rule for it,
+    // so an address blocked on either product's screen is blocked by both; its holds and throttles are shown below.
+    if (function_exists('smpro_mg_present') && smpro_mg_present()) {
+        $hook = smpro_mg_hook_present();
+        $L[] = ['key' => 'mailguard', 'name' => 'MailGuard', 'kind' => 'Outgoing mail / shared list',
+                'active' => true,
+                'detail' => 'Shares THIS list (' . SMPRO_MB_LIST . '): an address added on either screen is blocked by both products. '
+                          . ($hook ? 'MailGuard\'s own Exim rule also consults the list, so disabling enforcement here alone does not unblock anyone.' : 'Its Exim rule for the list is not in place; this plugin\'s rules do the blocking.')
+                          . ' Its account throttles, mailbox holds and verdicts are its own and are shown here read-only.'];
+    } elseif (@is_dir('/etc/mailguard')) {
+        $L[] = ['key' => 'mailguard', 'name' => 'MailGuard', 'kind' => 'Mail protection plugin', 'active' => false, 'detail' => 'MailGuard\'s configuration folder exists but the product is not installed.'];
     }
     // cPanel blocked incoming email domains (WHM › Mail).
     $bd = '/etc/blocked_incoming_email_domains';
@@ -227,7 +233,10 @@ function smpro_mb_install(): array {
     if (!is_file(SMPRO_MB_LIST)) { @file_put_contents(SMPRO_MB_LIST, ''); @chmod(SMPRO_MB_LIST, 0644); }
 
     if (!is_dir(dirname(SMPRO_MB_ACL))) return [false, 'This does not look like a cPanel server (missing ' . dirname(SMPRO_MB_ACL) . ').', false];
-    $acl = smpro_mb_splice((string)@file_get_contents(SMPRO_MB_ACL), smpro_mb_acl_block());
+    // MailGuard's rule for the same list already refuses these senders at SMTP time: a second deny would be the same
+    // verdict twice. This plugin's own rule is then left out (and removed if an earlier build placed it).
+    $mgRule = function_exists('smpro_mg_hook_present') && smpro_mg_hook_present();
+    $acl = $mgRule ? smpro_mb_unsplice((string)@file_get_contents(SMPRO_MB_ACL)) : smpro_mb_splice((string)@file_get_contents(SMPRO_MB_ACL), smpro_mb_acl_block());
     if (@file_put_contents(SMPRO_MB_ACL, $acl) === false) return [false, 'Cannot write the Exim ACL slot (' . SMPRO_MB_ACL . ').', false];
 
     if (!is_dir(dirname(SMPRO_MB_SF))) return [false, 'Missing ' . dirname(SMPRO_MB_SF) . ' (cPanel Exim sysfilter dir).', false];
@@ -265,7 +274,11 @@ function smpro_mb_install(): array {
 
     $build = '/scripts/buildeximconf';
     if (!is_executable($build)) return [false, 'Saved the rules, but ' . $build . ' is not available to activate them.', false];
+    // MailGuard rebuilds Exim too; the two take turns through its lock, never run at once.
+    $lk = function_exists('smpro_mg_exim_lock') ? smpro_mg_exim_lock(90) : true;
+    if ($lk === null) return [false, 'Saved the rules, but MailGuard is rebuilding Exim right now; try again in a minute.', false];
     $out = (string)@shell_exec('timeout 180 ' . escapeshellarg($build) . ' 2>&1');
+    if (function_exists('smpro_mg_exim_unlock')) smpro_mg_exim_unlock($lk);
 
     // verify via the real directive path (comment-strip-proof — see smpro_mb_layers)
     $L = smpro_mb_layers();
@@ -302,10 +315,16 @@ function smpro_mb_uninstall(): array {
         @file_put_contents(SMPRO_MB_LOPTS, $lopts);
     }
     $build = '/scripts/buildeximconf';
+    $lk = function_exists('smpro_mg_exim_lock') ? smpro_mg_exim_lock(90) : true;
+    if ($lk === null) return [false, 'MailGuard is rebuilding Exim right now; try again in a minute.'];
     if (is_executable($build)) @shell_exec('timeout 180 ' . escapeshellarg($build) . ' 2>&1');
+    if (function_exists('smpro_mg_exim_unlock')) smpro_mg_exim_unlock($lk);
     $stillAcl = strpos((string)@file_get_contents(SMPRO_MB_EXIMC), SMPRO_MB_LIST) !== false;
     $stillSf  = strpos((string)@file_get_contents(SMPRO_MB_SYSGEN), SMPRO_MB_LIST) !== false;
     if (!$stillAcl && !$stillSf) return [true, 'Enforcement disabled — the block rules were removed from Exim. Your list is kept for later.'];
+    // MailGuard's own rule consults the same list: this plugin's rules are gone, the senders are still refused by it.
+    if (!$stillSf && function_exists('smpro_mg_hook_present') && smpro_mg_hook_present())
+        return [true, 'This plugin\'s rules were removed, but MailGuard\'s own Exim rule still consults the same list, so every address on it is still refused. Disable the shared list in MailGuard as well to unblock them.'];
     return [false, 'Tried to disable, but the rules are still present after the Exim rebuild.'];
 }
 

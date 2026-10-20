@@ -66,6 +66,7 @@ require __DIR__ . '/includes/tgbot.php';
 require __DIR__ . '/includes/cooler.php';
 require __DIR__ . '/includes/load_investigate.php';
 require __DIR__ . '/includes/mailblock.php';
+require __DIR__ . '/includes/mailguard.php';
 require __DIR__ . '/includes/uinvestigate.php';
 require __DIR__ . '/includes/maintenance.php';   // A1 swap-expand + A3 auto-purge scheduler (owns shared smpro_mnt_* helpers)
 require __DIR__ . '/includes/disk_tmp.php';       // A2 /tmp-expand (uses smpro_mnt_*; MUST be required after maintenance.php)

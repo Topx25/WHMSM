@@ -27,6 +27,7 @@
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
+if (!function_exists('smpro_mg_present')) { $mgf = __DIR__ . '/mailguard.php'; if (is_file($mgf)) require_once $mgf; }   // the worker does not boot index.php
 function smpro_lr_dir(string $sub = ''): string {
     $d = SMPRO_VARLIB . '/learn' . ($sub !== '' ? '/' . $sub : '');
     if (!is_dir($d)) @mkdir($d, 0700, true);
@@ -317,6 +318,7 @@ function smpro_lr_hunt(int $budget = 500): array {
     $found = []; $done = 0; $partial = false;
     $add = function (string $p, string $user, string $lid, string $why) use (&$found, $allow) {
         if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($p)) return;
+        if (function_exists('smpro_mg_trusted') && smpro_mg_trusted($p)) return;
         $sha = (string)@hash_file('sha256', $p); if ($sha !== '' && isset($allow[$sha])) return;
         if (!isset($found[$p])) $found[$p] = ['path' => $p, 'user' => $user, 'sha' => $sha, 'size' => (int)@filesize($p), 'mtime' => (int)@filemtime($p), 'lessons' => [], 'why' => []];
         if (!in_array($lid, $found[$p]['lessons'], true)) { $found[$p]['lessons'][] = $lid; $found[$p]['why'][] = $why . (((($GLOBALS['smpro_lr_L'][$lid]['source'] ?? '') === 'shared')) ? ' (a lesson shared by another server)' : ''); }
@@ -332,9 +334,10 @@ function smpro_lr_hunt(int $budget = 500): array {
         if (time() - $t0 > $budget) { $partial = true; break; }
         $done++; $doneRoots[] = $root;
         foreach ($rels as $rel => $lid) { $p = $root . '/' . $rel; if (is_file($p) && !is_link($p)) $add($p, $user, $lid, 'same place as a confirmed incident'); }
-        foreach ($names as $nm => $lid) {
-            $hits = (string)@shell_exec('timeout 20 find ' . escapeshellarg($root) . ' -xdev -maxdepth 8 -type f -iname ' . escapeshellarg($nm) . ' -print 2>/dev/null | head -20');
-            foreach (explode("\n", $hits) as $p) if ($p !== '' && !is_link($p)) $add($p, $user, $lid, 'the same file name as a confirmed incident');
+        if ($names) {   // one walk of the site for every name lesson at once, not one walk per name
+            $or = implode(' -o ', array_map(fn($nm) => '-iname ' . escapeshellarg($nm), array_keys($names)));
+            $hits = (string)@shell_exec('timeout 60 find ' . escapeshellarg($root) . ' -xdev -maxdepth 8 -type f \\( ' . $or . ' \\) -print 2>/dev/null | head -200');
+            foreach (explode("\n", $hits) as $p) { $nm = strtolower(basename($p)); if ($p !== '' && !is_link($p) && isset($names[$nm])) $add($p, $user, $names[$nm], 'the same file name as a confirmed incident'); }
         }
         foreach (smpro_lr_structural($root) as [$p, $why]) $add($p, $user, 'structural', $why);
         foreach (smpro_lr_candidates($root, (int)$cfg['recent_days']) as $p) {
@@ -351,6 +354,16 @@ function smpro_lr_hunt(int $budget = 500): array {
             }
         }
         $homes[$user] = true;
+    }
+    // what MailGuard attributed outgoing mail to: a script that sends in bulk is planted or hijacked, and MailGuard saw
+    // the mail this hunt cannot. Reported from its record (read-only); a folder is shown as a folder, never quarantined.
+    if (function_exists('smpro_mg_script_origins')) {
+        try {
+            foreach (smpro_mg_script_origins(60) as $o) {
+                [, $ou] = smpro_lr_owner_root($o['path']);
+                $add($o['path'], $ou, 'mailguard', 'MailGuard attributed outgoing mail to ' . (is_dir($o['path']) ? 'scripts in this folder' : 'this script') . ' (' . (int)$o['messages'] . ' messages, ' . (int)$o['actions'] . ' action(s) in 60 days)');
+            }
+        } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('learn_mailguard', $e); }
     }
     // scripts left in an account's temporary folders (an upload that was never cleaned up runs from there too)
     foreach (array_keys($homes) as $u) {
@@ -382,6 +395,8 @@ function smpro_lr_quarantine(string $path, string $source): array {
     if (!preg_match('#^/home[0-9]*/([^/]+)/#', $path, $m)) return ['ok' => false, 'msg' => 'Only files inside an account home.'];
     $user = $m[1];
     if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($path)) return ['ok' => false, 'msg' => 'Refused: this is WP Guard\'s own file.'];
+    if (function_exists('smpro_mg_trusted') && smpro_mg_trusted($path)) return ['ok' => false, 'msg' => 'Refused: this is MailGuard\'s own file.'];
+    if (is_dir($path)) return ['ok' => false, 'msg' => 'Refused: a folder is reported, not quarantined - open it and quarantine the file that sends.'];
     $safe = function_exists('smpro_path_safe') ? (string)smpro_path_safe($path, [(string)smpro_user_home($user)]) : '';
     if ($safe === '' || !is_file($safe) || is_link($path)) return ['ok' => false, 'msg' => 'Refused: not a regular file inside that account home.'];
     $st = @stat($safe); $sha = (string)@hash_file('sha256', $safe);

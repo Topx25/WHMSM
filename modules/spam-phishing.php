@@ -886,6 +886,19 @@ $mbOther = function_exists('smpro_mb_other_layers') ? smpro_mb_other_layers() : 
     </div>
     <?php endif; ?>
 
+    <?php $mgS = function_exists('smpro_mg_status') ? smpro_mg_status() : null; if ($mgS !== null): ?>
+    <div style="margin-top:12px;border:1px solid var(--line);border-radius:9px;overflow:hidden">
+      <div style="padding:8px 12px;background:var(--card2,rgba(0,0,0,.02));font-size:12.5px"><b>&#128737; MailGuard on this server</b> <span class="meta">- <?= smpro_h($mgS['version'] ?: 'version unreadable') ?>, shares the list above; its own measures, read-only here</span>
+        <?php if ($mgS['url'] !== ''): ?><a class="fa-lnk" href="<?= smpro_h($mgS['url']) ?>" style="float:right">Open MailGuard &#8599;</a><?php endif; ?></div>
+      <table class="smpro-table" style="margin:0"><tbody>
+        <tr><td style="white-space:nowrap"><b>Shared list</b></td><td class="meta" style="font-size:12px"><?= $mgS['hook'] ? 'MailGuard\'s Exim rule consults ' . smpro_h(SMPRO_MB_LIST) . ' too: disabling enforcement here alone does not unblock an address.' : 'MailGuard\'s own Exim rule for the list is not in place; this plugin\'s rules do the blocking.' ?></td></tr>
+        <tr><td style="white-space:nowrap"><b>Mailboxes held</b> <span class="b <?= $mgS['held'] ? 'orange' : 'gray' ?>"><?= count($mgS['held']) ?></span></td><td class="mono" style="font-size:12px"><?= $mgS['held'] ? smpro_h(implode(', ', array_slice($mgS['held'], 0, 12))) . (count($mgS['held']) > 12 ? ' …' : '') : '<span class="meta">none</span>' ?></td></tr>
+        <tr><td style="white-space:nowrap"><b>Throttled</b> <span class="b <?= $mgS['throttled'] ? 'orange' : 'gray' ?>"><?= count($mgS['throttled']) ?></span></td><td class="mono" style="font-size:12px"><?= $mgS['throttled'] ? smpro_h(implode(', ', array_slice($mgS['throttled'], 0, 12))) . (count($mgS['throttled']) > 12 ? ' …' : '') : '<span class="meta">none</span>' ?></td></tr>
+        <tr><td style="white-space:nowrap"><b>Verdicts</b></td><td class="meta" style="font-size:12px"><?= $mgS['read'] ? (int)$mgS['open_incidents'] . ' open incident(s), ' . (int)$mgS['active_actions'] . ' active action(s)' . ($mgS['actions'] ? ': ' . smpro_h(implode('; ', array_map(fn($a) => $a['action'] . ' ' . $a['type'] . ' ' . $a['target'], array_slice($mgS['actions'], 0, 6)))) : '') : 'MailGuard\'s database could not be read (locked or missing) - this is "unknown", not "none".' ?></td></tr>
+      </tbody></table>
+    </div>
+    <?php endif; ?>
+
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
       <input type="text" id="sblkInput" placeholder="user@example.com   or   *@example.com" autocomplete="off" spellcheck="false"
              style="flex:1;min-width:240px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:monospace;font-size:13px">

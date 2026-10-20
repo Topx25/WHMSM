@@ -313,6 +313,18 @@ function smpro_shh_checks(): array {
             $serious ? 'Open WP Guard > Threats > Compromise check and fix the open findings there (each fix has Undo).' : 'No action needed.',
             $ev);
     }
+    if (!function_exists('smpro_mg_status')) { $mgf = __DIR__ . '/mailguard.php'; if (is_file($mgf)) require_once $mgf; }
+    $mg = function_exists('smpro_mg_status') ? smpro_mg_status() : null;
+    if ($mg !== null) {
+        $sfLive = function_exists('smpro_mb_installed') && smpro_mb_installed();
+        $ev = 'MailGuard ' . ($mg['version'] ?: '(version unreadable)') . "\nShared sender-block list: " . SMPRO_MB_LIST . ' - ' . ($sfLive ? 'enforced by this plugin\'s system filter' : 'NOT enforced by this plugin') . ($mg['hook'] ? ', and by MailGuard\'s Exim rule' : ', and MailGuard\'s Exim rule is not in place')
+            . "\nMailboxes held by MailGuard: " . count($mg['held']) . "\nAccounts / mailboxes throttled: " . count($mg['throttled'])
+            . "\nOpen incidents: " . ($mg['read'] ? (int)$mg['open_incidents'] : 'unreadable') . "\nActive enforcement actions: " . ($mg['active_actions'] === null ? 'unreadable' : (int)$mg['active_actions']);
+        $C[] = smpro_sh_mk('MailGuard - outgoing-mail protection', !$mg['read'] ? 'info' : ((!$sfLive && !$mg['hook']) ? 'warning' : 'ok'),
+            !$mg['read'] ? 'MailGuard ' . $mg['version'] . ' is installed; its database could not be read.' : ('MailGuard ' . $mg['version'] . ' is installed and shares the sender-block list; ' . ((int)$mg['open_incidents'] > 0 ? (int)$mg['open_incidents'] . ' incident(s) are open on its side.' : 'no incident is open on its side.') . ((!$sfLive && !$mg['hook']) ? ' Neither product has an Exim rule for the shared list right now.' : '')),
+            'Both products block senders from one list: an address added on either screen is refused by Exim for webmail, SMTP and local scripts. MailGuard additionally throttles accounts, holds mailboxes and records which script sent what; Learned Defense reports the scripts it attributed mail to. This plugin reads MailGuard\'s state only and never writes its lists, database or configuration.',
+            (!$sfLive && !$mg['hook']) ? 'Install enforcement on the Spam & phishing page (Blocked sender addresses) so the shared list is consulted again.' : 'No action needed.', $ev, '');
+    }
     $sg = smpro_shh_sysctl_gaps(); $ev = ''; foreach ($sg as $k => [$c, $v]) $ev .= "$k = $c (want $v)\n";
     $C[] = smpro_sh_mk('Kernel network & info-leak settings', $sg ? 'warning' : 'ok',
         $sg ? count($sg) . ' kernel setting(s) weaker than recommended.' : 'Redirects, source routing, dmesg/kptr/ptrace and protected files are hardened.',
