@@ -40,7 +40,7 @@ if (!$P || time() - (int)($P['at'] ?? 0) > 900) { $procs = smpro_lr_procs(); }  
 $onN = count(array_filter($L, fn($l) => ($l['state'] ?? 'on') === 'on'));
 $byUser = []; foreach ($findings as $f) $byUser[$f['user']] = ($byUser[$f['user']] ?? 0) + 1;
 $csrf = smpro_csrf_generate('lr_act');
-$typeLabel = ['hash' => 'exact file', 'relpath' => 'place in a site', 'dotdir' => 'hidden folder', 'behaviour' => 'behaviour', 'docblock' => 'file header'];
+$typeLabel = ['hash' => 'exact file', 'relpath' => 'place in a site', 'dotdir' => 'hidden folder', 'behaviour' => 'behaviour', 'docblock' => 'file header', 'name' => 'file name'];
 smpro_layout_header('Learned Defense');
 ?>
 <h1 class="h">Learned Defense <?= smpro_beta_badge() ?></h1>

@@ -55,7 +55,7 @@ function smpro_lr_cfg(): array {
  * neither are incidents: no path, no account, no file content, no address ever goes out. What comes back is the
  * pool: lessons other operators confirmed, which this server then reports on but never acts on by itself. "Not
  * malicious" here is reported back, so a mistaken lesson is withdrawn for everyone. */
-function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour', 'docblock']; }
+function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour', 'docblock', 'name']; }
 /** The outgoing list: patterns of lessons confirmed HERE, plus "wrong" votes on shared ones. */
 function smpro_lr_share_payload(array $L): array {
     $out = [];
@@ -220,6 +220,10 @@ function smpro_lr_learn_file(string $read, string $where, string $source): array
         foreach (array_keys($roots) as $r) if ($r !== $root && @is_file($r . '/' . $rel)) { $have++; if ($have >= 3 && $have > count($roots) * 0.05) break; }
         if (!($have >= 3 && $have > count($roots) * 0.05)) $ids[] = smpro_lr_lesson_add($L, 'relpath', $rel, "A file at $rel inside a site", $inc);
     }
+    // The name alone, when it is not one every site has: a planted tool keeps its name from one site to the next while
+    // the folders above it change (a sub-site, a theme, a plugin), so the place lesson never met the next copy.
+    $name = strtolower(basename($where));
+    if (smpro_lr_name_rare($name)) $ids[] = smpro_lr_lesson_add($L, 'name', $name, "A file named $name anywhere in a site", $inc);
     $head = smpro_lr_docblock((string)@file_get_contents($read, false, null, 0, 4096));
     if ($head !== '') $ids[] = smpro_lr_lesson_add($L, 'docblock', sha1($head), 'A file opening with the header "' . substr($head, 0, 70) . (strlen($head) > 70 ? '…' : '') . '"', $inc);
     $tags = smpro_lr_tags((string)@file_get_contents($read, false, null, 0, 1048576));
@@ -229,6 +233,43 @@ function smpro_lr_learn_file(string $read, string $where, string $source): array
     @touch(smpro_lr_dir() . '/hunt_wanted');
     if (function_exists('smpro_audit')) smpro_audit('learn_file', ['path' => $where, 'sha256' => $sha, 'lessons' => count($ids), 'source' => $source]);
     return array_values(array_unique($ids));
+}
+/** A file name is a lesson only when it is rare: index.php, wp-load.php or functions.php live in every site and would
+ *  turn every site into a finding. Rare = seen in at most two other document roots, top eight levels. */
+function smpro_lr_name_rare(string $name): bool {
+    if ($name === '' || strlen($name) < 6 || strpos($name, '.') === false) return false;
+    if (in_array($name, ['index.php', 'index.html', '.htaccess', 'wp-load.php', 'wp-config.php', 'functions.php', 'config.php', 'readme.html', 'license.txt', 'error_log'], true)) return false;
+    $n = 0;
+    foreach (array_keys(smpro_lr_docroots()) as $r) {
+        $c = (int)trim((string)@shell_exec('timeout 20 find ' . escapeshellarg($r) . ' -xdev -maxdepth 8 -iname ' . escapeshellarg($name) . ' -print 2>/dev/null | head -1 | wc -l'));
+        if ($c > 0 && ++$n >= 3) return false;
+    }
+    return true;
+}
+/** Structural signs that need no lesson: an .htaccess that turns an odd extension into a CGI program, and a native
+ *  (ELF) executable inside a document root. Both were how a planted "cgi-bin" ran compiled kernel exploits and a
+ *  Perl shell under a store's folder; no PHP reader would ever have opened them. Returns [[path, why], …]. */
+function smpro_lr_structural(string $root): array {
+    $out = [];
+    $ht = (string)@shell_exec('timeout 30 find ' . escapeshellarg($root) . ' -xdev -maxdepth 8 -type f -name .htaccess -size -64k -print 2>/dev/null | head -2000');
+    foreach (explode("\n", $ht) as $p) {
+        if ($p === '' || is_link($p)) continue;
+        $c = (string)@file_get_contents($p, false, null, 0, 65536);
+        if (!preg_match('/^\s*(AddHandler|SetHandler|AddType)\s+(cgi-script|application\/x-httpd-cgi)\b(.*)$/mi', $c, $m)) continue;
+        // .cgi and .pl are what a cgi-bin is for; any other extension (.ss, .txt, .jpg, .alfa) is a program in disguise
+        $exts = preg_split('/\s+/', trim((string)($m[3] ?? '')), -1, PREG_SPLIT_NO_EMPTY);
+        $odd = array_values(array_filter($exts, fn($e) => !in_array(strtolower($e), ['.cgi', '.pl'], true)));
+        if ($m[1] === 'SetHandler' || $odd) $out[] = [$p, 'an .htaccess that makes ' . ($odd ? implode(' ', array_slice($odd, 0, 4)) : 'every file') . ' run as a CGI program'];
+    }
+    // every file over 4k that is not a library's, a shared object or an obvious asset: its first four bytes say whether it is a program
+    $bins = (string)@shell_exec('timeout 60 find ' . escapeshellarg($root) . ' -xdev -maxdepth 8 -type f -size +4k -size -20M ! -path "*/vendor/*" ! -path "*/node_modules/*" ! -name "*.so" ! -name "*.so.*" ! -name "*.php" ! -name "*.js" ! -name "*.css" ! -name "*.htm*" ! -name "*.jp*g" ! -name "*.png" ! -name "*.gif" ! -name "*.svg" ! -name "*.woff*" ! -name "*.ttf" ! -name "*.mp4" ! -name "*.pdf" ! -name "*.zip" ! -name "*.gz" -print 2>/dev/null | head -5000');
+    foreach (explode("\n", $bins) as $p) {
+        if ($p === '' || is_link($p)) continue;
+        $h = @fopen($p, 'rb'); if (!$h) continue; $sig = (string)fread($h, 4); fclose($h);
+        if ($sig === "\x7fELF") $out[] = [$p, 'a native (ELF) executable inside a web folder'];
+        if (count($out) >= 400) break;
+    }
+    return $out;
 }
 /** Teach from a folder of kept files whose layout mirrors where they were found (…/home/<acct>/…). */
 function smpro_lr_teach_folder(string $dir): array {
@@ -264,9 +305,10 @@ function smpro_lr_hunt(int $budget = 500): array {
     $t0 = time(); $L = smpro_lr_lessons(); $cfg = smpro_lr_cfg(); $GLOBALS['smpro_lr_L'] = $L;
     $allow = array_flip(smpro_lr_load('allow'));
     $on = array_filter($L, fn($l) => ($l['state'] ?? 'on') === 'on');
-    $hashes = []; $sizes = []; $rels = []; $dots = []; $behav = []; $docs = [];
+    $hashes = []; $sizes = []; $rels = []; $dots = []; $behav = []; $docs = []; $names = [];
     foreach ($on as $id => $l) {
         if ($l['type'] === 'hash') { [$h, $s] = explode(':', $l['key']) + ['', '0']; $hashes[$h] = $id; $sizes[(int)$s] = true; }
+        elseif ($l['type'] === 'name') $names[strtolower($l['key'])] = $id;
         elseif ($l['type'] === 'relpath') $rels[$l['key']] = $id;
         elseif ($l['type'] === 'dotdir') { [$dd, $ext] = explode(':', $l['key']) + ['', '']; $dots[$dd . ':' . $ext] = $id; }
         elseif ($l['type'] === 'behaviour') $behav[$l['key']] = $id;
@@ -290,6 +332,11 @@ function smpro_lr_hunt(int $budget = 500): array {
         if (time() - $t0 > $budget) { $partial = true; break; }
         $done++; $doneRoots[] = $root;
         foreach ($rels as $rel => $lid) { $p = $root . '/' . $rel; if (is_file($p) && !is_link($p)) $add($p, $user, $lid, 'same place as a confirmed incident'); }
+        foreach ($names as $nm => $lid) {
+            $hits = (string)@shell_exec('timeout 20 find ' . escapeshellarg($root) . ' -xdev -maxdepth 8 -type f -iname ' . escapeshellarg($nm) . ' -print 2>/dev/null | head -20');
+            foreach (explode("\n", $hits) as $p) if ($p !== '' && !is_link($p)) $add($p, $user, $lid, 'the same file name as a confirmed incident');
+        }
+        foreach (smpro_lr_structural($root) as [$p, $why]) $add($p, $user, 'structural', $why);
         foreach (smpro_lr_candidates($root, (int)$cfg['recent_days']) as $p) {
             if (is_link($p)) continue;
             $sz = (int)@filesize($p);
@@ -416,7 +463,7 @@ function smpro_lr_kill(int $pid): array {
 
 /** A new lesson kind only helps if the files already in the store teach it too: relearn them once per schema version. */
 function smpro_lr_relearn_store(): int {
-    $want = '2'; $f = smpro_lr_dir() . '/schema.ver';
+    $want = '3'; $f = smpro_lr_dir() . '/schema.ver';
     if (trim((string)@file_get_contents($f)) === $want) return 0;
     $n = 0;
     foreach (smpro_lr_quarantined(2000) as $q) { if (!empty($q['restored']) || !is_file((string)$q['kept'])) continue; smpro_lr_learn_file((string)$q['kept'], (string)$q['orig'], 'relearn'); $n++; }
