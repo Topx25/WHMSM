@@ -101,6 +101,18 @@ function smpro_ss_live(string $domain, string $user): bool {
     return (bool)preg_match('#^\s*Include\s+"?' . preg_quote($std, '#') . '"?#m', $conf) && is_file(smpro_ss_paths($domain, $user)[0]);
 }
 function smpro_ss_run(string $cmd, int $t = 180): array { $out = (string)@shell_exec('timeout ' . $t . ' ' . $cmd . ' 2>&1; echo "__rc=$?"'); preg_match('/__rc=(\d+)\s*$/', $out, $m); return [(int)($m[1] ?? 1), trim((string)preg_replace('/__rc=\d+\s*$/', '', $out))]; }
+/** cPanel's nginx (ea-nginx) in front of Apache keeps a page cache per account: a page a shielded domain served once
+ *  to an allowed visitor would be handed from that cache to a refused one, and Apache would never see the request.
+ *  So the account's cache is turned off while any of its domains is shielded (the supported way: ea-nginx cache
+ *  <user> --enabled=0), cleared, and reset to the system setting again when the last shield of that account goes. */
+function smpro_ss_nginx_present(): bool { return is_executable('/usr/local/cpanel/scripts/ea-nginx') && is_dir('/etc/nginx/conf.d/users'); }
+function smpro_ss_nginx_cache(string $user, bool $off): array {
+    if (!smpro_ss_nginx_present() || !preg_match('/^[a-z0-9_.-]{1,32}$/', $user)) return [true, 'no ea-nginx'];
+    [$rc, $o] = smpro_ss_run('/usr/local/cpanel/scripts/ea-nginx cache ' . escapeshellarg($user) . ($off ? ' --enabled=0' : ' --reset'), 240);
+    if ($rc !== 0) return [false, 'ea-nginx cache: ' . substr($o, -200)];
+    if ($off) smpro_ss_run('/usr/local/cpanel/scripts/ea-nginx clear_cache ' . escapeshellarg($user), 120);
+    return [true, $off ? 'nginx cache off for ' . $user : 'nginx cache reset for ' . $user];
+}
 /** Rebuild + test + reload. [ok, msg]. On a failed test the caller has already put the files back the way they were. */
 function smpro_ss_reload(bool $rebuild): array {
     if ($rebuild) { [$rc, $o] = smpro_ss_run('/scripts/rebuildhttpdconf'); if ($rc !== 0) return [false, 'rebuildhttpdconf refused: ' . substr($o, -300)]; }
@@ -122,16 +134,20 @@ function smpro_ss_enable(string $domain): array {
     foreach ($paths as $p) { $existed[$p] = is_file($p); @mkdir(dirname($p), 0755, true); if (@file_put_contents($p, $content) === false) { foreach ($paths as $q) if (empty($existed[$q])) @unlink($q); return [false, 'Cannot write ' . $p]; } @chmod($p, 0644); }
     [$ok, $msg] = smpro_ss_reload(true);
     if (!$ok) { foreach ($paths as $p) @unlink($p); smpro_ss_reload(true); return [false, 'Not installed, everything put back: ' . $msg]; }
-    $c = smpro_ss_cfg(); $c['domains'][$domain] = ['user' => $user, 'since' => time(), 'prefixes' => count(smpro_ss_prefixes()), 'hash' => sha1($content)]; smpro_ss_cfg_save($c);
+    [$cok, $cmsg] = smpro_ss_nginx_cache($user, true);
+    $c = smpro_ss_cfg(); $c['domains'][$domain] = ['user' => $user, 'since' => time(), 'prefixes' => count(smpro_ss_prefixes()), 'hash' => sha1($content), 'nginx_cache_off' => $cok && smpro_ss_nginx_present()]; smpro_ss_cfg_save($c);
     if (function_exists('smpro_audit')) smpro_audit('siteshield_on', ['domain' => $domain, 'prefixes' => $c['domains'][$domain]['prefixes']]);
-    return [true, 'Shield is live for ' . $domain . ': ' . $c['domains'][$domain]['prefixes'] . ' hosting / VPN prefixes, scanner tools and secret-file probes are refused; everybody else passes.'];
+    return [true, 'Shield is live for ' . $domain . ': ' . $c['domains'][$domain]['prefixes'] . ' hosting / VPN prefixes, scanner tools and secret-file probes are refused; everybody else passes.' . (smpro_ss_nginx_present() ? ($cok ? ' The nginx page cache of this account is off while shielded (a cached page would bypass the shield).' : ' WARNING: the nginx page cache of this account could not be turned off - cached pages bypass the shield: ' . $cmsg) : '')];
 }
 function smpro_ss_disable(string $domain): array {
     $domain = strtolower(trim($domain)); $c = smpro_ss_cfg();
     $user = (string)($c['domains'][$domain]['user'] ?? (smpro_ss_domains()[$domain]['user'] ?? ''));
     if ($user === '' || !smpro_ss_domain_ok($domain)) return [false, 'Unknown domain.'];
     foreach (smpro_ss_paths($domain, $user) as $p) @unlink($p);
+    $cacheOff = !empty($c['domains'][$domain]['nginx_cache_off']);
     unset($c['domains'][$domain]); smpro_ss_cfg_save($c);
+    // the account's nginx cache goes back to the system setting only when no other shielded domain of this account remains
+    if ($cacheOff && !in_array($user, array_column($c['domains'], 'user'), true)) smpro_ss_nginx_cache($user, false);
     [$ok, $msg] = smpro_ss_reload(true);
     if (function_exists('smpro_audit')) smpro_audit('siteshield_off', ['domain' => $domain, 'ok' => $ok ? 1 : 0]);
     return [$ok, $ok ? 'Shield removed from ' . $domain . '.' : 'Files removed, but the reload said: ' . $msg];

@@ -54,3 +54,8 @@ $tick = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/ge
 has($tick, "if (function_exists('smpro_ss_refresh')) { try { smpro_ss_refresh(); }", 'W1: the shields follow the lists from the worker');
 has($tick, "smpro_nk_update(); smpro_nk_ensure_sets();", 'W2: right after the lists refresh');
 @unlink($tmp); @exec('rm -rf ' . escapeshellarg(SMPRO_VARLIB));
+// the page cache in front of Apache
+$src2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/siteshield.php'));
+has($src2, "[\$cok, \$cmsg] = smpro_ss_nginx_cache(\$user, true);", 'C1: shielding turns the account\'s nginx page cache off (a cached page would bypass the shield)');
+has($src2, "if (\$cacheOff && !in_array(\$user, array_column(\$c['domains'], 'user'), true)) smpro_ss_nginx_cache(\$user, false);", 'C2: and resets it only when the account has no shielded domain left');
+is_eq(smpro_ss_nginx_cache('../x', true), [true, 'no ea-nginx'], 'C3: an account name is a name, never a path');
