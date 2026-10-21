@@ -212,8 +212,13 @@ function smpro_bg_is_botlike(string $ua): bool {
     return (bool)preg_match('/bot\b|bot\/|crawl|spider|slurp|scan|fetch|scrap|python|curl\/|wget|go-http|java\/|libwww|httpclient|okhttp|headless|phantom|puppeteer|selenium|axios|node-fetch|http_request|winhttp|perl|ruby|php\/|monitor|checker|validator|archive|preview|feed|rss/i', $ua);
 }
 /** Known attack / scanner tools announcing themselves in the UA. Their presence is itself an attack signal. */
+function smpro_bg_scanner_ua_re(): string { return 'nikto|sqlmap|masscan|zgrab|nmap|nuclei|wpscan|dirbuster|dirb\b|gobuster|ffuf|acunetix|nessus|openvas|w3af|havij|hydra|medusa|joomscan|droopescan|xsser|commix|arachni|netsparker|burp|python-requests/[\d.]+$|Go-http-client/1\.1$'; }
 function smpro_bg_scanner_ua(string $ua): bool {
-    return (bool)preg_match('/nikto|sqlmap|masscan|zgrab|nmap|nuclei|wpscan|dirbuster|dirb\b|gobuster|ffuf|acunetix|nessus|openvas|w3af|havij|hydra|medusa|joomscan|droopescan|xsser|commix|arachni|netsparker|burp|python-requests\/[\d.]+$|Go-http-client\/1\.1$/i', $ua);
+    return (bool)preg_match('#' . smpro_bg_scanner_ua_re() . '#i', $ua);
+}
+/** Secret files and admin tools a legitimate visitor never fetches; the same pattern the Site Shield gives Apache. */
+function smpro_bg_probe_re(): string {
+    return '/(?:\.env|\.git/|\.svn/|\.htpasswd|\.aws/|\.ssh/|\.DS_Store|wp-config\.php(?:\.bak|~|\.old|\.save)?|config\.php\.bak|backup\.(?:zip|sql|tar|gz)|db\.sql|dump\.sql|phpinfo\.php|phpmyadmin|pma/|adminer\.php|xmlrpc\.php|vendor/phpunit|eval-stdin\.php|cgi-bin/(?:php|luci|test-cgi)|wp-content/uploads/.*\.php|\.well-known/.*\.php|shell\.php|wso\.php|c99\.php|alfa\.php|filemanager\.php|owa/|autodiscover/|boaform/|HNAP1|actuator/|\.php7|\.phtml)';
 }
 /**
  * Attack signature of ONE request (method, uri, ua). Returns '' or a category:
@@ -228,7 +233,7 @@ function smpro_bg_classify_req(string $method, string $uri, string $ua): string 
     $m = strtoupper($method); $path = (string)parse_url($uri, PHP_URL_PATH); if ($path === '') $path = $uri;
     $dec = rawurldecode($uri);
     if (preg_match('/[?&](cmd|exec|c99|r57|wso|b374k|filesman|passthru|shell|eval|system)=|%00|\beval\(|base64_decode|union[\s+]+select|\'\s*or\s*1\s*=\s*1|information_schema|\.\.\/|\.\.\\\\|php:\/\/|data:\/\/|expect:\/\/|\/etc\/passwd|\/proc\/self|<script|javascript:|\$\{jndi:|\{\{.*\}\}|sleep\(\d+\)|benchmark\(/i', $dec)) return 'exploit';
-    if (preg_match('#/(?:\.env|\.git/|\.svn/|\.htpasswd|\.aws/|\.ssh/|\.DS_Store|wp-config\.php(?:\.bak|~|\.old|\.save)?|config\.php\.bak|backup\.(?:zip|sql|tar|gz)|db\.sql|dump\.sql|phpinfo\.php|phpmyadmin|pma/|adminer\.php|xmlrpc\.php|vendor/phpunit|eval-stdin\.php|cgi-bin/(?:php|luci|test-cgi)|wp-content/uploads/.*\.php|\.well-known/.*\.php|shell\.php|wso\.php|c99\.php|alfa\.php|filemanager\.php|owa/|autodiscover/|boaform/|HNAP1|actuator/|\.php7|\.phtml)#i', $path)) return 'probe';
+    if (preg_match('#' . smpro_bg_probe_re() . '#i', $path)) return 'probe';
     if ($m === 'POST' && preg_match('#/(?:wp-login\.php|xmlrpc\.php|administrator/index\.php|admin/login|user/login|login\.php|signin|wp-admin/admin-ajax\.php\?action=(?:login|auth))#i', $uri)) return 'bruteforce';
     return '';
 }

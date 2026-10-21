@@ -17,7 +17,7 @@
  */
 define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);
-foreach (['defines', 'mmdb', 'helpers', 'secret', 'license', 'fwallow', 'notify', 'netkind', 'geologin', 'intrusion', 'geohulk'] as $m) {
+foreach (['defines', 'mmdb', 'helpers', 'secret', 'license', 'fwallow', 'notify', 'netkind', 'botguard', 'siteshield', 'geologin', 'intrusion', 'geohulk'] as $m) {
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require_once $f;
 }
@@ -33,6 +33,8 @@ if (empty($cfg['enabled'])) exit;          // the cron should already be gone; n
 // has forgotten them); csfpost.sh calls this with --restore right after CSF reloads, and stops there.
 // The VPN / hosting lists: fetched daily, and put back into their kernel sets after a CSF reload (which empties every set).
 if (function_exists('smpro_nk_update')) { try { smpro_nk_update(); smpro_nk_ensure_sets(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('netkind', $e); } }
+// Site Shields follow the lists: a changed list (or a new operator address) rewrites their includes, one graceful reload.
+if (function_exists('smpro_ss_refresh')) { try { smpro_ss_refresh(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('siteshield', $e); } }
 if (function_exists('smpro_gl_use_set') && smpro_gl_use_set()) {
     try {
         // A lock armed before the kernel set existed still has its old csf.deny lines (one per port per address):

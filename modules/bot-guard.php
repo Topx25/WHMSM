@@ -10,6 +10,7 @@
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 require_once SMPRO_INCLUDES . '/botguard.php';
+require_once SMPRO_INCLUDES . '/siteshield.php';
 if (!function_exists('smpro_fw_allow_covers')) { $__fw = SMPRO_INCLUDES . '/fwallow.php'; if (is_file($__fw)) require_once $__fw; }
 
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
@@ -53,6 +54,9 @@ if ($reqMethod === 'POST' && isset($_POST['bg_action'])) {
             $out = ['ok' => true, 'ua' => (string)($db['ua'] ?? ''), 'cost' => (string)($das['cost'] ?? ''), 'advice' => (string)($das['advice'] ?? ''),
                     'urls' => array_values((array)($db['urls'] ?? [])), 'sample' => (string)($db['sample'] ?? ''), 'note' => (string)($db['note'] ?? '')];
         } else $out = ['ok' => false, 'msg' => 'Unknown address.'];
+    } elseif ($act === 'shield_on' || $act === 'shield_off') {
+        [$sok, $smsg] = $act === 'shield_on' ? smpro_ss_enable((string)($_POST['domain'] ?? '')) : smpro_ss_disable((string)($_POST['domain'] ?? ''));
+        $out = ['ok' => $sok, 'msg' => $smsg];
     } elseif ($act === 'scan') {
         $out = smpro_bg_run(true);
     } elseif ($act === 'bulk') {
@@ -347,7 +351,21 @@ if (!$print): ?>
   </div>
 </div></div>
 
-<?php if (!$print): ?>
+<?php if (!$print): $ssSt = smpro_ss_status(); $ssAll = smpro_ss_domains(); $ssNk = function_exists('smpro_nk_status') ? smpro_nk_status() : ['ready' => false, 'kinds' => []]; ?>
+<div class="card" id="siteshield" style="margin:10px 0 12px">
+  <div class="fa-head"><b>&#128737; Site Shield</b> <span class="meta">- one domain closed to hosting / cloud / VPN networks, scanner tools and secret-file probes; people on home and mobile networks pass, your own addresses always pass</span></div>
+  <div style="padding:12px 16px">
+    <div class="meta" style="margin-bottom:8px">Lists on this server: <?= $ssNk['ready'] ? (int)($ssNk['kinds']['vpn']['lines'] ?? 0) . ' VPN + ' . (int)($ssNk['kinds']['hosting']['lines'] ?? 0) . ' hosting prefixes (refreshed daily; the shield follows them)' : 'not fetched yet - the Country Login Lock worker brings them; until then a shield cannot be installed' ?>. Applied as a cPanel per-vhost include (kept across rebuilds), tested with configtest before the graceful reload, removed again if the test refuses.</div>
+    <?php if ($ssSt): ?><table class="smpro-table" style="margin:0 0 10px"><thead><tr><th>Domain</th><th>Account</th><th>Since</th><th>Prefixes</th><th>Status</th><th></th></tr></thead><tbody>
+      <?php foreach ($ssSt as $d => $r): ?><tr><td class="mono"><?= smpro_h($d) ?></td><td><?= smpro_h($r['user']) ?></td><td><?= smpro_h(date('Y-m-d H:i', $r['since'])) ?></td><td><?= (int)$r['prefixes'] ?></td><td><span class="b <?= $r['live'] ? 'green' : 'red' ?>"><?= $r['live'] ? 'live in httpd.conf' : 'NOT in httpd.conf - press Remove, then Shield again' ?></span></td><td><button class="fa-lnk ssOff" type="button" data-d="<?= smpro_h($d) ?>">Remove</button></td></tr><?php endforeach; ?>
+    </tbody></table><?php endif; ?>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="ssDomain" class="tp-in" style="min-width:260px"><option value="">choose a domain…</option><?php foreach ($ssAll as $d => $i): if (isset($ssSt[$d])) continue; ?><option value="<?= smpro_h($d) ?>"><?= smpro_h($d) ?> (<?= smpro_h($i['user']) ?>, <?= smpro_h($i['type']) ?>)</option><?php endforeach; ?></select>
+      <button class="tp-btn primary" id="ssOn" type="button"<?= $ssNk['ready'] ? '' : ' disabled' ?>>&#128737; Shield this domain</button>
+      <span class="meta" id="ssMsg"></span>
+    </div>
+  </div>
+</div>
 <details class="gl-fold" style="margin:4px 0 10px"><summary><span class="gl-chev">&#9656;</span> What the verdicts mean, and what to do</summary>
 <table class="bg-tbl" style="margin-top:6px"><thead><tr><th>Verdict</th><th>Meaning</th><th>Proof used</th><th>What to do</th></tr></thead><tbody>
 <tr><td><span class="bg-pill bg-v-trusted">Verified crawler</span></td><td>Really is the search engine / social network / tool it claims to be.</td><td>Forward-confirmed reverse DNS, or the publisher's published IP ranges.</td><td>Allow. Blocking it costs you search traffic or link previews.</td></tr>
@@ -484,6 +502,8 @@ if (!$print): ?>
 })();
 </script>
 <script>(function(){
+  var ssOn=document.getElementById('ssOn'); if(ssOn) ssOn.onclick=function(){var d=document.getElementById('ssDomain').value; if(!d) return; var m=document.getElementById('ssMsg'); m.textContent='Installing (rebuild + configtest + graceful reload)…'; ssOn.disabled=true; var fd=new URLSearchParams(); fd.set('act','shield_on'); fd.set('domain',d); post(fd,function(r){m.textContent=r.msg||''; if(r.ok) setTimeout(function(){location.reload();},1200); else ssOn.disabled=false;});};
+  document.querySelectorAll('.ssOff').forEach(function(b){b.onclick=function(){if(!confirm('Remove the shield from '+b.dataset.d+'?')) return; var fd=new URLSearchParams(); fd.set('act','shield_off'); fd.set('domain',b.dataset.d); post(fd,function(r){document.getElementById('ssMsg').textContent=r.msg||''; if(r.ok) setTimeout(function(){location.reload();},1000);});};});
   function post(fd,cb){fd.set('smpro_csrf',BG_CSRF);fetch('index.cgi?page=bot-guard',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString(),cache:'no-store'}).then(function(r){return r.json();}).then(cb).catch(function(){cb({ok:false,msg:'Request failed'});});}
   var sb=document.getElementById('bgScan');sb.addEventListener('click',function(){var o=sb.innerHTML;sb.disabled=true;sb.innerHTML='Scanning… (streams the logs; up to a few minutes on a busy server)';var m=document.getElementById('bgScanMsg');m.textContent='';var fd=new URLSearchParams();fd.set('bg_action','scan');
     post(fd,function(j){sb.disabled=false;sb.innerHTML=o;m.style.color=j&&j.ok?'#16a34a':'#dc2626';m.textContent=(j&&j.ok?'✅ ':'⚠ ')+((j&&j.msg)||'Failed');if(j&&j.ok)setTimeout(function(){location.reload();},1200);});});
