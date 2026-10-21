@@ -53,3 +53,22 @@ has($sh, "echo ini_get(\"session.upload_progress.enabled\");", 'P3: the state is
 has($sh, "\$undo[] = ['file', \$f, \$bak];", 'P4: each php.ini is kept first and Undo restores it');
 has($sh, "session.upload_progress.enabled = Off", 'P5: the directive written is the one PHP documents');
 @exec('rm -rf ' . escapeshellarg(SMPRO_VARLIB));
+
+// the PHP core release of 2026-10-21: the standing of a build is a pure decision over four facts
+$sh2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/shharden.php'));
+require_once SMPRO_BASE . '/includes/shharden.php';
+is_eq(smpro_shh_php2shell_state('8.4.26', false, false, 3)[0], 'exposed', 'Q1: below the fixed release, mitigation off, sites on it = exposed');
+is_eq(smpro_shh_php2shell_state('8.4.26', false, true, 3)[0], 'mitigated', 'Q2: the interim mitigation on = mitigated, not fixed');
+is_eq(smpro_shh_php2shell_state('8.4.26', true, false, 3)[0], 'patched', 'Q3: a vendor backport names the CVE under the old number = patched');
+is_eq(smpro_shh_php2shell_state('8.4.27', false, false, 3)[0], 'patched', 'Q4: at the fixed release = patched');
+is_eq(smpro_shh_php2shell_state('8.1.34', false, false, 5)[0], 'exposed', 'Q5: a branch with no release and sites on it = exposed');
+is_eq(smpro_shh_php2shell_state('5.6.40', false, true, 0)[0], 'idle', 'Q6: a build no site uses is idle, whatever it is');
+has($sh2, "rpm -q --changelog ' . escapeshellarg(\$pkg) . ' 2>/dev/null | grep -c '", 'Q7: the installed package changelog is read for the CVE ids');
+has($sh2, "repoquery --changelog ' . escapeshellarg(\$pkg)", 'Q8: and the repository is asked whether a fixed package is waiting');
+has($sh2, "smpro_sh_mk('PHP core release of 2026-10-21 ('", 'Q9: it is a Security Health card');
+// the probe never runs inside a page
+has($sh2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/shharden.php')), "\$p2c = smpro_shh_php2shell_cached(); \$p2 = (array)(\$p2c['builds'] ?? []);", 'Q10: the card reads the cache, never the probe');
+has($sh2, "if (defined('SMPRO_TEST_SRC')) return null;   // a test never spawns a probe", 'Q11: a test never spawns the probe');
+has($sh2, "is being read now (rpm, the repository and cPanel are asked in the background) - reload in a minute.", 'Q12: a missing cache is said, never shown as fixed or as nothing');
+$su2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/sysupd.php'));
+has($su2, "smpro_shh_php2shell_probe_write(); \$did[] = 'php2shell';", 'Q13: the update worker refreshes the standing after every check');

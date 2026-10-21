@@ -325,7 +325,12 @@ function smpro_su_apply(string $by = 'operator', bool $cpanelToo = false): array
 /** The worker runs every 30 minutes; this decides what, if anything, is due. */
 function smpro_su_tick(): array {
     $cfg = smpro_su_cfg(); $s = smpro_su_state(); $did = [];
-    if (time() - (int)$s['last_check'] >= $cfg['check_hours'] * 3600) { $s = smpro_su_check(true); $did[] = 'checked'; }
+    if (time() - (int)$s['last_check'] >= $cfg['check_hours'] * 3600) {
+        $s = smpro_su_check(true); $did[] = 'checked';
+        // the PHP-core-release standing of every build is refreshed with every check (the card never computes it itself)
+        if (!function_exists('smpro_shh_php2shell_probe_write')) { $shf = __DIR__ . '/shharden.php'; if (is_file($shf)) require_once $shf; }
+        if (function_exists('smpro_shh_php2shell_probe_write')) { try { smpro_shh_php2shell_probe_write(); $did[] = 'php2shell'; } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('php2shell_probe', $e); } }
+    }
     if ($cfg['mode'] === 'auto' && $s['pending'] && (int)date('G') === $cfg['hour'] && !(function_exists('smpro_ctl_disabled') && smpro_ctl_disabled())) {
         $la = (array)($s['last_apply'] ?? []);
         if (date('Y-m-d', (int)($la['at'] ?? 0)) !== date('Y-m-d')) { smpro_su_apply('auto'); $did[] = 'applied'; }

@@ -107,6 +107,81 @@ function smpro_shh_fix_php_uploadprogress(): array {
     }
     return [$n > 0, "session.upload_progress.enabled turned Off in $n php.ini file(s)", $undo];
 }
+/* ---------------- the PHP core release of 2026-10-21 ("php2shell": CVE-2026-109618, CVE-2026-109619) ---------------- */
+/** The two flaws let a request run code on the server without a login; every web-serving PHP is affected and the
+ *  only complete fix is the release (8.2.35, 8.3.36, 8.4.27, 8.5.12). Vendors backport it into their own builds under
+ *  the OLD version number, so the version alone cannot say "fixed": the package changelog is read for the CVE ids.
+ *  PHP's own interim mitigation is session.upload_progress.enabled = Off. Branches 8.1 and older get no release. */
+function smpro_shh_php2shell_fixed_versions(): array { return ['8.2' => '8.2.35', '8.3' => '8.3.36', '8.4' => '8.4.27', '8.5' => '8.5.12']; }
+function smpro_shh_php2shell_cves(): array { return ['CVE-2026-109618', 'CVE-2026-109619']; }
+/** Pure: the standing of one build. $ver = PHP_VERSION, $cveInChangelog = the installed package names a CVE,
+ *  $mitigated = upload progress off, $domains = sites served by this build. Returns [state, why]. */
+function smpro_shh_php2shell_state(string $ver, bool $cveInChangelog, bool $mitigated, int $domains): array {
+    $branch = implode('.', array_slice(explode('.', $ver), 0, 2));
+    $fixed = smpro_shh_php2shell_fixed_versions()[$branch] ?? null;
+    if ($cveInChangelog) return ['patched', 'the installed package names the fix (vendor backport)'];
+    if ($fixed !== null && version_compare($ver, $fixed, '>=')) return ['patched', 'at or past ' . $fixed];
+    if ($domains === 0) return ['idle', 'no site runs on it' . ($fixed === null ? ' (branch gets no release)' : '')];
+    if ($fixed === null) return [$mitigated ? 'mitigated' : 'exposed', 'branch ' . $branch . ' gets no PHP release; only a vendor backport or moving the sites to a supported branch closes it' . ($mitigated ? ' - the interim mitigation is on' : '')];
+    return [$mitigated ? 'mitigated' : 'exposed', 'below ' . $fixed . ($mitigated ? ' - the interim mitigation (upload progress off) is on; the update is still needed' : ' and the interim mitigation is off')];
+}
+/** Every PHP build on the server with its standing, sites, handler and whether a fixed package is waiting. */
+function smpro_shh_php2shell(): array {
+    $builds = [];
+    foreach (array_merge(glob('/opt/cpanel/ea-php*/root/usr/bin/php') ?: [], glob('/opt/alt/php*/usr/bin/php') ?: []) as $bin) {
+        if (!is_executable($bin)) continue;
+        if (preg_match('#^/opt/cpanel/(ea-php\d+)/#', $bin, $m)) { $name = $m[1]; $pkg = $name . '-php-cli'; }
+        elseif (preg_match('#^/opt/alt/(php\d+)/#', $bin, $m)) { $name = 'alt-' . $m[1]; $pkg = 'alt-' . $m[1]; }
+        else continue;
+        $ver = trim((string)@shell_exec('timeout 10 ' . escapeshellarg($bin) . ' -r ' . escapeshellarg('echo PHP_VERSION;') . ' 2>/dev/null'));
+        if (!preg_match('/^\d+\.\d+\.\d+/', $ver)) continue;
+        $up = trim((string)@shell_exec('timeout 10 ' . escapeshellarg($bin) . ' -r ' . escapeshellarg('echo ini_get("session.upload_progress.enabled");') . ' 2>/dev/null'));
+        // the package changelog does not change between installs: remembered for six hours, so a page never waits on rpm
+        $clCmd = 'rpm -q --changelog ' . escapeshellarg($pkg) . ' 2>/dev/null | grep -c ' . escapeshellarg(implode('\|', smpro_shh_php2shell_cves()));
+        $cl = function_exists('smpro_memo_cmd') ? smpro_memo_cmd('p2s_cl_' . $pkg, 21600, $clCmd, 20) : (string)@shell_exec('timeout 20 ' . $clCmd);
+        $builds[$name] = ['version' => $ver, 'cve' => (int)trim($cl) > 0, 'mitigated' => ($up === '' || $up === '0' || strtolower($up) === 'off'), 'domains' => 0, 'handler' => '', 'pending' => false];
+    }
+    if (!$builds) return [];
+    $w = ''; foreach (['/usr/local/cpanel/bin/whmapi1', '/usr/sbin/whmapi1'] as $b) if (is_executable($b)) { $w = $b; break; }
+    if ($w !== '') {
+        $j = json_decode((string)@shell_exec('timeout 60 ' . $w . ' php_get_vhost_versions --output=json 2>/dev/null'), true);
+        foreach ((array)($j['data']['versions'] ?? []) as $v) { $n = (string)($v['version'] ?? ''); if (isset($builds[$n])) $builds[$n]['domains']++; }
+        $h = json_decode((string)@shell_exec('timeout 30 ' . $w . ' php_get_handlers --output=json 2>/dev/null'), true);
+        foreach ((array)($h['data']['version_handlers'] ?? []) as $v) { $n = (string)($v['version'] ?? ''); if (isset($builds[$n])) $builds[$n]['handler'] = (string)($v['current_handler'] ?? ''); }
+    }
+    // a fixed package already waiting in the repository (the update page installs it)
+    $dnf = is_executable('/usr/bin/dnf') ? '/usr/bin/dnf' : (is_executable('/usr/bin/yum') ? '/usr/bin/yum' : '');
+    if ($dnf !== '') foreach ($builds as $n => &$b) {
+        if ($b['cve']) continue;
+        $pkg = strpos($n, 'ea-') === 0 ? $n . '-php-cli' : $n;
+        // asking the repository takes seconds per build: remembered for six hours and refreshed in the background on a
+        // miss, so the page shows what it knows now and never waits on the network
+        $rqCmd = $dnf . ' -q repoquery --changelog ' . escapeshellarg($pkg) . ' 2>/dev/null | grep -c ' . escapeshellarg(implode('\|', smpro_shh_php2shell_cves()));
+        $cl = function_exists('smpro_memo_cmd') ? smpro_memo_cmd('p2s_repo_' . $pkg, 21600, $rqCmd, 60, 604800, true) : '';
+        $b['pending'] = (int)trim($cl) > 0;
+    } unset($b);
+    foreach ($builds as $n => &$b) [$b['state'], $b['why']] = smpro_shh_php2shell_state($b['version'], $b['cve'], $b['mitigated'], $b['domains']); unset($b);
+    return $builds;
+}
+/** The probe takes seconds (two php runs per build, rpm, whmapi1 twice, dnf): it never runs inside a page. The card
+ *  reads this cache; a miss starts the probe detached and the card says "being read now". The System updates worker
+ *  rewrites it after every check, so it is normally never older than the check interval. */
+function smpro_shh_php2shell_cache_file(): string { $d = defined('SMPRO_CACHE') ? SMPRO_CACHE : (SMPRO_VARLIB . '/cache'); @is_dir($d) || @mkdir($d, 0700, true); return $d . '/php2shell.json'; }
+function smpro_shh_php2shell_probe_write(): array {
+    $r = ['at' => time(), 'builds' => smpro_shh_php2shell()];
+    smpro_json_save(smpro_shh_php2shell_cache_file(), $r);
+    return $r;
+}
+function smpro_shh_php2shell_cached(int $maxAge = 21600): ?array {
+    $f = smpro_shh_php2shell_cache_file();
+    $d = @is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    if (is_array($d) && time() - (int)($d['at'] ?? 0) < $maxAge) return $d;
+    if (defined('SMPRO_TEST_SRC')) return null;   // a test never spawns a probe
+    $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : '/usr/local/cpanel/3rdparty/bin/php';
+    $probe = SMPRO_BASE . '/bin/php2shell_probe.php';
+    if (is_file($probe)) @shell_exec('nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($probe) . ' >/dev/null 2>&1 &');
+    return is_array($d) ? $d : null;   // stale beats nothing; nothing is said as such
+}
 /** CSF settings this hardening wants. The SSH port comes from the running sshd, never a fixed 22. */
 function smpro_shh_csf_want(): array {
     $port = '22';
@@ -370,6 +445,20 @@ function smpro_shh_checks(): array {
         $pb ? 'allow_url_include is On in ' . count($pb) . ' PHP build(s).' : 'No PHP build allows including code from a URL.',
         'With allow_url_include On, one file-inclusion bug in any site runs code fetched from the attacker\'s server.',
         $pb ? 'Apply: set it Off in each listed php.ini (each one kept first); running PHP-FPM pools are restarted.' : 'No action needed.', implode("\n", $pb), $pb ? 'php_urlinclude' : '');
+    $p2c = smpro_shh_php2shell_cached(); $p2 = (array)($p2c['builds'] ?? []);
+    if ($p2c === null) {
+        $C[] = smpro_sh_mk('PHP core release of 2026-10-21 (' . implode(', ', smpro_shh_php2shell_cves()) . ')', 'info',
+            'The standing of this server\'s PHP builds is being read now (rpm, the repository and cPanel are asked in the background) - reload in a minute.',
+            'Two flaws in the PHP core let a request run code on the server without a login; every web-serving PHP is affected and the only complete fix is the release.', 'Reload the page in a minute.', '', '');
+    } elseif ($p2) {
+        $exposed = array_filter($p2, fn($b) => $b['state'] === 'exposed'); $mit = array_filter($p2, fn($b) => $b['state'] === 'mitigated'); $pend = array_filter($p2, fn($b) => !empty($b['pending']));
+        $ev = '';
+        foreach ($p2 as $n => $b) $ev .= $n . ' ' . $b['version'] . ' [' . strtoupper($b['state']) . '] ' . $b['domains'] . ' site(s)' . ($b['handler'] !== '' ? ', ' . $b['handler'] : '') . ' - ' . $b['why'] . (!empty($b['pending']) ? ' - a fixed package is waiting in the repository' : '') . "\n";
+        $C[] = smpro_sh_mk('PHP core release of 2026-10-21 (' . implode(', ', smpro_shh_php2shell_cves()) . ')', $exposed ? 'critical' : ($mit ? 'warning' : 'ok'),
+            $exposed ? count($exposed) . ' PHP build(s) serving sites are NOT fixed and the interim mitigation is off.' : ($mit ? count($mit) . ' PHP build(s) serving sites are not fixed yet; the interim mitigation is on' . ($pend ? ' and a fixed package is waiting in the repository' : '') . '.' : 'Every PHP build serving a site is fixed (release or vendor backport).'),
+            'Two flaws in the PHP core let a request run code on the server without a login; every web-serving PHP is affected. The only complete fix is the release; vendors backport it under the old version number, so the package changelog is read for the CVE ids rather than trusting the number. The interim mitigation (upload progress off) narrows the hole, it does not close it. Branches 8.1 and older get no release at all.',
+            $exposed ? 'Apply the mitigation below now, then install the fixed packages from System updates (or move the sites on an unsupported branch to a supported one).' : ($mit ? 'Install the fixed packages from System updates' . ($pend ? ' - they are already waiting' : ' as soon as the vendor ships them') . '.' : 'No action needed.'), $ev . 'read ' . date('Y-m-d H:i', (int)($p2c['at'] ?? 0)), $exposed ? 'php_uploadprogress' : '');
+    }
     $up = smpro_shh_php_uploadprogress();
     $C[] = smpro_sh_mk('PHP session.upload_progress', $up ? 'warning' : 'ok',
         $up ? 'session.upload_progress is On in ' . count($up) . ' PHP build(s): ' . implode(', ', array_unique(array_values($up))) . '.' : 'No PHP build writes upload progress into the session file.',

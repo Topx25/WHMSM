@@ -32,6 +32,12 @@ if ($reqMethod === 'POST' && $act !== '') {
                 $r = smpro_lr_quarantine((string)$f0['path'], 'operator: all exact-file matches'); if (!empty($r['ok'])) $n++; else $bad++;
             }
             $msg = $n . ' exact-file match(es) moved to the store' . ($bad ? ', ' . $bad . ' refused (see the audit)' : '') . '.'; $ok = $bad === 0; break;
+        case 'quarantine_many':
+            $n = 0; $bad = []; foreach (array_slice((array)($_POST['paths'] ?? []), 0, 500) as $pth) { $r = smpro_lr_quarantine((string)$pth, 'operator: selection'); if (!empty($r['ok'])) $n++; else $bad[] = basename((string)$pth) . ': ' . (string)($r['msg'] ?? 'refused'); }
+            $msg = $n . ' file(s) moved to the store' . ($bad ? '; refused: ' . implode(' · ', array_slice($bad, 0, 5)) . (count($bad) > 5 ? ' …' : '') : '') . '.'; $ok = !$bad; break;
+        case 'notbad_many':
+            $n = 0; foreach (array_slice((array)($_POST['shas'] ?? []), 0, 500) as $sh) { $sh = preg_replace('/[^a-f0-9]/', '', (string)$sh); if ($sh !== '') { smpro_lr_mark_fp($sh); $n++; } }
+            $msg = $n . ' file(s) remembered as not malicious.'; break;
         case 'restore':   $r = smpro_lr_restore((string)($_POST['kept'] ?? '')); $ok = $r['ok']; $msg = $r['msg']; break;
         case 'notbad':    $sha = preg_replace('/[^a-f0-9]/', '', (string)($_POST['sha'] ?? '')); if ($sha !== '') { smpro_lr_mark_fp($sha); $msg = 'Remembered as not malicious: this exact file is never reported again, and the lesson that matched it counts one more wrong call.'; } else { $ok = false; $msg = 'No file given.'; } break;
         case 'lesson':    $L = smpro_lr_lessons(); $id = preg_replace('/[^a-f0-9]/', '', (string)($_POST['id'] ?? '')); $st = (string)($_POST['state'] ?? '');
@@ -75,6 +81,31 @@ $byUser = []; $bySev = ['critical' => 0, 'high' => 0, 'medium' => 0]; $exactN = 
 foreach ($findings as $i => $f) { [$s, $k] = $sevOf($f); $findings[$i]['_sev'] = $s; $findings[$i]['_kind'] = $k; $bySev[$s]++; if ($k === 'exact' && $s === 'critical') $exactN++; $byUser[$f['user']][] = $findings[$i]; }
 uksort($byUser, function ($a, $b) use ($byUser) { $w = fn($rows) => max(array_map(fn($r) => ['critical' => 3, 'high' => 2, 'medium' => 1][$r['_sev']], $rows)); return ($w($byUser[$b]) <=> $w($byUser[$a])) ?: (count($byUser[$b]) <=> count($byUser[$a])); });
 $worst = $bySev['critical'] ? 'critical' : ($bySev['high'] ? 'high' : ($findings ? 'medium' : 'ok'));
+/* filters, grouping and paging come from the query string so a view can be bookmarked and reloaded after an action */
+$fSev = in_array((string)($_GET['sev'] ?? ''), ['critical', 'high', 'medium'], true) ? (string)$_GET['sev'] : '';
+$fKind = preg_match('/^[a-z]{1,12}$/', (string)($_GET['kind'] ?? '')) ? (string)$_GET['kind'] : '';
+$fUser = preg_match('/^[a-zA-Z0-9._-]{1,64}$/', (string)($_GET['user'] ?? '')) ? (string)$_GET['user'] : '';
+$fQ = strtolower(trim(substr((string)($_GET['q'] ?? ''), 0, 120)));
+$groupBy = in_array((string)($_GET['group'] ?? 'account'), ['account', 'severity', 'kind', 'none'], true) ? (string)($_GET['group'] ?? 'account') : 'account';
+$perPage = in_array((int)($_GET['per'] ?? 50), [25, 50, 100, 200], true) ? (int)($_GET['per'] ?? 50) : 50;
+$pageNo = max(1, (int)($_GET['p'] ?? 1));
+$sevRank = ['critical' => 3, 'high' => 2, 'medium' => 1];
+$view = array_values(array_filter($findings, function ($f) use ($fSev, $fKind, $fUser, $fQ) {
+    if ($fSev !== '' && $f['_sev'] !== $fSev) return false;
+    if ($fKind !== '' && $f['_kind'] !== $fKind) return false;
+    if ($fUser !== '' && $f['user'] !== $fUser) return false;
+    if ($fQ !== '' && strpos(strtolower($f['user'] . ' ' . $f['path'] . ' ' . implode(' ', $f['why'])), $fQ) === false) return false;
+    return true;
+}));
+usort($view, fn($a, $b) => ($sevRank[$b['_sev']] <=> $sevRank[$a['_sev']]) ?: (strcmp($a['user'], $b['user']) ?: ((int)$b['mtime'] <=> (int)$a['mtime'])));
+$total = count($view); $pages = max(1, (int)ceil($total / $perPage)); $pageNo = min($pageNo, $pages);
+$slice = array_slice($view, ($pageNo - 1) * $perPage, $perPage);
+$groups = [];
+foreach ($slice as $f) { $g = $groupBy === 'account' ? $f['user'] : ($groupBy === 'severity' ? $f['_sev'] : ($groupBy === 'kind' ? $f['_kind'] : 'all')); $groups[$g][] = $f; }
+$qs = function (array $over = []) use ($fSev, $fKind, $fUser, $fQ, $groupBy, $perPage, $pageNo) {
+    $q = array_merge(['page' => 'learned-defense', 'sev' => $fSev, 'kind' => $fKind, 'user' => $fUser, 'q' => $fQ, 'group' => $groupBy, 'per' => $perPage, 'p' => $pageNo], $over);
+    return 'index.cgi?' . http_build_query(array_filter($q, fn($v) => $v !== '' && $v !== null)) . '#findings';
+};
 $lastHunt = (int)($F['at'] ?? 0);
 smpro_layout_header('Learned Defense');
 ?>
@@ -104,7 +135,7 @@ smpro_layout_header('Learned Defense');
 .ld-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.ld-acts form{display:inline}
 .ld-filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px}
 .ld-fb{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:3px 10px;cursor:pointer;font-size:12px;color:var(--ink)}
-.ld-fb.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.ld-fb.on{background:var(--brand);color:#fff;border-color:var(--brand)}.ld-fb.off{opacity:.4;pointer-events:none}a.ld-fb{text-decoration:none}
 .ld-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:14px}
 .ld-tool{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .ld-tool h4{margin:0 0 4px;font-size:13px}.ld-tool p{margin:0 0 8px;font-size:12px;color:var(--muted);line-height:1.5}
@@ -146,35 +177,58 @@ smpro_layout_header('Learned Defense');
 <?php endif; ?>
 
 <div class="ld-card" id="findings">
-  <div class="ld-head"><b>Findings</b><span class="meta"><?= count($findings) ?> file(s) · worst account first · nothing is touched until you decide</span>
+  <div class="ld-head"><b>Findings</b><span class="meta"><?= count($findings) ?> file(s) · <?= $total === count($findings) ? 'all shown' : $total . ' match the filter' ?> · nothing is touched until you decide</span>
     <?php if ($exactN): ?><form method="post" style="margin-left:8px" data-confirm="Move all <?= $exactN ?> exact-file match(es) of confirmed incidents to the store? Restore puts any one back exactly."><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="quarantine_exact_all"><button class="btn btn-xs btn-danger" type="submit">Quarantine all <?= $exactN ?> exact matches</button></form><?php endif; ?></div>
   <?php if (!$findings): ?><div class="ld-empty" style="color:var(--good)">&#10003; Nothing on this server matches a lesson<?= $L ? '' : ' - there are no lessons yet; confirm an incident or teach a folder' ?>.</div>
-  <?php else: ?>
-  <div class="ld-filters"><span class="meta">show:</span>
-    <button type="button" class="ld-fb on" data-f="">all <?= count($findings) ?></button>
-    <?php foreach (['critical' => 'critical', 'high' => 'high', 'medium' => 'medium'] as $k => $lbl): if ($bySev[$k]): ?><button type="button" class="ld-fb" data-f="sev:<?= $k ?>"><?= $lbl ?> <?= $bySev[$k] ?></button><?php endif; endforeach; ?>
-    <?php $kinds = []; foreach ($findings as $f) $kinds[$f['_kind']] = ($kinds[$f['_kind']] ?? 0) + 1; $kl = ['exact' => 'exact file', 'lesson' => 'lesson match', 'place' => 'same place', 'structural' => 'structural', 'mail' => 'sends mail', 'tmp' => 'in tmp', 'match' => 'match']; foreach ($kinds as $k => $n): ?><button type="button" class="ld-fb" data-f="kind:<?= $k ?>"><?= smpro_h($kl[$k] ?? $k) ?> <?= $n ?></button><?php endforeach; ?>
-    <input type="text" class="ld-search" id="ldq" placeholder="filter by account or path…" style="margin-left:auto"></div>
-  <div id="ldlist">
-  <?php foreach ($byUser as $u => $rows): $w = $rows[0]['_sev']; foreach ($rows as $r) if (['critical' => 3, 'high' => 2, 'medium' => 1][$r['_sev']] > ['critical' => 3, 'high' => 2, 'medium' => 1][$w]) $w = $r['_sev']; ?>
-    <details class="ld-acct" <?= $w === 'critical' ? 'open' : '' ?> data-u="<?= smpro_h($u) ?>">
-      <summary><span class="arr">&#9654;</span><span class="u"><?= smpro_h($u) ?></span><span class="ld-sev <?= $w ?>"><?= $w ?></span><span><?= count($rows) ?> file(s)</span>
-        <span class="meta"><a href="index.cgi?page=user-investigation&amp;user=<?= smpro_h($u) ?>&amp;win=7" class="fa-lnk">investigate &#8250;</a></span></summary>
-      <?php foreach (array_slice($rows, 0, 200) as $f): ?>
-      <div class="ld-row" data-sev="<?= $f['_sev'] ?>" data-kind="<?= $f['_kind'] ?>" data-p="<?= smpro_h(strtolower($u . ' ' . $f['path'])) ?>">
-        <div><span class="ld-sev <?= $f['_sev'] ?>"><?= $f['_sev'] ?></span><span class="ld-kind"><?= smpro_h($kl[$f['_kind']] ?? $f['_kind']) ?></span>
-          <div class="p"><?= smpro_h($f['path']) ?></div>
-          <div class="w"><?php foreach ($f['why'] as $wl): ?><div><?= smpro_h($wl) ?></div><?php endforeach; ?></div>
-          <div class="m">changed <?= smpro_h(date('Y-m-d H:i', (int)$f['mtime'])) ?> · <?= number_format((int)$f['size']) ?> bytes<?= $f['sha'] ? ' · sha256 ' . smpro_h(substr($f['sha'], 0, 12)) . '…' : '' ?></div></div>
-        <div class="ld-acts">
-          <?php if (!is_dir($f['path'])): ?><form method="post" data-confirm="Move this file to the root-only store? Restore puts it back exactly."><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="quarantine"><input type="hidden" name="path" value="<?= smpro_h($f['path']) ?>"><button class="btn btn-xs btn-danger" type="submit">Quarantine</button></form><?php else: ?><span class="meta">a folder: open it, quarantine the file that sends</span><?php endif; ?>
-          <?php if ($f['sha']): ?><form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="notbad"><input type="hidden" name="sha" value="<?= smpro_h($f['sha']) ?>"><button class="btn btn-xs btn-ghost" type="submit">Not malicious</button></form><?php endif; ?>
+  <?php else: $kl = ['exact' => 'exact file', 'lesson' => 'lesson match', 'place' => 'same place', 'structural' => 'structural', 'mail' => 'sends mail', 'tmp' => 'in tmp', 'match' => 'match']; $kinds = []; foreach ($findings as $f) $kinds[$f['_kind']] = ($kinds[$f['_kind']] ?? 0) + 1; ?>
+  <form method="get" action="index.cgi" class="ld-filters" id="ldf"><input type="hidden" name="page" value="learned-defense">
+    <span class="meta">severity</span>
+    <a class="ld-fb<?= $fSev === '' ? ' on' : '' ?>" href="<?= smpro_h($qs(['sev' => '', 'p' => 1])) ?>">all <?= count($findings) ?></a>
+    <?php foreach (['critical', 'high', 'medium'] as $k): if ($bySev[$k]): ?><a class="ld-fb<?= $fSev === $k ? ' on' : '' ?>" href="<?= smpro_h($qs(['sev' => $k, 'p' => 1])) ?>"><?= $k ?> <?= $bySev[$k] ?></a><?php endif; endforeach; ?>
+    <span class="meta" style="margin-left:8px">kind</span>
+    <?php foreach ($kinds as $k => $n): ?><a class="ld-fb<?= $fKind === $k ? ' on' : '' ?>" href="<?= smpro_h($qs(['kind' => $fKind === $k ? '' : $k, 'p' => 1])) ?>"><?= smpro_h($kl[$k] ?? $k) ?> <?= $n ?></a><?php endforeach; ?>
+    <span class="meta" style="margin-left:8px">account</span>
+    <select name="user" class="tp-sel" onchange="this.form.submit()" style="max-width:180px"><option value="">all</option><?php foreach (array_keys($byUser) as $u): ?><option value="<?= smpro_h($u) ?>"<?= $fUser === $u ? ' selected' : '' ?>><?= smpro_h($u) ?> (<?= count($byUser[$u]) ?>)</option><?php endforeach; ?></select>
+    <span class="meta" style="margin-left:8px">group by</span>
+    <select name="group" class="tp-sel" onchange="this.form.submit()"><?php foreach (['account' => 'account', 'severity' => 'severity', 'kind' => 'kind', 'none' => 'nothing (flat list)'] as $gv => $gl): ?><option value="<?= $gv ?>"<?= $groupBy === $gv ? ' selected' : '' ?>><?= $gl ?></option><?php endforeach; ?></select>
+    <select name="per" class="tp-sel" onchange="this.form.submit()"><?php foreach ([25, 50, 100, 200] as $pp): ?><option value="<?= $pp ?>"<?= $perPage === $pp ? ' selected' : '' ?>><?= $pp ?> / page</option><?php endforeach; ?></select>
+    <input type="hidden" name="sev" value="<?= smpro_h($fSev) ?>"><input type="hidden" name="kind" value="<?= smpro_h($fKind) ?>">
+    <input type="text" class="ld-search" name="q" value="<?= smpro_h($fQ) ?>" placeholder="account, path or reason…" style="margin-left:auto"><button class="btn btn-xs btn-ghost" type="submit">Filter</button>
+    <?php if ($fSev || $fKind || $fUser || $fQ): ?><a class="fa-lnk" href="index.cgi?page=learned-defense#findings">clear</a><?php endif; ?>
+  </form>
+  <form method="post" id="ldsel">
+    <input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="" id="ldselact">
+    <div class="ld-filters" style="border-top:0">
+      <label class="meta" style="cursor:pointer"><input type="checkbox" id="ldall"> select all on this page</label>
+      <span class="meta" id="ldcount">0 selected</span>
+      <button type="button" class="btn btn-xs btn-danger" data-bulk="quarantine_many" data-confirm="Move the selected files to the root-only store? Restore puts any one back exactly.">Quarantine selected</button>
+      <button type="button" class="btn btn-xs btn-ghost" data-bulk="notbad_many" data-confirm="Remember the selected files as not malicious? They are never reported again and the lessons that matched them count one more wrong call.">Not malicious (selected)</button>
+      <span class="meta" style="margin-left:auto">page <?= $pageNo ?> of <?= $pages ?> · <?= $total ?> row(s)</span>
+      <?php if ($pages > 1): ?><a class="ld-fb<?= $pageNo <= 1 ? ' off' : '' ?>" href="<?= smpro_h($qs(['p' => max(1, $pageNo - 1)])) ?>">&#8249; prev</a>
+      <?php foreach (array_unique(array_filter([1, $pageNo - 1, $pageNo, $pageNo + 1, $pages], fn($x) => $x >= 1 && $x <= $pages)) as $pn): ?><a class="ld-fb<?= $pn === $pageNo ? ' on' : '' ?>" href="<?= smpro_h($qs(['p' => $pn])) ?>"><?= $pn ?></a><?php endforeach; ?>
+      <a class="ld-fb<?= $pageNo >= $pages ? ' off' : '' ?>" href="<?= smpro_h($qs(['p' => min($pages, $pageNo + 1)])) ?>">next &#8250;</a><?php endif; ?>
+    </div>
+    <div id="ldlist">
+    <?php foreach ($groups as $g => $rows): $w = 'medium'; foreach ($rows as $r) if ($sevRank[$r['_sev']] > $sevRank[$w]) $w = $r['_sev']; $gl = $groupBy === 'kind' ? ($kl[$g] ?? $g) : $g; ?>
+      <details class="ld-acct" open>
+        <summary><span class="arr">&#9654;</span><span class="u"><?= smpro_h($gl) ?></span><?php if ($groupBy !== 'severity'): ?><span class="ld-sev <?= $w ?>"><?= $w ?></span><?php endif; ?><span><?= count($rows) ?> file(s)</span>
+          <?php if ($groupBy === 'account'): ?><span class="meta"><a href="index.cgi?page=user-investigation&amp;user=<?= smpro_h($g) ?>&amp;win=7" class="fa-lnk">investigate &#8250;</a></span><?php endif; ?></summary>
+        <?php foreach ($rows as $f): ?>
+        <div class="ld-row" data-sev="<?= $f['_sev'] ?>" data-kind="<?= $f['_kind'] ?>">
+          <div><label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" class="ldck" name="paths[]" value="<?= smpro_h($f['path']) ?>" data-sha="<?= smpro_h($f['sha']) ?>"<?= is_dir($f['path']) ? ' disabled title="a folder is reported, not quarantined"' : '' ?>><span class="ld-sev <?= $f['_sev'] ?>"><?= $f['_sev'] ?></span><span class="ld-kind"><?= smpro_h($kl[$f['_kind']] ?? $f['_kind']) ?></span><?php if ($groupBy !== 'account'): ?><span class="ld-kind"><?= smpro_h($f['user']) ?></span><?php endif; ?></label>
+            <div class="p"><?= smpro_h($f['path']) ?></div>
+            <div class="w"><?php foreach ($f['why'] as $wl): ?><div><?= smpro_h($wl) ?></div><?php endforeach; ?></div>
+            <div class="m">changed <?= smpro_h(date('Y-m-d H:i', (int)$f['mtime'])) ?> · <?= number_format((int)$f['size']) ?> bytes<?= $f['sha'] ? ' · sha256 ' . smpro_h(substr($f['sha'], 0, 12)) . '…' : '' ?></div></div>
+          <div class="ld-acts">
+            <?php if (!is_dir($f['path'])): ?><button type="button" class="btn btn-xs btn-danger" data-one="quarantine" data-path="<?= smpro_h($f['path']) ?>" data-confirm="Move this file to the root-only store? Restore puts it back exactly.">Quarantine</button><?php else: ?><span class="meta">a folder: open it, quarantine the file that sends</span><?php endif; ?>
+            <?php if ($f['sha']): ?><button type="button" class="btn btn-xs btn-ghost" data-one="notbad" data-sha="<?= smpro_h($f['sha']) ?>">Not malicious</button><?php endif; ?>
+          </div>
         </div>
-      </div>
-      <?php endforeach; ?>
-    </details>
-  <?php endforeach; ?>
-  </div>
+        <?php endforeach; ?>
+      </details>
+    <?php endforeach; ?>
+    </div>
+  </form>
   <?php endif; ?>
 </div>
 
@@ -224,8 +278,28 @@ smpro_layout_header('Learned Defense');
 </div>
 </div>
 
+<form method="post" id="ldone" style="display:none"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value=""><input type="hidden" name="path" value=""><input type="hidden" name="sha" value=""></form>
 <script>
 document.addEventListener('submit',function(e){var f=e.target;if(f&&f.getAttribute('data-confirm')&&!confirm(f.getAttribute('data-confirm')))e.preventDefault();});
+(function(){
+  var sel=document.getElementById('ldsel'); if(!sel) return;
+  var cks=function(){return Array.prototype.slice.call(sel.querySelectorAll('.ldck:not(:disabled)'));};
+  function count(){var n=cks().filter(function(c){return c.checked;}).length; document.getElementById('ldcount').textContent=n+' selected';}
+  var all=document.getElementById('ldall'); if(all) all.addEventListener('change',function(){cks().forEach(function(c){c.checked=all.checked;});count();});
+  sel.addEventListener('change',function(e){if(e.target.classList.contains('ldck')) count();});
+  sel.querySelectorAll('[data-bulk]').forEach(function(b){b.addEventListener('click',function(){
+    var chosen=cks().filter(function(c){return c.checked;}); if(!chosen.length){alert('Select at least one file first.');return;}
+    if(!confirm(b.dataset.confirm)) return;
+    document.getElementById('ldselact').value=b.dataset.bulk;
+    if(b.dataset.bulk==='notbad_many'){ chosen.forEach(function(c){var h=document.createElement('input');h.type='hidden';h.name='shas[]';h.value=c.dataset.sha;sel.appendChild(h);}); cks().forEach(function(c){c.disabled=true;}); }
+    sel.submit();
+  });});
+  var one=document.getElementById('ldone');
+  document.querySelectorAll('[data-one]').forEach(function(b){b.addEventListener('click',function(){
+    if(b.dataset.confirm && !confirm(b.dataset.confirm)) return;
+    one.querySelector('[name=lr_action]').value=b.dataset.one; one.querySelector('[name=path]').value=b.dataset.path||''; one.querySelector('[name=sha]').value=b.dataset.sha||''; one.submit();
+  });});
+})();
 (function(){
   var cur='', q='';
   function apply(){
@@ -238,8 +312,8 @@ document.addEventListener('submit',function(e){var f=e.target;if(f&&f.getAttribu
     });
     document.querySelectorAll('#ldlist .ld-acct').forEach(function(a){var vis=a.querySelectorAll('.ld-row:not([style*="display: none"])').length; a.style.display=vis?'':'none'; if(vis&&(cur||q)) a.open=true;});
   }
-  document.querySelectorAll('.ld-fb[data-f]').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('.ld-fb[data-f]').forEach(function(x){x.classList.remove('on');});b.classList.add('on');cur=b.dataset.f;apply();});});
-  var s=document.getElementById('ldq'); if(s) s.addEventListener('input',function(){q=s.value.trim().toLowerCase();apply();});
+  
+  
   var lf='', lq='';
   function lapply(){document.querySelectorAll('#lltbl tbody tr').forEach(function(r){var ok=true; if(lf==='shared') ok=r.dataset.sh==='1'; else if(lf) ok=r.dataset.t===lf; if(ok&&lq) ok=r.dataset.q.indexOf(lq)>=0; r.style.display=ok?'':'none';});}
   document.querySelectorAll('.ld-fb[data-lf]').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('.ld-fb[data-lf]').forEach(function(x){x.classList.remove('on');});b.classList.add('on');lf=b.dataset.lf;lapply();});});
