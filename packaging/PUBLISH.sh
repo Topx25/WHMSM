@@ -95,6 +95,22 @@ if [ "$PUBLISH_STABLE" -eq 1 ]; then
   echo
 fi
 
+# A version number is a promise about bytes. Two builds of the same source are not byte-identical (timestamps, the
+# obfuscator's ordering), so a rebuild after a publish leaves a local tarball that passes its own receipt and would
+# silently replace what licensees already took - same version, different bytes, and no way afterwards to say which
+# one a server is running. Refuse that. Re-publishing the IDENTICAL bytes (to repair a partial upload) still works.
+SERVED="$(ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=45 "root@$HOST" \
+  "cd '$DIR' 2>/dev/null && [ \"\$(cat '$VFILE' 2>/dev/null | tr -d '[:space:]')\" = '$VER' ] && sha256sum '$TGZ' 2>/dev/null | cut -d' ' -f1" 2>/dev/null | tr -d '[:space:]')"
+if [ -n "$SERVED" ] && [ "$SERVED" != "$SHA" ]; then
+  echo "REFUSING: $VER is already served from $HOST with DIFFERENT bytes."
+  echo "          served: $SERVED"
+  echo "          local : $SHA"
+  echo "          The local tarball was rebuilt after that publish. Cut a new version number instead;"
+  echo "          never let one version mean two different builds. (To re-upload the served build, fetch it"
+  echo "          back into packaging/ first.)"
+  exit 1
+fi
+
 echo "publishing $VER to $CHANNEL on $HOST …"
 tar cf - "$TGZ" "$SIG" "$NOTES" | ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=45 \
   -o ServerAliveInterval=10 "root@$HOST" "
