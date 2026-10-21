@@ -108,6 +108,7 @@ function smpro_su_check(bool $notify = true): array {
     if ($pk['ok']) $s['pending'] = $pk['pending'];
     $s['cpanel'] = smpro_su_check_cpanel();
     $s['kernel'] = smpro_su_check_kernel();
+    smpro_su_php_watch($s, 'since the last look', $notify);
     if (!$pk['ok']) {
         // a check that could not run is a problem in its own right: diagnose it like a failed apply
         $d = smpro_su_diagnose((string)($pk['raw'] ?? $pk['err']));
@@ -131,6 +132,54 @@ function smpro_su_check(bool $notify = true): array {
     }
     smpro_su_state_save($s);
     return $s;
+}
+
+/* ------------------------------------------------------------------ the PHP version of every domain */
+/** vhost => [version, fpm] from cPanel's own API. An update's PHP hook rewrites every domain's handler; on a
+ *  production server one domain came out of such an update on a PHP four major versions older than its code, with
+ *  FPM pointed at a service that did not exist, and every visitor got an error until somebody noticed. So the
+ *  versions are photographed before and after, and a changed domain is said - and can be put back in one press. */
+function smpro_su_php_snapshot(): array {
+    $w = ''; foreach (['/usr/local/cpanel/bin/whmapi1', '/usr/sbin/whmapi1'] as $b) if (is_executable($b)) { $w = $b; break; }
+    if ($w === '') return [];
+    $j = json_decode((string)@shell_exec('timeout 60 ' . $w . ' php_get_vhost_versions --output=json 2>/dev/null'), true);
+    $out = [];
+    foreach ((array)($j['data']['versions'] ?? []) as $v) { $h = (string)($v['vhost'] ?? ''); if ($h === '' || $h[0] === '*') continue; $out[$h] = ['v' => (string)($v['version'] ?? ''), 'fpm' => (int)!empty($v['php_fpm']), 'u' => (string)($v['account'] ?? '')]; }
+    ksort($out);
+    return $out;
+}
+/** What changed between two snapshots: [vhost => [before, after]] for every domain whose version or FPM differs. */
+function smpro_su_php_diff(array $before, array $after): array {
+    $d = [];
+    foreach ($after as $h => $a) { $b = $before[$h] ?? null; if ($b === null) continue; if ($b['v'] !== $a['v'] || $b['fpm'] !== $a['fpm']) $d[$h] = ['before' => $b, 'after' => $a]; }
+    return $d;
+}
+/** Put one domain back on the version it had. [ok, msg] - read back from the API, never assumed. */
+function smpro_su_php_putback(string $vhost, string $version, int $fpm): array {
+    if (!preg_match('/^[a-z0-9.-]{1,253}$/i', $vhost) || !preg_match('/^(ea|alt)-php\d{2,3}$/', $version)) return [false, 'not a valid domain or PHP version'];
+    $w = ''; foreach (['/usr/local/cpanel/bin/whmapi1', '/usr/sbin/whmapi1'] as $b) if (is_executable($b)) { $w = $b; break; }
+    if ($w === '') return [false, 'whmapi1 not found'];
+    $j = json_decode((string)@shell_exec('timeout 120 ' . $w . ' php_set_vhost_versions version=' . escapeshellarg($version) . ' vhost=' . escapeshellarg($vhost) . ' php_fpm=' . ($fpm ? 1 : 0) . ' --output=json 2>/dev/null'), true);
+    if (empty($j['metadata']['result'])) return [false, (string)($j['metadata']['reason'] ?? 'cPanel refused')];
+    $now = smpro_su_php_snapshot()[$vhost] ?? null;
+    if (!$now || $now['v'] !== $version || $now['fpm'] !== ($fpm ? 1 : 0)) return [false, 'cPanel answered OK but the domain still reads ' . json_encode($now)];
+    if (function_exists('smpro_audit')) smpro_audit('sysupd_php_putback', ['vhost' => $vhost, 'version' => $version, 'fpm' => $fpm]);
+    return [true, $vhost . ' is back on ' . $version . ($fpm ? ' with FPM' : ' without FPM') . ' (read back from cPanel)'];
+}
+/** Compare the current versions with the last photograph, remember the new one, tell the operator about changes. */
+function smpro_su_php_watch(array &$s, string $why, bool $notify): array {
+    $now = smpro_su_php_snapshot(); if (!$now) return [];
+    $prev = (array)($s['php_snapshot'] ?? []);
+    $diff = $prev ? smpro_su_php_diff($prev, $now) : [];
+    $s['php_snapshot'] = $now; $s['php_snapshot_at'] = time();
+    if ($diff) {
+        $s['php_changes'] = array_slice(array_merge([['at' => time(), 'why' => $why, 'changes' => $diff]], (array)($s['php_changes'] ?? [])), 0, 20);
+        if ($notify && function_exists('smpro_notify') && smpro_su_cfg()['notify_problem']) {
+            $lines = []; foreach (array_slice($diff, 0, 15, true) as $h => $c) $lines[] = $h . ': ' . $c['before']['v'] . ($c['before']['fpm'] ? '+FPM' : '') . ' -> ' . $c['after']['v'] . ($c['after']['fpm'] ? '+FPM' : '');
+            @smpro_notify('sysupd_problem', count($diff) . ' domain(s) changed PHP version (' . $why . ')', "The PHP version or FPM setting of these domains is not what it was at the last look:\n" . implode("\n", $lines) . (count($diff) > 15 ? "\n… and " . (count($diff) - 15) . ' more' : '') . "\nIf nobody meant this, open System updates > PHP version changes and press Put back.");
+        }
+    }
+    return $diff;
 }
 
 /* ------------------------------------------------------------------ when a download breaks */
@@ -227,6 +276,7 @@ function smpro_su_apply(string $by = 'operator', bool $cpanelToo = false): array
     // Safety Lock's immutable bits would stop cPanel's PHP handler hook inside this very transaction: lift them for
     // the run, put them back after (the same pair cPanel's own hooks call).
     if (!function_exists('smpro_slm_release')) { $slf = __DIR__ . '/slmaint.php'; if (is_file($slf)) { foreach (['phlock', 'phstack', 'ph_ignore', 'compcheck', 'spqueue'] as $dep) { $df = __DIR__ . '/' . $dep . '.php'; if (is_file($df)) require_once $df; } require_once $slf; } }
+    $s0 = smpro_su_state(); smpro_su_php_watch($s0, 'before the update', false); smpro_su_state_save($s0);
     $rel = function_exists('smpro_slm_release') ? smpro_slm_release('the system update') : null;
     if ($rel) smpro_su_log('safety lock: ' . $rel['msg']);
     [$rc, $out] = smpro_su_run($dnf . ' -y update', 1800);
@@ -248,6 +298,7 @@ function smpro_su_apply(string $by = 'operator', bool $cpanelToo = false): array
     if (preg_match_all('/^\s*(Upgraded|Installed|Upgrading|Installing):?\s*$/m', $out)) { preg_match_all('/^\s{2}\S+-\d\S*\s*$/m', $out, $mm); $rec['updated'] = count($mm[0]); }
     if (preg_match('/Nothing to do/i', $out)) $rec['updated'] = 0;
     $rec['services'] = smpro_su_service_check();
+    $s1 = smpro_su_state(); $rec['php_changed'] = smpro_su_php_watch($s1, 'the system update', true); smpro_su_state_save($s1);
     if ($cpanelToo || ($by === 'auto' && $cfg['cpanel_auto'])) {
         [$crc, $cout] = smpro_su_run('/scripts/upcp --cron', 3000);
         smpro_su_log("upcp rc=$crc\n" . substr($cout, -4000));

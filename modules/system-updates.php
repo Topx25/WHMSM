@@ -31,6 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $act !== '') {
         smpro_audit('sysupd_repair', ['ok' => $ok ? 1 : 0, 'what' => $what]);
         if ($ok) { $s2 = smpro_su_check(false); $what .= '; re-check: ' . ($s2['check_ok'] ? count($s2['pending']) . ' pending' : 'still failing - ' . $s2['check_err']); }
         $out = ['ok' => $ok, 'msg' => $what];
+    } elseif ($act === 'putback') {
+        [$ok, $msg] = smpro_su_php_putback((string)($_POST['vhost'] ?? ''), (string)($_POST['version'] ?? ''), (int)!empty($_POST['fpm']));
+        if ($ok) { $s = smpro_su_state(); smpro_su_php_watch($s, 'put back', false); smpro_su_state_save($s); }
+        $out = ['ok' => $ok, 'msg' => $msg];
     } elseif ($act === 'log') {
         $out = ['ok' => true, 'log' => is_file(SMPRO_SU_LOG) ? substr((string)@file_get_contents(SMPRO_SU_LOG), -60000) : '(no apply has run yet)'];
     }
@@ -97,6 +101,19 @@ smpro_layout_header('System updates');
   </div>
 </div>
 
+<?php $pc = (array)($s['php_changes'] ?? []); $snap = (array)($s['php_snapshot'] ?? []); ?>
+<div class="card" style="margin-top:14px">
+  <div class="fa-head"><b>PHP version changes</b> <span class="meta">every domain's PHP version and FPM setting are photographed at every check and around every update; a change is listed here with the way back (<?= count($snap) ?> domain(s) in the last photograph<?= !empty($s['php_snapshot_at']) ? ', ' . smpro_h(date('Y-m-d H:i', (int)$s['php_snapshot_at'])) : '' ?>)</span></div>
+  <?php if (!$pc): ?><div class="fa-empty" style="color:var(--good)">No domain changed its PHP version since the first photograph.</div>
+  <?php else: ?><div style="overflow:auto;max-height:360px"><table class="smpro-table su-tbl" style="margin:0"><thead><tr><th>When</th><th>Domain</th><th>Before</th><th>After</th><th></th></tr></thead><tbody>
+    <?php foreach ($pc as $ev): foreach ((array)$ev['changes'] as $h => $c): $cur = $snap[$h] ?? null; $same = $cur && $cur['v'] === $c['before']['v'] && $cur['fpm'] === $c['before']['fpm']; ?>
+    <tr><td style="white-space:nowrap"><?= smpro_h(date('m-d H:i', (int)$ev['at'])) ?><div class="meta"><?= smpro_h($ev['why']) ?></div></td><td class="mono"><?= smpro_h($h) ?></td>
+      <td class="mono"><?= smpro_h($c['before']['v']) ?><?= $c['before']['fpm'] ? ' +FPM' : '' ?></td><td class="mono"><?= smpro_h($c['after']['v']) ?><?= $c['after']['fpm'] ? ' +FPM' : '' ?></td>
+      <td><?php if ($same): ?><span class="meta">already back</span><?php else: ?><button type="button" class="fa-lnk" data-su="putback" data-vhost="<?= smpro_h($h) ?>" data-version="<?= smpro_h($c['before']['v']) ?>" data-fpm="<?= (int)$c['before']['fpm'] ?>" data-confirm="Put <?= smpro_h($h) ?> back on <?= smpro_h($c['before']['v']) ?><?= $c['before']['fpm'] ? ' with FPM' : ' without FPM' ?>? cPanel rewrites the handler and the result is read back.">Put back</button><?php endif; ?></td></tr>
+    <?php endforeach; endforeach; ?>
+  </tbody></table></div><?php endif; ?>
+</div>
+
 <div class="card" style="margin-top:14px">
   <div class="fa-head"><b>Settings</b> <span class="meta">the check always runs; the mode decides who presses the button</span></div>
   <form id="suForm" style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
@@ -119,7 +136,7 @@ smpro_layout_header('System updates');
     var a=b.getAttribute('data-su'); if(b.dataset.confirm && !confirm(b.dataset.confirm)) return;
     var m=document.getElementById('suMsg'); m.textContent=(a==='apply'?'Updating… (this can take several minutes; the page waits)':a==='repair'?'Repairing…':a==='check'?'Checking…':'');
     document.querySelectorAll('[data-su]').forEach(function(x){x.disabled=true;});
-    var fd=new URLSearchParams(); fd.set('su_action',a); if(b.dataset.cpanel) fd.set('cpanel','1');
+    var fd=new URLSearchParams(); fd.set('su_action',a); if(b.dataset.cpanel) fd.set('cpanel','1'); if(a==='putback'){fd.set('vhost',b.dataset.vhost);fd.set('version',b.dataset.version);fd.set('fpm',b.dataset.fpm);}
     post(fd,function(r){ document.querySelectorAll('[data-su]').forEach(function(x){x.disabled=false;});
       if(a==='log'){var l=document.getElementById('suLog'); l.style.display='block'; l.textContent=r.log||''; m.textContent=''; return;}
       m.textContent=r.msg||''; m.className='meta '+(r.ok?'':'');

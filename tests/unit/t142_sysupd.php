@@ -67,3 +67,18 @@ is_eq([$c['mode'], $c['hour'], $c['check_hours']], ['auto', 23, 1], 'C1: setting
 $c = smpro_su_cfg_save(['mode' => 'weird']);
 is_eq($c['mode'], 'manual', 'C2: an unknown mode falls back to manual');
 @exec('rm -rf ' . escapeshellarg(SMPRO_VARLIB));
+
+// the PHP version of every domain, photographed and compared (a production domain came out of an update on a PHP
+// four major versions older than its code, FPM pointed at a service that did not exist)
+$src2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/sysupd.php'));
+$before = ['a.example' => ['v' => 'ea-php84', 'fpm' => 1, 'u' => 'a'], 'b.example' => ['v' => 'ea-php82', 'fpm' => 0, 'u' => 'b'], 'c.example' => ['v' => 'ea-php82', 'fpm' => 0, 'u' => 'c']];
+$after  = ['a.example' => ['v' => 'alt-php56', 'fpm' => 1, 'u' => 'a'], 'b.example' => ['v' => 'ea-php82', 'fpm' => 1, 'u' => 'b'], 'c.example' => ['v' => 'ea-php82', 'fpm' => 0, 'u' => 'c'], 'd.example' => ['v' => 'ea-php83', 'fpm' => 0, 'u' => 'd']];
+$d = smpro_su_php_diff($before, $after);
+is_eq(array_keys($d), ['a.example', 'b.example'], 'V1: a changed version and a changed FPM setting are both changes; a new domain is not');
+is_eq($d['a.example']['before']['v'] . '>' . $d['a.example']['after']['v'], 'ea-php84>alt-php56', 'V2: before and after are kept');
+is_eq(smpro_su_php_putback('../x', 'ea-php84', 0)[0], false, 'V3: a domain is a name, never a path');
+is_eq(smpro_su_php_putback('a.example', 'php84', 0)[0], false, 'V3: a version is an ea-/alt- build name');
+has($src2, "\$s0 = smpro_su_state(); smpro_su_php_watch(\$s0, 'before the update', false);", 'V4: photographed before the update');
+has($src2, "\$rec['php_changed'] = smpro_su_php_watch(\$s1, 'the system update', true);", 'V5: compared after it, and said');
+has($src2, "smpro_su_php_watch(\$s, 'since the last look', \$notify);", 'V6: and at every check, because the panel changes versions on its own too');
+has($src2, "if (!\$now || \$now['v'] !== \$version || \$now['fpm'] !== (\$fpm ? 1 : 0)) return [false, 'cPanel answered OK but the domain still reads '", 'V7: put back is read back from cPanel, never assumed');
