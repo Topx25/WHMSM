@@ -115,13 +115,32 @@ function smpro_cc_server_checks(): array {
     $tok = @is_readable($tf) ? json_decode((string)@file_get_contents($tf), true) : null;
     $toks = is_array($tok) && isset($tok['tokens']) ? (array)$tok['tokens'] : [];
     if (!$toks && !@is_readable($tf)) { $tok = json_decode(smpro_cc_run('/usr/local/cpanel/bin/whmapi1 api_token_list --output=json'), true); $toks = (array)($tok['data']['tokens'] ?? []); }
+    // The FILE is keyed by the token's hash and carries the name inside the record; the API is keyed by the name.
+    // Keyed by hash, every "is this one cPanel's own?" test below failed and every token was reported as one the
+    // operator created, named by a 128-character hash. Key both sources by the NAME, which is what a person reads,
+    // what the logs record, and what the revoke/disable API takes.
+    $byName = [];
+    foreach ($toks as $k => $x) { $n = (string)($x['name'] ?? ''); if ($n === '') $n = (string)$k; $byName[$n] = (array)$x; }
+    $toks = $byName;
     // cPanel creates "reverse_trust_<uuid>" tokens itself for server-to-server transfers; they are not the operator's.
     $mine = array_filter($toks, fn($x, $n) => strpos((string)$n, 'reverse_trust_') !== 0, ARRAY_FILTER_USE_BOTH);
     $trust = count($toks) - count($mine);
-    $out[] = ['id' => 'roottok', 'title' => 'WHM API tokens for root', 'status' => count($mine) > 0 ? 'info' : 'ok',
-              'finding' => count($mine) . ' token(s) you created' . ($mine ? ': ' . implode(', ', array_map(fn($n, $x) => $n . ' (created ' . date('Y-m-d', (int)($x['create_time'] ?? 0)) . ')', array_keys($mine), $mine)) : '') . ($trust ? ' - plus ' . $trust . ' reverse_trust_* token(s) cPanel made for transfers' : ''),
-              'why' => 'An API token is a root password that never expires and is not rotated by a password change. Each one must be accounted for.', 'evidence' => [],
-              'fixes' => array_map(fn($n) => ['op' => 'roottok_revoke', 'name' => (string)$n, 'what' => (string)$n], array_keys($mine))];
+    // Each token gets its own line: what it can do, who made it and from where, whether it expires, when it was last
+    // used. "32 tokens" says nothing an operator can act on; these five facts are what decides keep or revoke.
+    $ev = [];
+    foreach ($mine as $n => $x) $ev[] = $n . ' — ' . smpro_cc_token_line((string)$n, (array)$x, true);
+    if ($trust) {
+        $lu = smpro_cc_token_last_use(); $seen = 0; $last = 0; $from = [];
+        foreach ($toks as $n => $x) { if (strpos((string)$n, 'reverse_trust_') !== 0) continue; if (isset($lu[$n])) { $seen++; if ($lu[$n][0] > $last) $last = $lu[$n][0]; if ($lu[$n][1] !== '') $from[$lu[$n][1]] = true; } }
+        $ev[] = $trust . ' × reverse_trust_* — made by cPanel itself for server-to-server transfers (each one can do EVERYTHING root can). '
+              . ($seen ? $seen . ' of them were used, last ' . date('Y-m-d H:i', $last) . ($from ? ' from ' . implode(', ', array_slice(array_keys($from), 0, 3)) : '') . '. A transfer that is finished does not need its token: revoke in WHM > Manage API Tokens the ones whose partner server you no longer transfer with.' : 'None of them has been used in the kept log. A transfer token nobody uses is a root password left lying about.');
+    }
+    $out[] = ['id' => 'roottok', 'title' => 'WHM API tokens for root', 'status' => count($mine) > 0 ? 'info' : ($trust > 0 ? 'info' : 'ok'),
+              'finding' => count($mine) . ' token(s) you created' . ($trust ? ', plus ' . $trust . ' reverse_trust_* token(s) cPanel made for transfers (each has every WHM permission and never expires)' : '') . ' — the line for each one below says what it can do, who made it, when it expires and when it was last used.',
+              'why' => 'An API token is a root password that never expires and is not rotated by a password change. Each one must be accounted for: what it can do, who made it, whether it is still used.', 'evidence' => $ev,
+              'fixes' => array_merge(
+                  array_map(fn($n) => ['op' => 'roottok_revoke', 'name' => (string)$n, 'what' => 'revoke ' . $n], array_keys($mine)),
+                  array_map(fn($n) => ['op' => 'roottok_disable', 'name' => (string)$n, 'what' => 'disable ' . $n], array_keys($mine)))];
     $uid0 = [];
     foreach ((array)@file('/etc/passwd', FILE_IGNORE_NEW_LINES) as $l) { $f = explode(':', $l); if (isset($f[2]) && $f[2] === '0' && $f[0] !== 'root') $uid0[] = $f[0]; }
     $out[] = ['id' => 'uid0', 'title' => 'Only root has uid 0', 'status' => $uid0 ? 'critical' : 'ok',
@@ -297,6 +316,58 @@ function smpro_cc_fix(string $id): string {
 }
 
 /* ------------------------------------------------------------------ account level */
+
+/** When each API token was last USED, from cPanel's own token log: name => [unixtime, address]. One pass over the
+ *  tail of the file; a token that never appears was never used (that is a fact worth showing, not an absence). */
+function smpro_cc_token_last_use(): array {
+    static $m = null; if ($m !== null) return $m;
+    $m = [];
+    $f = '/usr/local/cpanel/logs/api_tokens_log';
+    if (!@is_readable($f)) return $m;
+    foreach (explode("\n", (string)smpro_cc_run('tail -n 20000 ' . escapeshellarg($f), 20)) as $l) {
+        if ($l === '' || !preg_match("/^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8})/", $l, $t)) continue;
+        if (!preg_match("/Token Name: \['([^']{1,128})'\]/", $l, $n)) continue;
+        $ip = preg_match("/Host: \['([0-9a-fA-F:.]{3,45})'\]/", $l, $h) ? $h[1] : '';
+        $ts = (int)strtotime($t[1]);
+        $k = $n[1];
+        if (!isset($m[$k]) || $ts > $m[$k][0]) $m[$k] = [$ts, $ip];
+    }
+    return $m;
+}
+/** Who created each token and from which address, from cPanel's own access log: name => [unixtime, address, user]. */
+function smpro_cc_token_created_by(): array {
+    static $m = null; if ($m !== null) return $m;
+    $m = [];
+    foreach (['/usr/local/cpanel/logs/access_log'] as $f) {
+        if (!@is_readable($f)) continue;
+        foreach (explode("\n", (string)smpro_cc_run('grep -a api_token_create ' . escapeshellarg($f) . ' 2>/dev/null | grep -av "\\.svg" | tail -n 500', 25)) as $l) {
+            if (!preg_match('#^(\S+) - (\S+) \[([0-9]{2}/[0-9]{2}/[0-9]{4}:[0-9:]{8})#', $l, $a)) continue;
+            if (!preg_match('/token_name=([A-Za-z0-9._%-]{1,128})/', $l, $n)) continue;
+            $d = DateTime::createFromFormat('m/d/Y:H:i:s', $a[3], new DateTimeZone('UTC'));
+            $m[rawurldecode($n[1])] = [$d ? (int)$d->getTimestamp() : 0, $a[1], $a[2]];
+        }
+    }
+    return $m;
+}
+/** One readable line about a token: what it can do, when it was made and by whom, when it expires, when it was last
+ *  used. Every part is read from cPanel's own files; a part that cannot be read is said to be unknown, never left out. */
+function smpro_cc_token_line(string $name, array $tk, bool $whm): string {
+    $ct = (int)($tk['create_time'] ?? 0);
+    $exp = $tk['expires_at'] ?? null;
+    $acls = (array)($tk['acls'] ?? []);
+    $full = !empty($tk['has_full_access']) || isset($acls['all']);
+    $wl = $tk['whitelist_ips'] ?? null;
+    $made = smpro_cc_token_created_by()[$name] ?? null;
+    $use  = smpro_cc_token_last_use()[$name] ?? null;
+    $p = [];
+    $p[] = 'can do: ' . ($full ? ($whm ? 'EVERYTHING root can do in WHM' : 'everything the account can do') : ($acls ? count($acls) . ' permission(s): ' . implode(', ', array_slice(array_keys($acls), 0, 4)) . (count($acls) > 4 ? '…' : '') : ($whm ? 'permissions unreadable' : 'the account\'s own features')));
+    $p[] = 'made: ' . ($ct ? date('Y-m-d H:i', $ct) : 'unknown');
+    $p[] = 'by: ' . ($made ? ($made[2] !== '' ? $made[2] . ' from ' . $made[1] : $made[1]) . ($made[0] ? ' on ' . date('Y-m-d H:i', $made[0]) : '') : 'not in the log kept on this server');
+    $p[] = 'expires: ' . ($exp ? date('Y-m-d H:i', (int)$exp) . ((int)$exp < time() ? ' (already expired - it no longer opens anything)' : '') : 'NEVER');
+    $p[] = 'last used: ' . ($use ? date('Y-m-d H:i', $use[0]) . ($use[1] !== '' ? ' from ' . $use[1] : '') : 'never seen in the token log');
+    if ($wl) $p[] = 'only from: ' . implode(', ', array_slice((array)$wl, 0, 3));
+    return implode(' · ', $p);
+}
 
 /** Every cPanel account with its home and main domain. */
 function smpro_cc_accounts(): array {
@@ -489,7 +560,13 @@ function smpro_cc_account_doors(array $acct, int $since): array {
     $tf = '/var/cpanel/authn/api_tokens_v2/cpanel/' . $u . '.json';
     if (@is_file($tf)) {
         $j = json_decode((string)@file_get_contents($tf), true);
-        foreach ((array)($j['tokens'] ?? []) as $hash => $tk) { $ct = (int)($tk['create_time'] ?? 0); $name = (string)($tk['name'] ?? substr((string)$hash, 0, 8)); $add('token', 'API token ' . $name . (!empty($tk['has_full_access']) ? ' (full access)' : ''), $ct, 'created ' . ($ct ? date('Y-m-d', $ct) : '?') . ' - a password that no reset rotates', $ct >= $since, ['op' => 'token_revoke', 'user' => $u, 'name' => $name]); }
+        foreach ((array)($j['tokens'] ?? []) as $hash => $tk) {
+            $ct = (int)($tk['create_time'] ?? 0); $name = (string)($tk['name'] ?? substr((string)$hash, 0, 8));
+            $exp = $tk['expires_at'] ?? null; $dead = $exp !== null && (int)$exp > 0 && (int)$exp < time();
+            $add('token', 'API token ' . $name . (!empty($tk['has_full_access']) ? ' (full access)' : '') . ($dead ? ' — expired' : ''), $ct,
+                 smpro_cc_token_line($name, (array)$tk, false) . ' — a password that no reset rotates',
+                 $ct >= $since && !$dead, ['op' => 'token_revoke', 'user' => $u, 'name' => $name]);
+        }
     }
     usort($f, fn($a, $b) => $b['when'] <=> $a['when']);
     $newest = $f ? max(array_column($f, 'when')) : 0;

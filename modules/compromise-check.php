@@ -79,6 +79,17 @@ $doorCounts = [];
 foreach ($flaggedRows as $r) foreach ($r['findings'] as $f) if ($f['flag']) $doorCounts[$f['kind']] = ($doorCounts[$f['kind']] ?? 0) + 1;
 $KIND = ['ftp' => ['FTP sub-account', '#6d28d9'], 'forwarder' => ['Forwarder', '#b45309'], 'cron' => ['Cron', '#0891b2'], 'sshkey' => ['SSH key', '#b91c1c'],
          'contact' => ['Contact e-mail', '#b91c1c'], 'mailbox' => ['Mailbox', '#0f766e'], 'token' => ['API token', '#b91c1c'], 'shellrc' => ['Shell start-up', '#b91c1c']];
+// What each kind of door IS, in one sentence - the chip alone ("Shell start-up") tells an operator nothing.
+$KIND_WHAT = [
+    'ftp'       => 'A second FTP login into the account, with its own password and its own folder, so it keeps working after the main password is changed. Removing it deletes the LOGIN only - the files stay where they are.',
+    'forwarder' => 'A rule that sends a copy of every mail for an address to another address. The usual way a break-in keeps reading password-reset mail after it is locked out.',
+    'cron'      => 'A scheduled command of the account. A line that fetches or decodes code re-installs the break-in minutes after it is cleaned.',
+    'sshkey'    => 'A key authorised for SSH/SFTP login into the account. A key is not touched by a password change.',
+    'contact'   => 'The address cPanel sends the mail of this account to - "forgot password" links above all. Changed to an address the intruder holds, every reset you do lands in their inbox, so this one is read before anything else is fixed.',
+    'mailbox'   => 'A mailbox created in the account: a way back in, and a place to send spam from.',
+    'token'     => 'An API token: a password for the API that no password change rotates and that usually never expires. For an account token cPanel offers no "disable" - it is revoked or it stays.',
+    'shellrc'   => 'A line added to the shell start-up files of the account (~/.bashrc, ~/.bash_profile, ~/.profile). Those run on EVERY shell the account opens - including cron and SSH - so a line that fetches or decodes code there runs again and again, long after the files it installed are deleted.',
+];
 $STATUS = ['ok' => ['good', 'OK'], 'info' => ['blue', 'INFO'], 'warning' => ['warn', 'WARNING'], 'critical' => ['danger', 'CRITICAL']];
 $RANK = ['critical' => 0, 'warning' => 1, 'info' => 2, 'ok' => 3];
 $vs = smpro_cc_version_state(); $vs2 = smpro_cc_version_state('', 1); $bothOk = ($vs['ok'] === true && $vs2['ok'] === true);
@@ -282,6 +293,13 @@ smpro_layout_header('Compromise Check');
       <?php endforeach; ?>
     </div>
     <?php endif; ?>
+    <details class="cc-legend" style="margin:10px 0 2px"><summary style="cursor:pointer;color:var(--brand);font-size:12.5px">What each kind of door is</summary>
+      <table class="smpro-table" style="margin:8px 0 0">
+        <tbody><?php foreach ($KIND_WHAT as $kw => $txt): [$kl2, $kc2] = $KIND[$kw] ?? [$kw, '#64748b']; ?>
+          <tr><td style="white-space:nowrap;vertical-align:top"><span class="cc-chip" style="background:<?= $kc2 ?>22;color:<?= $kc2 ?>"><?= smpro_h($kl2) ?></span></td><td style="font-size:12.5px;line-height:1.6"><?= smpro_h($txt) ?></td></tr>
+        <?php endforeach; ?></tbody>
+      </table>
+    </details>
     <div class="cc-note">
       <?php if (!$usersIn && !$showAll && $quietRows): ?><?= count($quietRows) ?> more account(s) have doors that are older than the window &mdash; <a href="index.cgi?page=compromise-check&amp;days=<?= $days ?>&amp;all=1">show them too</a>. <?php endif; ?>
       A flagged door the customer did not add: remove it (button, or in their cPanel) <b>and</b> reset every password of the account from Firewall &rsaquo; Threat Report. A reset alone leaves the door open.

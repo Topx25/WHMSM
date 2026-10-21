@@ -40,12 +40,13 @@ function smpro_cx_ops(): array {
         'preload_empty'=> ['label' => 'Empty the file', 'confirm' => 'Empty /etc/ld.so.preload (original backed up)? Then treat the server as compromised.', 'args' => []],
         'wheel_rm'     => ['label' => 'Remove from wheel/sudo', 'confirm' => 'Take this user out of the wheel and sudo groups?', 'args' => ['user' => $user]],
         'rootkey_rm'   => ['label' => 'Remove this key', 'confirm' => 'Remove this key from /root/.ssh/authorized_keys (original backed up)? Be sure it is not the one you are using.', 'args' => ['sha' => $sha]],
-        'roottok_revoke'=> ['label' => 'Revoke', 'confirm' => 'Revoke this WHM API token?', 'args' => ['name' => '/^[A-Za-z0-9._-]{1,128}$/']],
-        'ftp_delete'   => ['label' => 'Delete sub-account', 'confirm' => 'Delete this FTP sub-account (the FTP file is backed up first)?', 'args' => ['user' => $user, 'login' => '/^[A-Za-z0-9._-]{1,64}@[A-Za-z0-9.-]{1,253}$/']],
+        'roottok_revoke'=> ['label' => 'Revoke', 'confirm' => 'Revoke this WHM API token? It stops working at once and cannot be brought back - anything using it must be given a new one.', 'args' => ['name' => '/^[A-Za-z0-9._-]{1,128}$/']],
+        'roottok_disable'=> ['label' => 'Disable (expire now)', 'confirm' => 'Give this WHM API token an expiry in the past? It stops opening anything immediately, but it stays in the list with its name and history - use this when you are not yet sure what uses it.', 'args' => ['name' => '/^[A-Za-z0-9._-]{1,128}$/']],
+        'ftp_delete'   => ['label' => 'Delete the login, keep the files', 'confirm' => 'Delete this FTP sub-account? Only the LOGIN goes: its home folder and every file in it stay exactly where they are (cPanel is told destroy=0), and the FTP password file is backed up first.', 'args' => ['user' => $user, 'login' => '/^[A-Za-z0-9._-]{1,64}@[A-Za-z0-9.-]{1,253}$/']],
         'fwd_delete'   => ['label' => 'Delete forwarder', 'confirm' => 'Delete this forwarder?', 'args' => ['user' => $user, 'address' => '/^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}$/', 'target' => '/^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}$/']],
         'cron_clean'   => ['label' => 'Remove fetch/decode lines', 'confirm' => 'Remove every cron line of this account that fetches or decodes code (crontab backed up first)? Routine lines stay.', 'args' => ['user' => $user]],
         'sshkey_clear' => ['label' => 'Remove all keys', 'confirm' => 'Remove every authorised SSH key of this account (file backed up first)? The customer re-adds theirs in cPanel.', 'args' => ['user' => $user]],
-        'token_revoke' => ['label' => 'Revoke', 'confirm' => 'Revoke this cPanel API token?', 'args' => ['user' => $user, 'name' => '/^[A-Za-z0-9._-]{1,128}$/']],
+        'token_revoke' => ['label' => 'Revoke', 'confirm' => 'Revoke this cPanel API token? cPanel offers no way to disable an account token without removing it, so this is the only way to close it.', 'args' => ['user' => $user, 'name' => '/^[A-Za-z0-9._-]{1,128}$/']],
         'rc_clean'     => ['label' => 'Remove the lines', 'confirm' => 'Remove the fetch/decode lines from this account\'s shell start-up files (backed up first)?', 'args' => ['user' => $user]],
     ];
     return $ops;
@@ -187,11 +188,19 @@ function smpro_cx_apply(string $op, array $args, string $actor = ''): array {
                 $o = json_decode(smpro_cx_run('/usr/local/cpanel/bin/whmapi1 api_token_revoke token_name=' . escapeshellarg($a['name']) . ' --output=json', 30), true);
                 $r = !empty($o['metadata']['result']) ? ['ok' => true, 'msg' => 'token ' . $a['name'] . ' revoked'] : ['ok' => false, 'msg' => (string)($o['metadata']['reason'] ?? 'WHM refused')];
                 break;
+            case 'roottok_disable':
+                if (strpos($a['name'], 'reverse_trust_') === 0) { $r = ['ok' => false, 'msg' => 'refused: that is a cPanel transfer token']; break; }
+                // An expiry in the past is cPanel's own way of closing a token while keeping its name and history.
+                $o = json_decode(smpro_cx_run('/usr/local/cpanel/bin/whmapi1 api_token_update token_name=' . escapeshellarg($a['name']) . ' expires_at=' . (time() - 60) . ' --output=json', 30), true);
+                $r = !empty($o['metadata']['result'])
+                    ? ['ok' => true, 'msg' => 'token ' . $a['name'] . ' now expires in the past: it opens nothing, and its name and history stay in the list. Revoke it once you know nothing needs it.']
+                    : ['ok' => false, 'msg' => (string)($o['metadata']['reason'] ?? 'WHM refused')];
+                break;
             case 'ftp_delete':
                 foreach (['/etc/proftpd/' . $a['user'], '/etc/pure-ftpd/' . $a['user']] as $pf) if (@is_file($pf)) smpro_cx_backup($pf);
                 $o = json_decode(smpro_cx_run('/usr/local/cpanel/bin/uapi --output=json --user=' . escapeshellarg($a['user']) . ' Ftp delete_ftp user=' . escapeshellarg($a['login']) . ' destroy=0', 60), true);
                 $ok = !empty($o['result']['status']);
-                $r = $ok ? ['ok' => true, 'msg' => 'FTP sub-account ' . $a['login'] . ' deleted (its files were kept)'] : ['ok' => false, 'msg' => implode('; ', (array)($o['result']['errors'] ?? ['cPanel refused']))];
+                $r = $ok ? ['ok' => true, 'msg' => 'FTP login ' . $a['login'] . ' removed. Its folder and files were NOT touched (destroy=0) - only the way in is gone.'] : ['ok' => false, 'msg' => implode('; ', (array)($o['result']['errors'] ?? ['cPanel refused']))];
                 break;
             case 'fwd_delete':
                 $dom = substr($a['address'], strrpos($a['address'], '@') + 1);
