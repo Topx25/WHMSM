@@ -167,7 +167,7 @@ has($src, 'smpro_ctl_dry_run()', 'U96: Dry-Run is honoured');
 $mod = (string)file_get_contents(SMPRO_BASE . '/modules/bot-guard.php');
 has($mod, "smpro_require_valid_csrf('bg_action'); smpro_require_root();", 'U96: every POST is CSRF + root gated');
 $menu = (string)file_get_contents(SMPRO_BASE . '/includes/menu.php');
-has($menu, "'id' => 'bot-guard'", 'U96: registered in the menu'); ok((bool)preg_match("/'bot-guard'\s+=> '1\.\d+\.\d+'/", $menu), 'U96: NEW badge registered (any shipping tag)');
+has($menu, "'id' => 'bot-guard'", 'U96: registered in the menu'); ok((bool)preg_match("/'bot-guard'\s+=> '1\.\d+\.\d+(-beta\d+)?'/", $menu), 'U96: NEW badge registered (any shipping tag, beta suffix allowed)');
 $ntf = (string)file_get_contents(SMPRO_BASE . '/includes/notify.php');
 has($ntf, "'bot_autoblock'", 'U96: bot_autoblock notification type'); has($ntf, "'bot_pending'", 'U96: bot_pending notification type');
 
