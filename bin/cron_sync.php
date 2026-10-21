@@ -22,7 +22,7 @@ define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);
 foreach (['defines', 'mmdb', 'helpers', 'secret', 'license',
           'notify', 'botguard', 'geologin', 'bfrules', 'maintenance', 'reboot', 'svcmon', 'spqueue',
-          'fwallow', 'disk_home', 'benchdiag', 'geowall', 'loginfeed', 'evidence', 'hub', 'compcheck', 'ccfix', 'loadhist', 'cooler', 'tgbot', 'update', 'intrusion', 'backupmon', 'evship', 'fileaudit', 'learn'] as $m) {
+          'fwallow', 'disk_home', 'benchdiag', 'geowall', 'loginfeed', 'evidence', 'hub', 'compcheck', 'ccfix', 'loadhist', 'cooler', 'tgbot', 'update', 'intrusion', 'backupmon', 'evship', 'fileaudit', 'learn', 'sysupd', 'slmaint'] as $m) {
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require_once $f;
 }
@@ -57,6 +57,8 @@ foreach ([
     'file changes'       => 'smpro_fa_cron_sync',
     // The scheduled Compromise Check: a ten-minute heartbeat while the plan is on, removed when it is off.
     'compromise check'   => 'smpro_cx_cron_sync',
+    // System updates: always scheduled - "manual" means the operator presses the button, not that nobody looks.
+    'system updates'     => 'smpro_su_cron_sync',
     // One load sample a minute so "Load - last 24 hours" is 24 hours, not the moments somebody had the page open.
     'load history'       => 'smpro_lo_cron_sync',
     // These six were installed only from their own Save button or from the page's self-heal and were never put

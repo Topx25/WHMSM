@@ -46,7 +46,8 @@ function smpro_cx_ops(): array {
         'fwd_delete'   => ['label' => 'Delete forwarder', 'confirm' => 'Delete this forwarder?', 'args' => ['user' => $user, 'address' => '/^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}$/', 'target' => '/^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}$/']],
         'cron_clean'   => ['label' => 'Remove fetch/decode lines', 'confirm' => 'Remove every cron line of this account that fetches or decodes code (crontab backed up first)? Routine lines stay.', 'args' => ['user' => $user]],
         'sshkey_clear' => ['label' => 'Remove all keys', 'confirm' => 'Remove every authorised SSH key of this account (file backed up first)? The customer re-adds theirs in cPanel.', 'args' => ['user' => $user]],
-        'token_revoke' => ['label' => 'Revoke', 'confirm' => 'Revoke this cPanel API token? cPanel offers no way to disable an account token without removing it, so this is the only way to close it.', 'args' => ['user' => $user, 'name' => '/^[A-Za-z0-9._-]{1,128}$/']],
+        'token_revoke' => ['label' => 'Revoke', 'confirm' => 'Revoke this cPanel API token? It stops working at once and cannot be brought back - anything using it must be given a new one.', 'args' => ['user' => $user, 'name' => '/^[A-Za-z0-9._-]{1,128}$/']],
+        'token_disable'=> ['label' => 'Disable (expire now)', 'confirm' => 'Give this account token an expiry in the past? It stops opening anything immediately and stays in the list with its name and history. Done through the token store cPanel itself uses, then read back through the public API to confirm.', 'args' => ['user' => $user, 'name' => '/^[A-Za-z0-9._-]{1,128}$/']],
         'rc_clean'     => ['label' => 'Remove the lines', 'confirm' => 'Remove the fetch/decode lines from this account\'s shell start-up files (backed up first)?', 'args' => ['user' => $user]],
     ];
     return $ops;
@@ -228,6 +229,23 @@ function smpro_cx_apply(string $op, array $args, string $actor = ''): array {
                 $bk = smpro_cx_backup($kf); if ($bk === '') { $r = ['ok' => false, 'msg' => 'no key file, or the backup could not be kept - nothing changed']; break; }
                 @file_put_contents($kf, '', LOCK_EX); @chown($kf, (int)$pw['uid']); @chgrp($kf, (int)$pw['gid']); @chmod($kf, 0600);
                 $r = ['ok' => true, 'msg' => 'all authorised keys of ' . $a['user'] . ' removed', 'backup' => $bk];
+                break;
+            case 'token_disable':
+                // The public UAPI Tokens module has list/revoke/rename only; the expiry lives in the store class cPanel's
+                // own screens write through. Called with cPanel's perl, then READ BACK through the public API: the
+                // change counts only when the list says the token now expires in the past.
+                $perl = '/usr/local/cpanel/3rdparty/bin/perl';
+                if (!is_executable($perl)) { $r = ['ok' => false, 'msg' => 'cPanel perl is not where it should be; disable is not possible here - revoke instead']; break; }
+                $when = time() - 60;
+                $code = 'use Cpanel::Security::Authn::APITokens::Write::cpanel; my $w = Cpanel::Security::Authn::APITokens::Write::cpanel->new({ user => $ARGV[0] }); $w->update_token({ name => $ARGV[1], expires_at => ' . $when . ' }); $w->save_changes_to_disk(); print "ok\n";';
+                $o = smpro_cx_run($perl . ' -e ' . escapeshellarg($code) . ' ' . escapeshellarg($a['user']) . ' ' . escapeshellarg($a['name']) . ' 2>&1', 60);
+                $chk = json_decode(smpro_cx_run('/usr/local/cpanel/bin/uapi --output=json --user=' . escapeshellarg($a['user']) . ' Tokens list', 60), true);
+                $now = null; foreach ((array)($chk['result']['data'] ?? []) as $tk) if ((string)($tk['name'] ?? '') === $a['name']) $now = $tk;
+                if ($now === null) { $r = ['ok' => false, 'msg' => 'after the call the token is not in the list any more - look at the tokens of this account in cPanel: ' . trim($o)]; break; }
+                $exp = (int)($now['expires_at'] ?? 0);
+                $r = ($exp > 0 && $exp < time())
+                    ? ['ok' => true, 'msg' => 'token ' . $a['name'] . ' of ' . $a['user'] . ' now expires in the past (read back from cPanel): it opens nothing, its name and history stay. Revoke it once you know nothing needs it.']
+                    : ['ok' => false, 'msg' => 'cPanel did not take the expiry (the list still says ' . ($exp ? date('Y-m-d H:i', $exp) : 'never') . '): ' . trim($o) . ' - revoke instead'];
                 break;
             case 'token_revoke':
                 $o = json_decode(smpro_cx_run('/usr/local/cpanel/bin/uapi --output=json --user=' . escapeshellarg($a['user']) . ' Tokens revoke name=' . escapeshellarg($a['name']), 60), true);

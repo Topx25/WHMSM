@@ -87,7 +87,7 @@ $KIND_WHAT = [
     'sshkey'    => 'A key authorised for SSH/SFTP login into the account. A key is not touched by a password change.',
     'contact'   => 'The address cPanel sends the mail of this account to - "forgot password" links above all. Changed to an address the intruder holds, every reset you do lands in their inbox, so this one is read before anything else is fixed.',
     'mailbox'   => 'A mailbox created in the account: a way back in, and a place to send spam from.',
-    'token'     => 'An API token: a password for the API that no password change rotates and that usually never expires. For an account token cPanel offers no "disable" - it is revoked or it stays.',
+    'token'     => 'An API token: a password for the API that no password change rotates and that usually never expires. Revoke removes it; Disable gives it an expiry in the past so it opens nothing but keeps its name and history (for an account token this goes through the store cPanel itself writes, and is read back to confirm).',
     'shellrc'   => 'A line added to the shell start-up files of the account (~/.bashrc, ~/.bash_profile, ~/.profile). Those run on EVERY shell the account opens - including cron and SSH - so a line that fetches or decodes code there runs again and again, long after the files it installed are deleted.',
 ];
 $STATUS = ['ok' => ['good', 'OK'], 'info' => ['blue', 'INFO'], 'warning' => ['warn', 'WARNING'], 'critical' => ['danger', 'CRITICAL']];
@@ -283,8 +283,8 @@ smpro_layout_header('Compromise Check');
           <?php foreach ($r['findings'] as $f): [$kl, $kc] = $KIND[$f['kind']] ?? [$f['kind'], '#64748b']; $fix = (array)($f['fix'] ?? []); $op = (string)($fix['op'] ?? ''); $fx = $f['flag'] ? smpro_cc_fix($f['kind'] === 'shellrc' ? 'shellrc_acct' : $f['kind']) : ''; ?>
             <div class="cc-door<?= $f['flag'] ? ' flag' : '' ?>"><span class="cc-chip" style="background:<?= $kc ?>22;color:<?= $kc ?>"><?= smpro_h($kl) ?></span><span class="n"><?= smpro_h($f['label']) ?></span><span class="d"><?= smpro_h($f['detail']) ?></span>
               <?php if ($fx !== ''): ?><span class="fx">What to do: <?= smpro_h($fx) ?></span><?php endif; ?>
-              <?php if ($f['flag'] && $op !== '' && isset($OPS[$op]) && !$stored): $args = array_diff_key($fix, ['op' => 1]); ?>
-              <div class="cc-acts"><button type="button" class="cc-btn" data-op="<?= smpro_h($op) ?>" data-args="<?= smpro_h(json_encode($args)) ?>" data-confirm="<?= smpro_h($OPS[$op]['confirm']) ?>"><?= smpro_h($OPS[$op]['label']) ?></button><span class="meta" style="font-size:11.5px">backs up first, audited</span></div>
+              <?php if (($f['flag'] || $f['kind'] === 'token') && $op !== '' && isset($OPS[$op]) && !$stored): $alt = is_array($fix['alt'] ?? null) ? $fix['alt'] : null; $args = array_diff_key($fix, ['op' => 1, 'alt' => 1]); ?>
+              <div class="cc-acts"><button type="button" class="cc-btn" data-op="<?= smpro_h($op) ?>" data-args="<?= smpro_h(json_encode($args)) ?>" data-confirm="<?= smpro_h($OPS[$op]['confirm']) ?>"><?= smpro_h($OPS[$op]['label']) ?></button><?php if ($alt && isset($OPS[$alt['op']])): $aargs = array_diff_key($alt, ['op' => 1]); ?> <button type="button" class="cc-btn" data-op="<?= smpro_h($alt['op']) ?>" data-args="<?= smpro_h(json_encode($aargs)) ?>" data-confirm="<?= smpro_h($OPS[$alt['op']]['confirm']) ?>"><?= smpro_h($OPS[$alt['op']]['label']) ?></button><?php endif; ?><span class="meta" style="font-size:11.5px">backs up first, audited</span></div>
               <?php endif; ?>
             </div>
           <?php endforeach; ?>

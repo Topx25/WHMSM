@@ -505,6 +505,8 @@ function smpro_spq_retry_pending(): int {
  * written there, which meant the account could end its own deadline just by moving a directory it owns.
  */
 function smpro_spq_relock_due() {
+    // a maintenance release that was never closed (an update that crashed) is closed by the time limit
+    if (function_exists('smpro_slm_deadman')) { try { smpro_slm_deadman(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('slmaint_deadman', $e); } }
     $lk = smpro_spq_state_lock();
     $st = smpro_spq_state_load();
     if (!$st) { smpro_spq_state_unlock($lk); return 0; }
@@ -558,6 +560,8 @@ function smpro_spq_cron_sync() {
              // IS something is now batched — so halving the wait costs nothing worth measuring. `flock -n` still
              // means a slow run can never overlap the next one.
              . "* * * * * root $flock -n " . $ld . "/sp_queue.cron.lock timeout 120 $php " . SMPRO_BASE . "/bin/sp_queue.php >/dev/null 2>&1\n";
+    // The hooks that lift Safety Lock's locks around cPanel's PHP updates and upcp, and put them back (slmaint.php).
+    if (function_exists('smpro_slm_hooks_sync')) { try { smpro_slm_hooks_sync(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('slmaint_hooks', $e); } }
     if (is_file($f) && (string)@file_get_contents($f) === $desired) return;
     smpro_cron_install($f, $desired);
 }

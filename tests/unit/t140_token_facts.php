@@ -37,7 +37,12 @@ has($fx, "whmapi1 api_token_update token_name=' . escapeshellarg(\$a['name']) . 
 has($fx, "if (strpos(\$a['name'], 'reverse_trust_') === 0) { \$r = ['ok' => false, 'msg' => 'refused: that is a cPanel transfer token']; break; }\n                // An expiry in the past", 'D3: a cPanel transfer token is refused by disable too');
 ok(isset(smpro_cx_ops()['roottok_disable']) && isset(smpro_cx_ops()['roottok_revoke']), 'D4: both operations are offered');
 is_eq(smpro_cx_apply('roottok_disable', ['name' => 'reverse_trust_x'])['ok'], false, 'D5: and the refusal really happens');
-has($fx, "cPanel offers no way to disable an account token without removing it", 'D6: for an account token the page says plainly that revoke is the only way');
+has($fx, "'token_disable'=> ['label' => 'Disable (expire now)'", 'D6: an account token can be disabled too');
+has($fx, "Cpanel::Security::Authn::APITokens::Write::cpanel->new({ user => \$ARGV[0] }); \$w->update_token({ name => \$ARGV[1], expires_at => ", 'D7: through the store class cPanel itself writes, with the expiry in the past');
+has($fx, "\$r = (\$exp > 0 && \$exp < time())", 'D8: and it counts as done only when the public API reads the expiry back');
+has($cc, "'alt' => \$dead ? null : ['op' => 'token_disable', 'user' => \$u, 'name' => \$name]", 'D9: every live account token carries both buttons');
+has($pg, "if ((\$f['flag'] || \$f['kind'] === 'token') && \$op !== ''", 'D10: a token shows its buttons whatever its age');
+has($cc, 'grep -aE "api_token_create|Tokens/create"', 'D11: who made an account token is read from the UAPI creation path too');
 
 // the FTP login goes, the files stay
 has($fx, "'ftp_delete'   => ['label' => 'Delete the login, keep the files'", 'P1: the button says what it does');

@@ -340,9 +340,9 @@ function smpro_cc_token_created_by(): array {
     $m = [];
     foreach (['/usr/local/cpanel/logs/access_log'] as $f) {
         if (!@is_readable($f)) continue;
-        foreach (explode("\n", (string)smpro_cc_run('grep -a api_token_create ' . escapeshellarg($f) . ' 2>/dev/null | grep -av "\\.svg" | tail -n 500', 25)) as $l) {
+        foreach (explode("\n", (string)smpro_cc_run('grep -aE "api_token_create|Tokens/create" ' . escapeshellarg($f) . ' 2>/dev/null | grep -avE "\\.(svg|js|css)" | tail -n 500', 25)) as $l) {
             if (!preg_match('#^(\S+) - (\S+) \[([0-9]{2}/[0-9]{2}/[0-9]{4}:[0-9:]{8})#', $l, $a)) continue;
-            if (!preg_match('/token_name=([A-Za-z0-9._%-]{1,128})/', $l, $n)) continue;
+            if (!preg_match('/(?:token_name|[?&]name)=([A-Za-z0-9._%-]{1,128})/', $l, $n)) continue;
             $d = DateTime::createFromFormat('m/d/Y:H:i:s', $a[3], new DateTimeZone('UTC'));
             $m[rawurldecode($n[1])] = [$d ? (int)$d->getTimestamp() : 0, $a[1], $a[2]];
         }
@@ -565,7 +565,7 @@ function smpro_cc_account_doors(array $acct, int $since): array {
             $exp = $tk['expires_at'] ?? null; $dead = $exp !== null && (int)$exp > 0 && (int)$exp < time();
             $add('token', 'API token ' . $name . (!empty($tk['has_full_access']) ? ' (full access)' : '') . ($dead ? ' — expired' : ''), $ct,
                  smpro_cc_token_line($name, (array)$tk, false) . ' — a password that no reset rotates',
-                 $ct >= $since && !$dead, ['op' => 'token_revoke', 'user' => $u, 'name' => $name]);
+                 $ct >= $since && !$dead, ['op' => 'token_revoke', 'user' => $u, 'name' => $name, 'alt' => $dead ? null : ['op' => 'token_disable', 'user' => $u, 'name' => $name]]);
         }
     }
     usort($f, fn($a, $b) => $b['when'] <=> $a['when']);

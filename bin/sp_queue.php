@@ -16,7 +16,7 @@ $base = dirname(__DIR__);
 
 // phstack must load before spqueue: root decides the targets by detecting the application itself, which is what
 // keeps the account from being able to choose the files.
-foreach (['defines', 'helpers', 'secret', 'license', 'mmdb', 'phstack', 'phlock', 'ph_ignore', 'fwallow', 'sprules', 'spqueue'] as $m) {
+foreach (['defines', 'helpers', 'secret', 'license', 'mmdb', 'phstack', 'phlock', 'ph_ignore', 'fwallow', 'sprules', 'spqueue', 'slmaint', 'compcheck'] as $m) {
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require $f;
 }

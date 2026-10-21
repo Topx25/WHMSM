@@ -99,8 +99,10 @@ fi
 # obfuscator's ordering), so a rebuild after a publish leaves a local tarball that passes its own receipt and would
 # silently replace what licensees already took - same version, different bytes, and no way afterwards to say which
 # one a server is running. Refuse that. Re-publishing the IDENTICAL bytes (to repair a partial upload) still works.
+# (the remote chain exits non-zero when the version differs - that is the normal case, and under set -e a failing
+#  command substitution would abort the publish silently, so the substitution is forced to succeed)
 SERVED="$(ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=45 "root@$HOST" \
-  "cd '$DIR' 2>/dev/null && [ \"\$(cat '$VFILE' 2>/dev/null | tr -d '[:space:]')\" = '$VER' ] && sha256sum '$TGZ' 2>/dev/null | cut -d' ' -f1" 2>/dev/null | tr -d '[:space:]')"
+  "cd '$DIR' 2>/dev/null && [ \"\$(cat '$VFILE' 2>/dev/null | tr -d '[:space:]')\" = '$VER' ] && sha256sum '$TGZ' 2>/dev/null | cut -d' ' -f1; true" 2>/dev/null | tr -d '[:space:]' || true)"
 if [ -n "$SERVED" ] && [ "$SERVED" != "$SHA" ]; then
   echo "REFUSING: $VER is already served from $HOST with DIFFERENT bytes."
   echo "          served: $SERVED"

@@ -48,7 +48,7 @@ $cc = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes
 has($cc, "['op' => 'ftp_delete', 'user' => \$u, 'login' => \$login]", 'U4: FTP sub-account carries its fix');
 has($cc, "['op' => 'fwd_delete', 'user' => \$u, 'address' =>", 'U4: forwarder carries its fix');
 has($cc, "\$sus ? ['op' => 'cron_clean', 'user' => \$u] : []", 'U4: cron offers a fix only when a line is suspicious');
-has($cc, "['op' => 'token_revoke', 'user' => \$u, 'name' => \$name]", 'U4: token carries its fix');
+has($cc, "['op' => 'token_revoke', 'user' => \$u, 'name' => \$name, 'alt' =>", 'U4: token carries its fix (revoke, with disable beside it)');
 has($cc, "'fixes' => \$hOn ? [] : [['op' => 'cphulk_on']]", 'U4: cPHulk fix only when off');
 has($cc, "'fixes' => (preg_match('/passwordauthentication yes/i', \$pa) && \$keys) ? [['op' => 'sshd_harden']] : []", 'U4: sshd fix only with a root key present');
 has($cc, "'sha' => sha1(\$l), 'what' => basename(\$f)", 'U4: a persistence line is identified by its sha, never by a line number');

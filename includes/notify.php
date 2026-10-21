@@ -23,6 +23,9 @@ define('SMPRO_NTF_LOG',   SMPRO_VARLIB . '/notifications/log.jsonl');
 function smpro_ntf_types() {
     return [
         'malware_active'   => ['Active malware detected', 'Imunify360 reports one or more currently-malicious files.', 'critical'],
+        'sysupd_new'       => ['System updates available', 'New package updates (kernel, PHP, web, mail, security) or a newer cPanel build appeared; the message says what and whether they will be applied automatically.', 'medium'],
+        'sysupd_result'    => ['System update applied', 'An automatic update finished: how many packages, and the service check afterwards.', 'info'],
+        'sysupd_problem'   => ['System update problem', 'A check or download broke, or a service needed attention after an update: the diagnosis, the repair attempted, and what is left for a person.', 'high'],
         'compromise_check' => ['Compromise Check (scheduled scan)', 'The scheduled Compromise Check finished: server checks that are not OK and accounts that gained a door.', 'high'],
         'db_injection'     => ['Database injection detected', 'Imunify360 flagged malicious content injected into a database (spam links, scripts, backdoors).', 'critical'],
         'login_bruteforce' => ['Login brute-force / spike', 'A source IP crossed the failed-login threshold in the window.', 'high'],

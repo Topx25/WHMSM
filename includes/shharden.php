@@ -78,6 +78,35 @@ function smpro_shh_php_urlinclude(): array {
     }
     return $bad;
 }
+/** PHP builds whose session.upload_progress is still on. Read from each build's own binary (the ini default is On
+ *  and the line is usually commented out, so the file alone cannot say). Returns [php.ini path => build name]. */
+function smpro_shh_php_uploadprogress(): array {
+    $bad = [];
+    foreach (array_merge(glob('/opt/cpanel/ea-php*/root/usr/bin/php') ?: [], glob('/opt/alt/php*/usr/bin/php') ?: []) as $bin) {
+        if (!is_executable($bin)) continue;
+        $v = trim((string)@shell_exec('timeout 10 ' . escapeshellarg($bin) . ' -r ' . escapeshellarg('echo ini_get("session.upload_progress.enabled");') . ' 2>/dev/null'));
+        if ($v === '' || $v === '0' || strtolower($v) === 'off') continue;
+        $ini = preg_match('#^/opt/cpanel/(ea-php\d+)/#', $bin, $m) ? '/opt/cpanel/' . $m[1] . '/root/etc/php.ini' : (preg_match('#^/opt/alt/(php\d+)/#', $bin, $m2) ? '/opt/alt/' . $m2[1] . '/etc/php.ini' : '');
+        if ($ini !== '' && is_file($ini)) $bad[$ini] = $m[1] ?? ($m2[1] ?? basename(dirname(dirname($bin))));
+    }
+    return $bad;
+}
+function smpro_shh_fix_php_uploadprogress(): array {
+    $bad = smpro_shh_php_uploadprogress(); if (!$bad) return [true, 'already off', []];
+    $undo = []; $n = 0; $vers = [];
+    foreach ($bad as $f => $build) {
+        $bak = smpro_shh_keep($f); if ($bak === null) continue;
+        $c = (string)@file_get_contents($f);
+        if (preg_match('/^\s*;?\s*session\.upload_progress\.enabled\s*=.*$/mi', $c)) $c = preg_replace('/^\s*;?\s*session\.upload_progress\.enabled\s*=.*$/mi', 'session.upload_progress.enabled = Off', $c, 1);
+        else $c = rtrim($c, "\n") . "\n; Safety Monitor Pro - a file-inclusion bug must not become code execution through the session upload progress file\nsession.upload_progress.enabled = Off\n";
+        if (@file_put_contents($f, $c) !== false) { $undo[] = ['file', $f, $bak]; $n++; if (strpos($build, 'ea-php') === 0) $vers[] = $build; }
+    }
+    foreach (array_unique($vers) as $v) {   // a running FPM pool reads php.ini at start only
+        [$rc, $st] = smpro_shh_x('systemctl is-active ' . escapeshellarg($v . '-php-fpm'), 5);
+        if (trim($st) === 'active') { smpro_shh_x('systemctl restart ' . escapeshellarg($v . '-php-fpm'), 60); $undo[] = ['fpm', $v]; }
+    }
+    return [$n > 0, "session.upload_progress.enabled turned Off in $n php.ini file(s)", $undo];
+}
 /** CSF settings this hardening wants. The SSH port comes from the running sshd, never a fixed 22. */
 function smpro_shh_csf_want(): array {
     $port = '22';
@@ -272,6 +301,7 @@ function smpro_shh_fixes(): array {
         'kernel_harden'  => ['Kernel network & info-leak settings', 'smpro_shh_fix_kernel'],
         'shm_noexec'     => ['/dev/shm without exec', 'smpro_shh_fix_shm'],
         'php_urlinclude' => ['PHP allow_url_include Off', 'smpro_shh_fix_php'],
+        'php_uploadprogress' => ['PHP session.upload_progress Off', 'smpro_shh_fix_php_uploadprogress'],
         'csf_harden'     => ['CSF/LFD hardening', 'smpro_shh_fix_csf'],
         'mail_caps'      => ['Outgoing mail caps', 'smpro_shh_fix_tweaks'],
         'csf_cc_allow'   => ['Country exemption that voids every block', 'smpro_shh_fix_cc_allow'],
@@ -340,6 +370,11 @@ function smpro_shh_checks(): array {
         $pb ? 'allow_url_include is On in ' . count($pb) . ' PHP build(s).' : 'No PHP build allows including code from a URL.',
         'With allow_url_include On, one file-inclusion bug in any site runs code fetched from the attacker\'s server.',
         $pb ? 'Apply: set it Off in each listed php.ini (each one kept first); running PHP-FPM pools are restarted.' : 'No action needed.', implode("\n", $pb), $pb ? 'php_urlinclude' : '');
+    $up = smpro_shh_php_uploadprogress();
+    $C[] = smpro_sh_mk('PHP session.upload_progress', $up ? 'warning' : 'ok',
+        $up ? 'session.upload_progress is On in ' . count($up) . ' PHP build(s): ' . implode(', ', array_unique(array_values($up))) . '.' : 'No PHP build writes upload progress into the session file.',
+        'With it on, PHP writes the progress of any upload - including a field name the uploader chooses - into the session file. A file-inclusion bug in any site then includes that session file and runs the uploader\'s PHP. Turning it off removes the whole class; nothing ordinary uses upload progress.',
+        $up ? 'Apply: set it Off in each listed php.ini (each one kept first); running PHP-FPM pools are restarted. Undo restores the files.' : 'No action needed.', implode("\n", array_keys($up)), $up ? 'php_uploadprogress' : '');
     $cg = smpro_shh_csf_gaps();
     if ($cg !== null) { $ev = ''; foreach ($cg as $k => [$c, $v]) $ev .= "$k = \"$c\" (want \"$v\")\n";
         $C[] = smpro_sh_mk('CSF/LFD attack detection', $cg ? 'warning' : 'ok',
