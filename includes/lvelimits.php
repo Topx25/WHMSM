@@ -191,6 +191,25 @@ function smpro_lv_set_limits(string $user, int $uid, array $want): array {
     return ['ok' => false, 'how' => '', 'out' => implode(' | ', $outAll), 'now' => smpro_lv_limits()[$user] ?? []];
 }
 
+/**
+ * Is the LVE kernel module refusing to enforce? The kernel says so itself: "LVE: ... failed to push tid ... to noub
+ * cgroup, rc=-2" and "os_resource_setup: failed to set lve(N) cpu lim, rc -75". While that goes on, every lvectl
+ * set fails with "Can't setup lve ... error code -2" AND new processes may run OUTSIDE their limits - which is worse
+ * than a failed lift. Read from the kernel ring (journal, dmesg as the fallback); counted over the last 2 hours.
+ * @return array{broken:bool,n:int,last:string,why:string}
+ */
+function smpro_lv_kernel_state(): array {
+    $o = smpro_lv_run('journalctl -k --since "2 hours ago" --no-pager -q 2>/dev/null | grep -E "LVE: .*(failed|rc[ =]-[0-9]+)" | tail -200', 15);
+    if (trim($o) === '') $o = smpro_lv_run('dmesg -T 2>/dev/null | grep -E "LVE: .*(failed|rc[ =]-[0-9]+)" | tail -200', 15);
+    $lines = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', $o))));
+    $n = count($lines); if ($n === 0) return ['broken' => false, 'n' => 0, 'last' => '', 'why' => ''];
+    $last = $lines[$n - 1];
+    $why = (bool)preg_match('/noub cgroup|os_resource_setup|os_cpu_enter/', $o)
+        ? 'the LVE kernel module cannot place processes in its cgroups or set CPU limits - usually a kmodlve / kernel update that is loaded half-way, or cgroup state lost since boot; the fix is a reboot into the installed kernel (lvectl apply all afterwards), not a setting on this page'
+        : 'the LVE kernel module is reporting failures';
+    return ['broken' => $n >= 3, 'n' => $n, 'last' => $last, 'why' => $why];
+}
+
 /* ------------------------------------------------------------------ actions */
 
 function smpro_lv_ops(): array {
@@ -234,7 +253,7 @@ function smpro_lv_apply(string $op, array $args, string $actor = ''): array {
                 $new = smpro_lv_lifted($prev);
                 $bk = smpro_lv_backup_cfg(); if ($bk === '') { $r = ['ok' => false, 'msg' => 'could not back up ' . SMPRO_LV_VECFG . ' - nothing changed']; break; }
                 $set = smpro_lv_set_limits($user, $uid, $new);
-                if (!$set['ok']) { $r = ['ok' => false, 'msg' => 'the limits did not take (' . $set['out'] . '). lvectl list-user still shows ' . ($set['now'] ? 'entry ' . $set['now']['ep'] . ' / proc ' . $set['now']['nproc'] : 'no LVE for this account') . '. Usual causes: the account is inside a reseller container (WHM > LVE Manager > the reseller), or the LVE kernel module refuses new LVEs - see "lvectl list-reseller --with-name" and "lvectl paneluserlimits ' . $user . '".', 'backup' => $bk]; break; }
+                if (!$set['ok']) { $ks = smpro_lv_kernel_state(); $r = ['ok' => false, 'msg' => 'the limits did not take (' . $set['out'] . '). lvectl list-user still shows ' . ($set['now'] ? 'entry ' . $set['now']['ep'] . ' / proc ' . $set['now']['nproc'] : 'no LVE for this account') . '. ' . ($ks['broken'] ? 'THE KERNEL IS THE CAUSE: ' . $ks['n'] . ' LVE errors in the last 2 hours (last: ' . $ks['last'] . ') - ' . $ks['why'] . '.' : 'Usual causes: the account is inside a reseller container (WHM > LVE Manager > the reseller), or the LVE kernel module refuses new LVEs - see "lvectl list-reseller --with-name" and "lvectl paneluserlimits ' . $user . '".'), 'backup' => $bk]; break; }
                 $lifts[$user] = ['uid' => $uid, 'until' => time() + (int)$a['minutes'] * 60, 'prev' => $prev, 'new' => $new, 'custom' => $custom, 'by' => $actor, 'at' => time()];
                 smpro_lv_lifts_save($lifts); smpro_lv_cron_sync();
                 smpro_audit('lve_lift', ['user' => $user, 'minutes' => (int)$a['minutes'], 'prev' => $prev, 'new' => $new, 'actor' => $actor]);

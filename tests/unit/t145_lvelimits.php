@@ -109,6 +109,12 @@ has($pg, 'This server has no CloudLinux LVE', 'G3: a server without LVE is told 
 has($pg, "History could not be read:", 'G4: a read that could not run is said, never shown as no faults');
 has($pg, "\$expired = smpro_lv_tick();", 'G5: expired lifts go back when the page is drawn too');
 has($mn, "['id' => 'resource-limits','label' => 'Resource Limit Reached'", 'G6: in the menu');
-has($mn, "'resource-limits'    => '1.1.10-beta359',", 'G7: NEW badge');
+has($mn, "'resource-limits'    => '1.1.10-beta360',", 'G7: NEW badge');
+has($lv, 'function smpro_lv_kernel_state(): array {', 'K1: the kernel\'s own LVE errors are read');
+has($lv, 'noub cgroup|os_resource_setup|os_cpu_enter', 'K2: the cgroup / resource_setup signatures');
+has($lv, "return ['broken' => \$n >= 3,", 'K3: three errors in two hours = broken, one is noise');
+has($pg, 'The LVE kernel module is refusing to enforce limits on this server', 'K4: the page says so in red');
+has($pg, 'NEW processes may be running outside their limits', 'K5: ...and says why that matters');
+has($lv, "\$ks = smpro_lv_kernel_state(); \$r = ['ok' => false, 'msg' => 'the limits did not take", 'K6: a refused lift names the kernel when the kernel is the cause');
 has($cs, "'lve lifts'          => 'smpro_lv_cron_sync',", 'G8: cron sync knows the tick');
 has($cs, "'slmaint', 'lvelimits'] as \$m) {", 'G9: cron sync loads the engine');

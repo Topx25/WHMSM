@@ -42,6 +42,7 @@ $now = smpro_lv_now();
 $limits = smpro_lv_limits();
 $lifts = smpro_lv_lifts();
 $doms = smpro_lv_domains_map();
+$kstate = smpro_lv_kernel_state();
 
 /* the rows: EVERY account on the server - the ones that hit a limit in the period first, then the ones at a ceiling
    this second, then lifted ones, then the calm ones (a calm account is a row that says it hit nothing, so the operator
@@ -103,6 +104,7 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
 </div>
 <?php if ($q !== '' && $lookedUp === ''): ?><div class="lv-warn">&#9888; "<?= smpro_h($q) ?>" is not an account on this server and no account owns that domain (checked cPanel's own domain list).</div><?php endif; ?>
 <?php if ($q !== '' && $lookedUp !== '' && !isset($hist['rows'][$lookedUp]) && !isset($lifts[$lookedUp])): ?><div class="lv-res ok">"<?= smpro_h($q) ?>" belongs to account <b><?= smpro_h($lookedUp) ?></b>, which hit NO limit in the <?= smpro_h($period) ?> period - its row is shown first so you can see what runs now; a 508 on this site right now would come from something else (a PHP error page, the handler, Site Shield). Try the 7-day period to be sure.</div><?php endif; ?>
+<?php if ($kstate['broken']): ?><div class="lv-warn" style="background:var(--dang-bg);color:var(--dang)"><b>&#9888; The LVE kernel module is refusing to enforce limits on this server</b> - <?= (int)$kstate['n'] ?> kernel errors in the last 2 hours (last: <code><?= smpro_h($kstate['last']) ?></code>). <?= smpro_h($kstate['why']) ?>. Until then every "Lift" and "Reset" fails with "Can't setup lve ... error code -2", and NEW processes may be running outside their limits - the numbers in "This second" can be lower than the truth.</div><?php elseif ($kstate['n'] > 0): ?><div class="lv-warn">&#9888; <?= (int)$kstate['n'] ?> LVE kernel error(s) in the last 2 hours (last: <code><?= smpro_h($kstate['last']) ?></code>) - if a lift is refused, this is why.</div><?php endif; ?>
 <?php if (!$hist['ok']): ?><div class="lv-warn">&#9888; History could not be read: <?= smpro_h($hist['why']) ?>. The "this second" column below is read from the kernel and is still true.</div><?php endif; ?>
 <?php foreach ($expired as $u => $r): ?><div class="lv-res <?= $r['ok'] ? 'ok' : 'bad' ?>">Lift expired: <?= smpro_h($r['msg']) ?></div><?php endforeach; ?>
 
