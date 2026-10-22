@@ -168,8 +168,7 @@ smpro_layout_header('Top Processes');
 
 <style>
 .tp-controls,.tp-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.tp-btn,.tp-sel,.tp-in{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px}
-.tp-btn{cursor:pointer;font-weight:600}.tp-btn:hover{background:var(--brand-bg)}
+.tp-btn,.tp-sel,.tp-in{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px}.tp-btn:hover{background:var(--brand-bg)}
 .tp-acts{white-space:nowrap}
 .tp-kill{border-color:#f3c4c4!important;color:#b91c1c;background:var(--dang-bg)}
 .tp-kill:hover{background:var(--dang-bg)}

@@ -91,9 +91,7 @@ smpro_layout_header('License');
 .tp-in{border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:14px;font-family:ui-monospace,Consolas,monospace}
 .lic-actions{display:flex;gap:10px;flex-wrap:wrap}
 .tp-btn{border:1px solid var(--line);border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;background:var(--card);color:var(--ink)}
-.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
 .tp-btn.lic-danger{border-color:#fca5a5;background:var(--dang-bg);color:var(--dang)}
-.tp-btn:disabled{opacity:.55;cursor:not-allowed}
 .lic-result{font-size:13px;min-height:18px}
 .lic-result.ok{color:var(--good)}.lic-result.err{color:var(--dang)}
 .mono{font-family:ui-monospace,Consolas,monospace;word-break:break-all}

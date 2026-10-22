@@ -243,8 +243,7 @@ function smpro_ar_kbadge($k) { static $m=['firewall'=>['red','Firewall'],'servic
 .ar-filters{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin:14px 0;position:relative}
 .ar-fld{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
 .tp-sel,.tp-in{border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:13px}
-.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink)}
-.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}.tp-btn.green{background:var(--good);color:#fff;border-color:var(--good)}
+.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink)}.tp-btn.green{background:var(--good);color:#fff;border-color:var(--good)}
 .ar-export{position:relative}.ar-menu{display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 28px rgba(15,23,42,.12);z-index:5;min-width:130px;overflow:hidden}
 .ar-export.open .ar-menu{display:block}.ar-menu a{display:block;padding:9px 14px;font-size:13px;color:var(--ink);text-decoration:none}.ar-menu a:hover{background:var(--brand-bg);color:var(--brand)}
 .ar-cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:14px 0}

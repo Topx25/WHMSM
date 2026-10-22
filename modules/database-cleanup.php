@@ -1234,7 +1234,7 @@ foreach (array_slice($inj, 0, 1000) as $r) {
 .db-bar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin:14px 0;padding:14px 16px}
 .db-fld{display:flex;flex-direction:column;gap:5px;font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .tp-in,.tp-sel{border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:13px}
-.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink);background:var(--card)}.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink);background:var(--card)}
 .im-head{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:14px;display:flex;align-items:center;gap:10px}.im-head .meta{margin-left:auto;color:var(--muted);font-size:12px}
 .im-note{padding:10px 16px;background:var(--warn-bg);color:#8a6516;font-size:12px;border-top:1px solid var(--line)}.im-empty{padding:18px;text-align:center;color:var(--muted)}
 .db-tablewrap{overflow:auto;max-height:520px}.db-tablewrap thead th{position:sticky;top:0;background:var(--card);z-index:1;box-shadow:inset 0 -1px 0 var(--line)}

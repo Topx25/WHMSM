@@ -1462,7 +1462,7 @@ function rcMd(t){
 .rc-search{display:flex;gap:8px;margin:6px 0 14px;flex-wrap:wrap;align-items:center}.rc-in{border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:14px;flex:1;max-width:420px}
 .rc-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 2px 12px}.rc-toolbar .rc-in{flex:none}
 .rc-dt{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600}.rc-dt .rc-in{flex:none;max-width:160px;padding:7px 9px;font-size:13px}
-.tp-btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer;font-weight:600}.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.tp-btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:9px 14px;font-size:13px;cursor:pointer;font-weight:600}
 .rc-card{padding:18px 20px}.rc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .rc-ipv{font-family:ui-monospace,Consolas,monospace;font-size:20px;font-weight:800}
 .rc-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}

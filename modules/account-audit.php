@@ -1711,11 +1711,8 @@ $aaNav = [['aa-events', '&#128203; Events'], ['aaSavedCard', '&#128190; Saved re
 .aa-menu a{display:block;padding:9px 14px;font-size:13px;color:var(--ink);text-decoration:none;border:0}
 .aa-menu a:hover{background:var(--brand-bg);color:var(--brand)}
 .aa-dl{display:flex;gap:6px;flex-wrap:wrap}.aa-dl .tp-btn{padding:5px 10px;font-size:12px}
-.tp-btn,.tp-sel,.tp-in{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;text-decoration:none}
-.tp-btn{cursor:pointer;font-weight:600;display:inline-block}.tp-btn:hover{background:var(--brand-bg)}
-.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.tp-btn,.tp-sel,.tp-in{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;text-decoration:none}.tp-btn:hover{background:var(--brand-bg)}
 .tp-btn.green{background:var(--good);color:#fff;border-color:var(--good)}
-.tp-btn.danger{background:var(--dang-bg);color:var(--dang);border-color:#f3c4c4}.tp-btn.danger:hover{background:var(--dang);color:#fff}
 .tp-th{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .tp-th .meta{color:var(--muted);font-size:12px}
 .smpro-tablewrap{overflow-x:auto}

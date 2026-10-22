@@ -818,7 +818,7 @@ foreach ($imTabOf as $imId => $imT) if ($imT === $tab) $imNav[] = [$imId, $imLbl
 .smpro-table{width:100%;border-collapse:collapse;font-size:13px}.smpro-table th,.smpro-table td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line)}
 .smpro-table.nowrap th,.smpro-table.nowrap td{white-space:nowrap}.smpro-table th{font-size:11px;text-transform:uppercase;color:var(--muted)}.smpro-table th.num,.smpro-table td.num{text-align:right}
 .tp-th{display:flex;align-items:center;gap:10px;padding:10px 2px;flex-wrap:wrap}.tp-in,.tp-sel{border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;background:var(--card)}
-.tp-btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;font-weight:600}.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.tp-btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;paddckground:var(--brand);color:#fff;border-color:var(--brand)}
 .la-act{font-size:11px;font-weight:600;border:1px solid var(--line);background:var(--card);border-radius:7px;padding:3px 9px;cursor:pointer}.la-act.block{color:var(--dang);border-color:#f3c4c4}.la-act.block:hover{background:var(--dang);color:#fff}
 .la-act.allow{color:var(--good);border-color:#bfe6cd}.la-act.allow:hover{background:var(--good);color:#fff}
 table.sortable th[data-sort]{cursor:pointer;user-select:none}table.sortable th[data-sort]:hover{color:var(--brand)}table.sortable th.sorted-asc::after{content:" \25B2";font-size:8px}table.sortable th.sorted-desc::after{content:" \25BC";font-size:8px}

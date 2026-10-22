@@ -1091,7 +1091,7 @@ $mbOther = function_exists('smpro_mb_other_layers') ? smpro_mb_other_layers() : 
 .sp-bar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin:14px 0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
 .sp-fld{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .tp-sel{border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:13px}
-.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink);background:var(--card)}.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}.tp-btn:hover{background:var(--brand-bg)}
+.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink);background:var(--card)}.tp-btn:hover{background:var(--brand-bg)}
 .sp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}@media(max-width:760px){.sp-kpis{grid-template-columns:1fr 1fr}}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
 .kpi .kn{font-size:24px;font-weight:800;line-height:1}.kpi .kl{font-size:11px;text-transform:uppercase;color:var(--muted);margin-top:6px}
@@ -1565,7 +1565,7 @@ html[data-theme=dark] .fa-head{background:linear-gradient(180deg,rgba(255,255,25
 .fa-note{font-size:12.5px;line-height:1.6;padding:11px 18px}
 .fa-tablewrap{border-top:1px solid var(--line)}
 /* selection bars */
-.sp-selbar{padding:12px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(100,116,139,.04),transparent)}
+.sp-selbar{padding:12px 18px;display:flex;gap:12px;alignborder-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(100,116,139,.04),transparent)}
 html[data-theme=dark] .sp-selbar{background:linear-gradient(180deg,rgba(255,255,255,.025),transparent)}
 /* buttons: a touch more polish (page-scoped) */
 .tp-btn{border-radius:10px}

@@ -505,8 +505,7 @@ function smpro_la_assets() {
 .ipmono{font-family:ui-monospace,Consolas,monospace;font-weight:700}
 .uname{font-family:ui-monospace,Consolas,monospace;font-weight:600}
 .lnk{color:var(--brand);text-decoration:none;font-size:12px;border:1px solid var(--line);padding:3px 9px;border-radius:7px}.lnk:hover{background:var(--brand-bg)}
-.tp-btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;font-weight:600;text-decoration:none}
-.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}.tp-btn.green{background:var(--good);color:#fff;border-color:var(--good)}
+.tp-btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;font-weight:600;text-decoration:none}.tp-btn.green{background:var(--good);color:#fff;border-color:var(--good)}
 .aa-export{position:relative}
 .aa-menu{display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 28px rgba(15,23,42,.12);z-index:5;min-width:140px;overflow:hidden}
 .aa-export.open .aa-menu{display:block}

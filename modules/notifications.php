@@ -358,7 +358,6 @@ smpro_layout_header('Notifications');
 .nt-l{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:var(--muted)}
 .tp-in,.tp-sel{border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:13px;font-weight:400;color:var(--ink)}
 .tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);color:var(--ink);align-self:flex-start}
-.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
 .nt-res{font-size:12px;min-height:0}
 .nt-card-h .sp{flex:1}
 .nt-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}

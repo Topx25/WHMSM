@@ -878,7 +878,7 @@ if (!empty($hmJob['phase']) && $hmJob['phase'] !== 'idle' && empty($hmJob['done'
 .dc-note{padding:10px 16px;background:var(--warn-bg);color:#8a6516;font-size:12px;border-bottom:1px solid var(--line)}
 .dc-sect{padding:10px 16px;border-bottom:1px solid var(--line)}.dc-stt{font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
 .dc-scanprog{height:5px;background:var(--brand-bg);overflow:hidden}.dc-scanprog span{display:block;height:100%;width:35%;background:linear-gradient(90deg,#7c3aed,#4f46e5);animation:dcp 1.2s ease-in-out infinite}@keyframes dcp{0%{margin-left:-35%}100%{margin-left:100%}}
-.dcDel,.dcClear{font-weight:700;white-space:nowrap;color:var(--dang);border-color:#f3c9c9}.dcDel:hover,.dcClear:hover{background:var(--dang);color:#fff}
+.dcDel,.dcClear{font-weight:700;white-space:nowrap;color:var(--dang);border-color:#f3c9c9}
 .dc-selall{margin-left:8px;font-size:11px}
 .dc-bulkbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;padding:11px 16px;background:var(--dang-bg);border-top:1px solid #f3c9c9;font-size:13px}
 .dc-bulkbar .tp-btn.danger{background:var(--dang);color:#fff;border-color:var(--dang);font-weight:700}

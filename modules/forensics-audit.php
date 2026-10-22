@@ -1604,7 +1604,7 @@ function smpro_fa_render_imhist($imHist, $user) {
 .fa-fld{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .fa-age{font-size:12px;color:var(--muted);margin-left:auto;align-self:center}
 .tp-sel{border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:13px}
-.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink);background:var(--card)}.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}.tp-btn.danger{color:var(--dang);border-color:#f3c9c9}.tp-btn:hover{background:var(--brand-bg)}.tp-btn.danger:hover{background:var(--dang-bg)}.tp-btn[disabled]{opacity:.5;cursor:not-allowed}
+.tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink);background:var(--card)}.tp-btn:hover{background:var(--brand-bg)}
 .fa-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:14px 0}@media(max-width:820px){.fa-kpis{grid-template-columns:repeat(3,1fr)}}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
 .kpi .kn{font-size:26px;font-weight:800;line-height:1}.kpi .kl{font-size:11px;text-transform:uppercase;color:var(--muted);margin-top:6px;letter-spacing:.03em}

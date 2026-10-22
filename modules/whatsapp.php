@@ -161,7 +161,6 @@ smpro_layout_header('WhatsApp');
 .tp-in,.tp-sel{border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:13px;font-weight:400;color:var(--ink);width:100%}
 textarea.tp-in{font-family:inherit;resize:vertical}
 .tp-btn{border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);color:var(--ink)}
-.tp-btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
 .wa-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .nt-sw{position:relative;display:inline-block;width:42px;height:24px}.nt-sw input{opacity:0;width:0;height:0}
 .nt-sw span{position:absolute;inset:0;background:#cbd5e1;border-radius:20px;transition:.2s;cursor:pointer}
