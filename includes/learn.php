@@ -519,6 +519,7 @@ function smpro_lr_hunt_bg(): array {
     $flock = is_executable('/usr/bin/flock') ? '/usr/bin/flock' : 'flock';
     $cmd = 'nohup ' . $flock . ' -n ' . escapeshellarg($ld . '/learn.cron.lock') . ' timeout 590 nice -n 15 ' . escapeshellarg($php) . ' ' . escapeshellarg($bin) . ' >/dev/null 2>&1 </dev/null &';
     @shell_exec($cmd);
+    usleep(500000);   // let the worker take the lock before the page asks whether a hunt runs, so the tile is right on this very response
     return ['ok' => true, 'started' => true, 'msg' => 'Hunt started in the background over every site; the findings appear here when it finishes (a few minutes on a big server) - this page refreshes itself, and you can leave it.'];
 }
 function smpro_lr_cron_sync() {
