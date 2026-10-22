@@ -104,7 +104,7 @@ smpro_audit('resource_limits_view', ['period' => $period, 'accounts' => count($u
           <?php if ($f['ep_f']): ?><span class="lv-chip ep">entry processes &times;<?= (int)$f['ep_f'] ?></span><?php endif; ?>
           <?php if ($f['pmem_f'] || $f['vmem_f']): ?><span class="lv-chip mem">memory &times;<?= (int)$f['pmem_f'] + (int)$f['vmem_f'] ?></span><?php endif; ?>
           <?php if ($f['nproc_f']): ?><span class="lv-chip np">processes &times;<?= (int)$f['nproc_f'] ?></span><?php endif; ?>
-          <?php if ($f['cpu_f'] || ($f['cpu_lim'] > 0 && $f['cpu_max'] >= $f['cpu_lim'] * 0.98)): ?><span class="lv-chip cpu">CPU throttled</span><?php endif; ?>
+          <?php if ($f['cpu_f'] || ($f['cpu_lim'] > 0 && $f['cpu_max'] >= $f['cpu_lim'] * 0.98)): ?><span class="lv-chip cpu">CPU throttled<?= $f['cpu_f'] ? ' &times;' . (int)$f['cpu_f'] : '' ?></span><?php endif; ?>
           <?php if ($f['io_f']): ?><span class="lv-chip io">I/O throttled &times;<?= (int)$f['io_f'] ?></span><?php endif; ?>
         <?php elseif ($lift): ?><span class="sub">nothing in this period</span><?php else: ?><span class="lv-chip ep">at a ceiling now</span><?php endif; ?>
         <div class="lv-why"><?= smpro_h(smpro_lv_explain($f, $n ?? [])) ?></div>

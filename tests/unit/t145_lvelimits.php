@@ -17,12 +17,14 @@ $json = '{"data":[{"EPf":0,"ID":255,"NprocF":0,"PMemF":0,"VMemF":0,"aCPU":8,"aEP
       . '{"EPf":12,"ID":"alpha","NprocF":1,"PMemF":3,"VMemF":0,"aCPU":6.9,"mCPU":44.7,"lCPU":100,"aEP":0,"mEP":20,"lEP":20,"mPMem":58408960,"lPMem":1073741824,"mNproc":4,"lNproc":100,"IOf":5},'
       . '{"EPf":0,"ID":"beta","NprocF":0,"PMemF":0,"VMemF":0,"aCPU":1,"mCPU":99.5,"lCPU":100,"mEP":0,"lEP":20,"mPMem":1000,"lPMem":1073741824,"mNproc":1,"lNproc":100}],"success":1}';
 $f = smpro_lv_parse_faults($json);
-is_eq(array_keys($f), ['alpha', 'beta'], 'A1: reserved LVE 255 skipped, named accounts kept');
+is_eq(array_keys($f), ['alpha'], 'A1: reserved LVE 255 skipped; a row with nothing counted is dropped (beta)');
 is_eq($f['alpha']['ep_f'], 12, 'A2: entry-process faults');
 is_eq($f['alpha']['pmem_max'], 56, 'A3: bytes -> MB');
 is_eq($f['alpha']['pmem_lim'], 1024, 'A4: limit bytes -> MB');
 is_eq($f['alpha']['faults'], 21, 'A5: faults summed across kinds (12+1+3+5)');
 is_eq($f['alpha']['cpu_f'], 0, 'A6: a column lveinfo does not print reads 0, never an error');
+has($lv, "--show-columns=ID,aCPU,mCPU,lCPU,CPUf,aEP,mEP,lEP,EPf,aPMem,mPMem,lPMem,PMemF,VMemF,mNproc,lNproc,NprocF,IOf,IOPSf", 'A8: CPU / IO / IOPS fault columns are asked for by name - lveinfo omits them by default');
+is_eq(smpro_lv_parse_faults('{"data":[{"ID":"gamma","CPUf":6,"IOf":2,"IOPSf":1}],"success":1}')['gamma']['faults'], 9, 'A9: CPU + IO + IOPS faults count');
 is_eq(smpro_lv_parse_faults('garbage'), [], 'A7: not JSON -> empty');
 
 // B. /proc/lve/list, header-driven; MEMPHY is in 4K pages; uid 0 and the 4294967295 pseudo-LVE are skipped
@@ -74,8 +76,8 @@ ok(strpos($why, 'entry processes 20 of 20') !== false, 'E1: entry processes with
 ok(strpos($why, 'more memory than its limit (peak 56 of 1024 MB)') !== false, 'E2: memory with the numbers');
 ok(strpos($why, 'more processes than allowed') !== false, 'E3: nproc');
 ok(strpos($why, 'disk I/O throttled') !== false, 'E4: io');
-$why = smpro_lv_explain($f['beta'], []);
-ok(strpos($why, 'CPU at its ceiling') !== false && strpos($why, 'entry') === false, 'E5: CPU only, says throttled not refused');
+$why = smpro_lv_explain(['cpu_f' => 3, 'cpu_max' => 99.5, 'cpu_lim' => 100], []);
+ok(strpos($why, 'CPU at its ceiling 3 time(s)') !== false && strpos($why, 'entry') === false, 'E5: CPU only, says throttled not refused');
 is_eq(smpro_lv_explain([], []), 'no limit was hit in this period.', 'E6: nothing');
 
 // F. actions: argument gate, backup before change, journal, automatic put-back, no cron in tests
@@ -103,6 +105,6 @@ has($pg, 'This server has no CloudLinux LVE', 'G3: a server without LVE is told 
 has($pg, "History could not be read:", 'G4: a read that could not run is said, never shown as no faults');
 has($pg, "\$expired = smpro_lv_tick();", 'G5: expired lifts go back when the page is drawn too');
 has($mn, "['id' => 'resource-limits','label' => 'Resource Limit Reached'", 'G6: in the menu');
-has($mn, "'resource-limits'    => '1.1.10-beta352',", 'G7: NEW badge');
+has($mn, "'resource-limits'    => '1.1.10-beta353',", 'G7: NEW badge');
 has($cs, "'lve lifts'          => 'smpro_lv_cron_sync',", 'G8: cron sync knows the tick');
 has($cs, "'slmaint', 'lvelimits'] as \$m) {", 'G9: cron sync loads the engine');

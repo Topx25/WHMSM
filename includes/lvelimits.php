@@ -53,8 +53,9 @@ function smpro_lv_parse_faults(string $json): array {
                 'pmem_max' => (int)round((float)($r['mPMem'] ?? 0) / 1048576), 'pmem_lim' => (int)round((float)($r['lPMem'] ?? 0) / 1048576), 'pmem_f' => (int)($r['PMemF'] ?? 0),
                 'vmem_f' => (int)($r['VMemF'] ?? 0),
                 'nproc_max' => (int)($r['mNproc'] ?? 0), 'nproc_lim' => (int)($r['lNproc'] ?? 0), 'nproc_f' => (int)($r['NprocF'] ?? 0),
-                'io_f' => (int)($r['IOf'] ?? 0), 'cpu_f' => (int)($r['CPUf'] ?? 0)];
+                'io_f' => (int)($r['IOf'] ?? 0) + (int)($r['IOPSf'] ?? 0), 'cpu_f' => (int)($r['CPUf'] ?? 0)];
         $row['faults'] = $row['ep_f'] + $row['pmem_f'] + $row['vmem_f'] + $row['nproc_f'] + $row['io_f'] + $row['cpu_f'];
+        if ($row['faults'] === 0) continue;   // --by-fault still lists LVEs whose only fault kind is one we did not ask for; a row with nothing counted is noise
         $out[$id] = $row;
     }
     return $out;
@@ -123,7 +124,9 @@ function smpro_lv_faults(string $period = '24h'): array {
     if (!in_array($period, ['1h', '24h', '7d'], true)) $period = '24h';
     $b = smpro_lv_bin('lveinfo');
     if ($b === '') return ['ok' => false, 'why' => 'lveinfo is not installed (lve-stats), so the limit history could not be read', 'rows' => []];
-    $out = smpro_lv_run($b . ' --period=' . $period . ' --by-fault=any --display-username --limit=500 --json', 40);
+    // the fault columns for CPU, I/O and IOPS are NOT in lveinfo's default set: without --show-columns a CPU-throttled
+    // account arrives with every printed counter at 0 and looks like it never hit anything
+    $out = smpro_lv_run($b . ' --period=' . $period . ' --by-fault=any --display-username --limit=500 --json --show-columns=ID,aCPU,mCPU,lCPU,CPUf,aEP,mEP,lEP,EPf,aPMem,mPMem,lPMem,PMemF,VMemF,mNproc,lNproc,NprocF,IOf,IOPSf', 40);
     if (trim($out) === '') return ['ok' => false, 'why' => 'lveinfo gave no answer (is the lvestats service running?) - the history could not be read', 'rows' => []];
     $rows = smpro_lv_parse_faults($out);
     if (!$rows && strpos($out, '"success"') === false) return ['ok' => false, 'why' => 'lveinfo answered something that is not its JSON - the history could not be read', 'rows' => []];
@@ -275,7 +278,7 @@ function smpro_lv_explain(array $f, array $now): string {
     if (($f['ep_f'] ?? 0) > 0 || (($now['lep'] ?? 0) > 0 && ($now['ep'] ?? 0) >= $now['lep'])) $parts[] = 'too many requests running at once (entry processes ' . ($now['ep'] ?? '?') . ' of ' . ($now['lep'] ?: ($f['ep_lim'] ?? '?')) . ') - the usual cause is PHP requests that hang (a slow database, a stuck wp-cron, a remote call that never answers) or a bot flood';
     if (($f['pmem_f'] ?? 0) > 0 || ($f['vmem_f'] ?? 0) > 0) $parts[] = 'the site needed more memory than its limit (peak ' . ($f['pmem_max'] ?? '?') . ' of ' . ($f['pmem_lim'] ?? '?') . ' MB) - a heavy plugin, an import, or many processes at once';
     if (($f['nproc_f'] ?? 0) > 0) $parts[] = 'more processes than allowed (peak ' . ($f['nproc_max'] ?? '?') . ' of ' . ($f['nproc_lim'] ?? '?') . ') - cron jobs piling up, or a script forking';
-    if (($f['cpu_f'] ?? 0) > 0 || (($f['cpu_lim'] ?? 0) > 0 && ($f['cpu_max'] ?? 0) >= $f['cpu_lim'] * 0.98)) $parts[] = 'CPU at its ceiling (peak ' . ($f['cpu_max'] ?? '?') . '% of ' . ($f['cpu_lim'] ?? '?') . '%) - throttled, not refused; pages get slow rather than 508';
+    if (($f['cpu_f'] ?? 0) > 0 || (($f['cpu_lim'] ?? 0) > 0 && ($f['cpu_max'] ?? 0) >= $f['cpu_lim'] * 0.98)) $parts[] = 'CPU at its ceiling ' . (($f['cpu_f'] ?? 0) > 0 ? $f['cpu_f'] . ' time(s) ' : '') . '(peak ' . ($f['cpu_max'] ?? '?') . '% of ' . ($f['cpu_lim'] ?? '?') . '%) - throttled, not refused: pages get slow rather than 508, and a site that is slow for minutes at a time is usually a hung request or a crawler, not real visitors';
     if (($f['io_f'] ?? 0) > 0) $parts[] = 'disk I/O throttled - backups, imports or a crawler reading everything';
     return $parts ? implode('. ', $parts) . '.' : 'no limit was hit in this period.';
 }
