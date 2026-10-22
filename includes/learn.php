@@ -495,6 +495,32 @@ function smpro_lr_tick(): void {
     $L = smpro_lr_lessons();
     if ($L && (is_file(smpro_lr_dir() . '/hunt_wanted') || time() - $last > 86400)) smpro_lr_hunt(500);
 }
+/** Is a hunt running right now? True while the tick's lock is held (the same lock cron uses), so there is one answer. */
+function smpro_lr_hunt_running(): bool {
+    $l = (defined('SMPRO_LOCKS') ? SMPRO_LOCKS : SMPRO_VARLIB . '/locks') . '/learn.cron.lock';
+    if (!@is_file($l)) return false;
+    $fh = @fopen($l, 'r'); if (!$fh) return false;
+    $free = @flock($fh, LOCK_EX | LOCK_NB); if ($free) @flock($fh, LOCK_UN); @fclose($fh);
+    return !$free;
+}
+/**
+ * Ask for a hunt and start it DETACHED. A hunt walks every site (minutes on a big server); run inside the page's
+ * own request it kept the browser "loading" for the whole walk. Now the request returns at once, the worker runs
+ * under the same lock as the cron tick (so a cron hunt already running is never doubled - it picks the flag up),
+ * and the page shows "hunting now" and refreshes itself until the findings land.
+ */
+function smpro_lr_hunt_bg(): array {
+    @touch(smpro_lr_dir() . '/hunt_wanted');
+    if (smpro_lr_hunt_running()) return ['ok' => true, 'started' => false, 'msg' => 'A hunt is already running; it covers the new lesson too. The findings appear here when it finishes - this page refreshes itself.'];
+    if (defined('SMPRO_TEST_SRC')) return ['ok' => true, 'started' => true, 'msg' => 'test: no worker started'];
+    $bin = SMPRO_BASE . '/bin/learn_tick.php'; if (!is_file($bin)) return ['ok' => false, 'started' => false, 'msg' => 'the hunt worker is missing from this build'];
+    $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : '/usr/local/cpanel/3rdparty/bin/php';
+    $ld  = defined('SMPRO_LOCKS') ? SMPRO_LOCKS : SMPRO_VARLIB . '/locks'; @is_dir($ld) || @mkdir($ld, 0700, true);
+    $flock = is_executable('/usr/bin/flock') ? '/usr/bin/flock' : 'flock';
+    $cmd = 'nohup ' . $flock . ' -n ' . escapeshellarg($ld . '/learn.cron.lock') . ' timeout 590 nice -n 15 ' . escapeshellarg($php) . ' ' . escapeshellarg($bin) . ' >/dev/null 2>&1 </dev/null &';
+    @shell_exec($cmd);
+    return ['ok' => true, 'started' => true, 'msg' => 'Hunt started in the background over every site; the findings appear here when it finishes (a few minutes on a big server) - this page refreshes itself, and you can leave it.'];
+}
 function smpro_lr_cron_sync() {
     $f = '/etc/cron.d/smpro-learn';
     if (!is_file(SMPRO_BASE . '/bin/learn_tick.php')) { if (is_file($f)) @unlink($f); return; }

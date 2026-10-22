@@ -20,8 +20,8 @@ if ($reqMethod === 'POST' && $act !== '') {
     @ignore_user_abort(true); @set_time_limit(600);
     $ok = true; $msg = '';
     switch ($act) {
-        case 'hunt':      $r = smpro_lr_hunt(500); $msg = 'Hunted ' . $r['sites'] . ' of ' . $r['of'] . ' site(s) in ' . $r['took'] . ' s: ' . count($r['findings']) . ' finding(s).' . ($r['partial'] ? ' Time budget hit; the next tick continues where this stopped.' : ''); break;
-        case 'teach':     $r = smpro_lr_teach_folder((string)($_POST['folder'] ?? '')); $ok = $r['ok']; $msg = $r['msg']; if ($ok) smpro_lr_hunt(400); break;
+        case 'hunt':      $r = smpro_lr_hunt_bg(); $ok = $r['ok']; $msg = $r['msg']; break;   // detached: the page never waits for a server-wide walk
+        case 'teach':     $r = smpro_lr_teach_folder((string)($_POST['folder'] ?? '')); $ok = $r['ok']; $msg = $r['msg']; if ($ok) { $h = smpro_lr_hunt_bg(); $msg .= ' ' . $h['msg']; } break;
         case 'quarantine': $r = smpro_lr_quarantine((string)($_POST['path'] ?? ''), 'operator'); $ok = $r['ok']; $msg = $r['msg']; break;
         case 'quarantine_exact_all':
             // every finding that is the EXACT file of a confirmed incident (hash lesson, confirmed on this server)
@@ -107,6 +107,7 @@ $qs = function (array $over = []) use ($fSev, $fKind, $fUser, $fQ, $groupBy, $pe
     return 'index.cgi?' . http_build_query(array_filter($q, fn($v) => $v !== '' && $v !== null)) . '#findings';
 };
 $lastHunt = (int)($F['at'] ?? 0);
+$hunting = smpro_lr_hunt_running();
 smpro_layout_header('Learned Defense');
 ?>
 <style>
@@ -159,7 +160,7 @@ smpro_layout_header('Learned Defense');
   <div class="ld-t <?= $procs ? 'bad' : 'ok' ?>"><div class="l">Hidden processes</div><div class="v" style="color:<?= $procs ? 'var(--dang)' : 'var(--good)' ?>"><?= count($procs) ?></div><div class="s">running now · memory-only, deleted, false name, long web shell</div></div>
   <div class="ld-t brand"><div class="l">Lessons</div><div class="v"><?= $onN ?></div><div class="s"><?= count($L) - $onN ?> off · <?= $shN ?> from other servers</div></div>
   <div class="ld-t brand"><div class="l">In the store</div><div class="v"><?= count(array_filter($Q, fn($q) => empty($q['restored']))) ?></div><div class="s">root-only, restorable</div></div>
-  <div class="ld-t <?= $lastHunt && time() - $lastHunt < 86400 * 2 ? 'ok' : 'warn' ?>"><div class="l">Last hunt</div><div class="v" style="font-size:18px"><?= $lastHunt ? smpro_h(date('m-d H:i', $lastHunt)) : 'never' ?></div><div class="s"><?= $F ? (int)$F['sites'] . ' of ' . (int)$F['of'] . ' site(s) in ' . (int)$F['took'] . ' s' . (!empty($F['partial']) ? ' · partial, continues' : '') : 'press Hunt now' ?></div></div>
+  <div class="ld-t <?= $hunting ? 'ok' : ($lastHunt && time() - $lastHunt < 86400 * 2 ? 'ok' : 'warn') ?>" id="ldHuntTile"><div class="l">Last hunt<?= $hunting ? ' · <b style="color:var(--brand)">hunting now…</b>' : '' ?></div><div class="v" style="font-size:18px"><?= $lastHunt ? smpro_h(date('m-d H:i', $lastHunt)) : 'never' ?></div><div class="s"><?= $hunting ? 'walking every site in the background - this page refreshes itself until the findings land' : ($F ? (int)$F['sites'] . ' of ' . (int)$F['of'] . ' site(s) in ' . (int)$F['took'] . ' s' . (!empty($F['partial']) ? ' · partial, continues' : '') : 'press Hunt now') ?></div></div>
 </div>
 
 <?php if ($procs): ?>
@@ -234,7 +235,8 @@ smpro_layout_header('Learned Defense');
 
 <div class="ld-tools">
   <div class="ld-tool"><h4>&#128269; Hunt</h4><p>Look for every lesson in every site now (the worker does this by itself every 10 minutes when a lesson is new, and once a day otherwise).</p>
-    <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="hunt"><button class="btn btn-secondary" type="submit">Hunt now</button></form></div>
+    <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="hunt"><button class="btn btn-secondary" type="submit"<?= $hunting ? ' disabled title="a hunt is running"' : '' ?>><?= $hunting ? 'Hunting…' : 'Hunt now' ?></button></form></div>
+<?php if ($hunting): ?><script>/* a hunt is running: come back for the findings without the operator pressing anything */ setTimeout(function(){ if (!document.hidden) location.reload(); else document.addEventListener('visibilitychange', function(){ if (!document.hidden) location.reload(); }); }, 20000);</script><?php endif; ?>
   <div class="ld-tool"><h4>&#127891; Teach</h4><p>A folder of kept malware whose layout mirrors where it was found (…/home/&lt;account&gt;/…) - an isolation folder, a quarantine. Every file in it becomes lessons, and a hunt follows.</p>
     <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="teach"><input type="text" name="folder" class="tp-in" placeholder="/root/isolated-…" required><button class="btn btn-xs btn-ghost" type="submit">Teach</button></form></div>
   <div class="ld-tool"><h4>&#9881; Settings</h4><p>What the hunt does on its own with an EXACT file of a confirmed incident, how far back it reads changed files, and whether lessons are exchanged with other servers (patterns only).</p>
