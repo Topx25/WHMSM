@@ -22,6 +22,7 @@ if ($reqMethod === 'POST' && ($_POST['lv_action'] ?? '') === 'fix') {
 }
 
 $period = (string)($_GET['period'] ?? '24h'); if (!in_array($period, ['1h', '24h', '7d'], true)) $period = '24h';
+$q = trim((string)($_GET['q'] ?? ''));
 $csrf = smpro_csrf_generate('lv_fix');
 $OPS = smpro_lv_ops();
 smpro_layout_header('Resource Limit Reached');
@@ -46,6 +47,8 @@ $doms = smpro_lv_domains_map();
 $users = array_keys($hist['rows']);
 foreach ($now as $u => $n) if (($n['lep'] > 0 && $n['ep'] >= $n['lep']) || ($n['lmemphy_mb'] > 0 && $n['memphy_mb'] >= $n['lmemphy_mb'] * 0.95) || ($n['lnproc'] > 0 && $n['nproc'] >= $n['lnproc'])) $users[] = $u;
 foreach (array_keys($lifts) as $u) $users[] = $u;
+// a searched domain / account that hit nothing is still shown - as a row that SAYS it hit nothing - instead of an empty table
+$lookedUp = $q !== '' ? smpro_lv_resolve($q, $doms) : ''; if ($lookedUp !== '') array_unshift($users, $lookedUp);
 $users = array_values(array_unique($users));
 $hitNow = 0; foreach ($users as $u) { $n = $now[$u] ?? null; if ($n && (($n['lep'] > 0 && $n['ep'] >= $n['lep']) || ($n['lnproc'] > 0 && $n['nproc'] >= $n['lnproc']))) $hitNow++; }
 $totalFaults = 0; foreach ($hist['rows'] as $r) $totalFaults += $r['faults'];
@@ -89,13 +92,15 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
   <div class="lv-kpi"><div class="v"><?= $hist['ok'] ? $totalFaults : '?' ?></div><div class="l">refused / throttled events (<?= smpro_h($period) ?>)</div></div>
   <div class="lv-kpi <?= $lifts ? 'warn' : '' ?>"><div class="v"><?= count($lifts) ?></div><div class="l">lifts in force (go back by themselves)</div></div>
 </div>
+<?php if ($q !== '' && $lookedUp === ''): ?><div class="lv-warn">&#9888; "<?= smpro_h($q) ?>" is not an account on this server and no account owns that domain (checked cPanel's own domain list).</div><?php endif; ?>
+<?php if ($q !== '' && $lookedUp !== '' && !isset($hist['rows'][$lookedUp]) && !isset($lifts[$lookedUp])): ?><div class="lv-res ok">"<?= smpro_h($q) ?>" belongs to account <b><?= smpro_h($lookedUp) ?></b>, which hit NO limit in the <?= smpro_h($period) ?> period - its row is shown first so you can see what runs now; a 508 on this site right now would come from something else (a PHP error page, the handler, Site Shield). Try the 7-day period to be sure.</div><?php endif; ?>
 <?php if (!$hist['ok']): ?><div class="lv-warn">&#9888; History could not be read: <?= smpro_h($hist['why']) ?>. The "this second" column below is read from the kernel and is still true.</div><?php endif; ?>
 <?php foreach ($expired as $u => $r): ?><div class="lv-res <?= $r['ok'] ? 'ok' : 'bad' ?>">Lift expired: <?= smpro_h($r['msg']) ?></div><?php endforeach; ?>
 
 <div class="lv-bar">
   <form method="get" style="display:inline-flex;gap:6px;align-items:center"><input type="hidden" name="page" value="resource-limits"><label class="sub" for="lvP">Period</label>
     <select class="lv-sel" id="lvP" name="period" onchange="this.form.submit()"><?php foreach (['1h' => 'last hour', '24h' => 'last 24 hours', '7d' => 'last 7 days'] as $k => $v): ?><option value="<?= $k ?>"<?= $k === $period ? ' selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></form>
-  <input class="lv-sel" id="lvF" type="search" placeholder="search: account or domain (example.com)" style="min-width:280px">
+  <input class="lv-sel" id="lvF" type="search" placeholder="search: account or domain (example.com) - Enter looks it up server-wide" style="min-width:300px" value="<?= smpro_h($q) ?>">
   <select class="lv-sel" id="lvV"><option value="">every kind</option><option value="ep">entry processes</option><option value="mem">memory</option><option value="np">processes</option><option value="cpu">CPU</option><option value="io">I/O</option><option value="lift">lifted</option><option value="hung">hung processes now</option></select>
   <select class="lv-sel" id="lvS"><option value="25">25 / page</option><option value="50">50 / page</option><option value="100">100 / page</option></select>
   <span class="sub" id="lvCount"></span>
@@ -196,11 +201,12 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
     if (page >= pages) page = pages - 1; if (page < 0) page = 0;
     rows.forEach(function(tr){ tr.classList.add('hide'); });
     vis.slice(page * size, (page + 1) * size).forEach(function(tr){ tr.classList.remove('hide'); });
-    document.getElementById('lvCount').textContent = vis.length + ' of ' + rows.length + ' account(s)' + (vis.length ? ' · showing ' + (page * size + 1) + '–' + Math.min(vis.length, (page + 1) * size) : '');
+    document.getElementById('lvCount').textContent = vis.length + ' of ' + rows.length + ' listed account(s)' + (vis.length ? ' · showing ' + (page * size + 1) + '–' + Math.min(vis.length, (page + 1) * size) : ((F.value||'').trim() ? ' · not in this list - press Enter to look it up across every account on the server' : ''));
     var tx = document.getElementById('lvPgTx'); if (tx) tx.textContent = 'page ' + (page + 1) + ' / ' + pages;
     var pv = document.getElementById('lvPrev'), nx = document.getElementById('lvNext'); if (pv) pv.disabled = page <= 0; if (nx) nx.disabled = page >= pages - 1;
     var all = document.getElementById('lvAll'); if (all) all.checked = false; }
-  if (F) { F.addEventListener('input', function(){ page = 0; draw(); }); V.addEventListener('change', function(){ page = 0; draw(); }); S.addEventListener('change', function(){ page = 0; draw(); }); }
+  if (F) { F.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); var u = new URL(location.href); u.searchParams.set('page','resource-limits'); u.searchParams.set('period', document.getElementById('lvP').value); if ((F.value||'').trim()) u.searchParams.set('q', F.value.trim()); else u.searchParams.delete('q'); location.href = u.toString(); } });
+    F.addEventListener('input', function(){ page = 0; draw(); }); V.addEventListener('change', function(){ page = 0; draw(); }); S.addEventListener('change', function(){ page = 0; draw(); }); }
   var pv = document.getElementById('lvPrev'), nx = document.getElementById('lvNext');
   if (pv) pv.addEventListener('click', function(){ page--; draw(); }); if (nx) nx.addEventListener('click', function(){ page++; draw(); });
   try { var qs = new URLSearchParams(location.search); if (qs.get('q') && F) F.value = qs.get('q'); } catch(e){}

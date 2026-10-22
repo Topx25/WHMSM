@@ -105,6 +105,6 @@ has($pg, 'This server has no CloudLinux LVE', 'G3: a server without LVE is told 
 has($pg, "History could not be read:", 'G4: a read that could not run is said, never shown as no faults');
 has($pg, "\$expired = smpro_lv_tick();", 'G5: expired lifts go back when the page is drawn too');
 has($mn, "['id' => 'resource-limits','label' => 'Resource Limit Reached'", 'G6: in the menu');
-has($mn, "'resource-limits'    => '1.1.10-beta354',", 'G7: NEW badge');
+has($mn, "'resource-limits'    => '1.1.10-beta355',", 'G7: NEW badge');
 has($cs, "'lve lifts'          => 'smpro_lv_cron_sync',", 'G8: cron sync knows the tick');
 has($cs, "'slmaint', 'lvelimits'] as \$m) {", 'G9: cron sync loads the engine');

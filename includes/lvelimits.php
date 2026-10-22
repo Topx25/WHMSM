@@ -283,6 +283,17 @@ function smpro_lv_domains_map(): array {
     return $map;
 }
 
+/** A search term -> the account it names: an account name, or any domain of one (www. and case ignored). '' when none. */
+function smpro_lv_resolve(string $q, ?array $map = null): string {
+    $q = strtolower(trim($q)); $q = preg_replace('#^https?://#', '', $q); $q = preg_replace('#/.*$#', '', $q); $q = preg_replace('/^www\./', '', $q);
+    if ($q === '' || !preg_match('/^[a-z0-9._-]{1,253}$/', $q)) return '';
+    $map = $map ?? smpro_lv_domains_map();
+    if (isset($map[$q])) return $q;
+    foreach ($map as $u => $ds) foreach ($ds as $d) if ($d === $q || preg_replace('/^www\./', '', $d) === $q) return (string)$u;
+    if (function_exists('posix_getpwnam') && is_array(@posix_getpwnam($q))) return $q;
+    return '';
+}
+
 /**
  * The one thing to do for this row, in the words of the buttons. Pure.
  * @param array $f     history row (may be empty)   @param array|null $now  this second (may be null)

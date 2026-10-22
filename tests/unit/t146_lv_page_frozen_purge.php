@@ -33,7 +33,7 @@ ok(strpos($w, 'the limit of 20 entry processes was refused 6747 time(s)') !== fa
 // B. the page: own search (account or domain), own paging, bulk bar, shared pager kept off
 has($pg, 'data-nopage="1"', 'B1: the shared auto-pager is kept off this table');
 has($pg, "\$needle = strtolower(\$u . ' ' . implode(' ', \$ud));", 'B2: search needle = account + every domain');
-has($pg, 'placeholder="search: account or domain (example.com)"', 'B3: the box says what it searches');
+has($pg, 'placeholder="search: account or domain (example.com) - Enter looks it up server-wide"', 'B3: the box says what it searches');
 has($pg, "if (q && (tr.getAttribute('data-s')||'').indexOf(q) < 0) return false;", 'B4: search is over the needle');
 has($pg, "vis.slice(page * size, (page + 1) * size)", 'B5: paging over the filtered rows');
 has($pg, '<option value="25">25 / page</option><option value="50">50 / page</option><option value="100">100 / page</option>', 'B6: page sizes');
@@ -46,6 +46,20 @@ has($pg, '<div class="lv-todo <?= smpro_h($adv[\'kind\']) ?>"><b>What to do:</b>
 has($pg, "smpro_lv_domains_map()", 'B13: domains from cPanel\'s own map');
 has($lv, "foreach ((array)@file('/etc/userdomains', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as \$ln) {", 'B14: /etc/userdomains, one read');
 has($pg, '<option value="hung">hung processes now</option>', 'B15: kind filter includes hung');
+
+// B2. a searched site that hit nothing is still found and shown, never a silent empty table
+$map = ['alpha' => ['example.com', 'www.shop.example.net'], 'beta' => ['other.org']];
+is_eq(smpro_lv_resolve('example.com', $map), 'alpha', 'L1: domain -> account');
+is_eq(smpro_lv_resolve('https://WWW.Example.com/path', $map), 'alpha', 'L2: scheme, www, case and path ignored');
+is_eq(smpro_lv_resolve('shop.example.net', $map), 'alpha', 'L3: a www. domain in the map matches without it');
+is_eq(smpro_lv_resolve('alpha', $map), 'alpha', 'L4: account name');
+is_eq(smpro_lv_resolve('nobody.example', ['x' => []]), '', 'L5: unknown -> empty, never a guess');
+is_eq(smpro_lv_resolve('a; rm -rf', $map), '', 'L6: shell-looking input is refused');
+has($pg, "\$lookedUp = \$q !== '' ? smpro_lv_resolve(\$q, \$doms) : ''; if (\$lookedUp !== '') array_unshift(\$users, \$lookedUp);", 'L7: the looked-up account is a row, first');
+has($pg, "is not an account on this server and no account owns that domain", 'L8: an unknown search is told so');
+has($pg, "which hit NO limit in the", 'L9: a calm account is told so, not hidden');
+has($pg, "if (e.key === 'Enter') { e.preventDefault();", 'L10: Enter = server-wide lookup');
+has($pg, "not in this list - press Enter to look it up across every account on the server", 'L11: the count line says what to do when nothing matches');
 
 // C. frozen purge: every id through exiqgrep, honest count, finishes after the tab closes
 has($sp, 'function smpro_sp_frozen_ids(string $exim): ?array {', 'C1: helper');
