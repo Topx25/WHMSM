@@ -169,6 +169,28 @@ function smpro_lv_backup_cfg(): string {
     if (!@copy(SMPRO_LV_VECFG, $to)) return ''; @chmod($to, 0600); return $to;
 }
 
+/**
+ * Set an account's LVE limits and PROVE it. `lvectl set-user` is refused with "Can't setup lve with id N; error
+ * code -2" on some servers (the account sits inside a reseller container, or its LVE is not loaded yet); the same
+ * limits usually go through by id, and a loaded-but-stale LVE takes them after `lvectl apply`. Every way is tried in
+ * turn, and the answer is what `lvectl list-user` shows afterwards - never what the command claimed.
+ * @param array $want  ['ep'=>, 'pmem_mb'=>, 'nproc'=>, 'speed'=>]
+ * @return array{ok:bool,how:string,out:string,now:array}
+ */
+function smpro_lv_set_limits(string $user, int $uid, array $want): array {
+    $ctl = smpro_lv_bin('lvectl'); if ($ctl === '') return ['ok' => false, 'how' => '', 'out' => 'lvectl is not installed', 'now' => []];
+    $opts = ' --maxEntryProcs=' . (int)$want['ep'] . ' --pmem=' . (int)$want['pmem_mb'] . 'M --nproc=' . (int)$want['nproc'] . ' --speed=' . (int)$want['speed'] . '%';
+    $tries = [['set-user ' . escapeshellarg($user), 'set-user'], ['set ' . (int)$uid, 'set by id'], ['set ' . (int)$uid . $opts . ' --save 2>&1; ' . $ctl . ' apply ' . (int)$uid, 'set by id + apply']];
+    $outAll = [];
+    foreach ($tries as [$cmd, $how]) {
+        $o = trim(smpro_lv_run($ctl . ' ' . $cmd . (strpos($cmd, '--save') === false ? $opts : '') . ' 2>&1', 30));
+        $outAll[] = $how . ': ' . ($o === '' ? 'ok' : $o);
+        $now = smpro_lv_limits()[$user] ?? [];
+        if ($now && (int)$now['ep'] === (int)$want['ep'] && (int)$now['nproc'] === (int)$want['nproc']) return ['ok' => true, 'how' => $how, 'out' => implode(' | ', $outAll), 'now' => $now];
+    }
+    return ['ok' => false, 'how' => '', 'out' => implode(' | ', $outAll), 'now' => smpro_lv_limits()[$user] ?? []];
+}
+
 /* ------------------------------------------------------------------ actions */
 
 function smpro_lv_ops(): array {
@@ -211,12 +233,12 @@ function smpro_lv_apply(string $op, array $args, string $actor = ''): array {
                 $custom = isset($lifts[$user]) ? (bool)$lifts[$user]['custom'] : smpro_lv_custom_cfg($uid);
                 $new = smpro_lv_lifted($prev);
                 $bk = smpro_lv_backup_cfg(); if ($bk === '') { $r = ['ok' => false, 'msg' => 'could not back up ' . SMPRO_LV_VECFG . ' - nothing changed']; break; }
-                $o = smpro_lv_run($ctl . ' set-user ' . escapeshellarg($user) . ' --maxEntryProcs=' . $new['ep'] . ' --pmem=' . $new['pmem_mb'] . 'M --nproc=' . $new['nproc'] . ' --speed=' . $new['speed'] . '% 2>&1', 30);
-                if (stripos($o, 'error') !== false) { $r = ['ok' => false, 'msg' => 'lvectl refused: ' . trim($o), 'backup' => $bk]; break; }
+                $set = smpro_lv_set_limits($user, $uid, $new);
+                if (!$set['ok']) { $r = ['ok' => false, 'msg' => 'the limits did not take (' . $set['out'] . '). lvectl list-user still shows ' . ($set['now'] ? 'entry ' . $set['now']['ep'] . ' / proc ' . $set['now']['nproc'] : 'no LVE for this account') . '. Usual causes: the account is inside a reseller container (WHM > LVE Manager > the reseller), or the LVE kernel module refuses new LVEs - see "lvectl list-reseller --with-name" and "lvectl paneluserlimits ' . $user . '".', 'backup' => $bk]; break; }
                 $lifts[$user] = ['uid' => $uid, 'until' => time() + (int)$a['minutes'] * 60, 'prev' => $prev, 'new' => $new, 'custom' => $custom, 'by' => $actor, 'at' => time()];
                 smpro_lv_lifts_save($lifts); smpro_lv_cron_sync();
                 smpro_audit('lve_lift', ['user' => $user, 'minutes' => (int)$a['minutes'], 'prev' => $prev, 'new' => $new, 'actor' => $actor]);
-                $r = ['ok' => true, 'msg' => $user . ': entry processes ' . $prev['ep'] . ' -> ' . $new['ep'] . ', memory ' . $prev['pmem_mb'] . ' -> ' . $new['pmem_mb'] . ' MB, processes ' . $prev['nproc'] . ' -> ' . $new['nproc'] . ', CPU ' . $prev['speed'] . '% -> ' . $new['speed'] . '% for ' . (int)$a['minutes'] . ' min; put back automatically at ' . date('H:i', $lifts[$user]['until']), 'backup' => $bk];
+                $r = ['ok' => true, 'msg' => $user . ': entry processes ' . $prev['ep'] . ' -> ' . $new['ep'] . ', memory ' . $prev['pmem_mb'] . ' -> ' . $new['pmem_mb'] . ' MB, processes ' . $prev['nproc'] . ' -> ' . $new['nproc'] . ', CPU ' . $prev['speed'] . '% -> ' . $new['speed'] . '% for ' . (int)$a['minutes'] . ' min; put back automatically at ' . date('H:i', $lifts[$user]['until']) . ' (applied via ' . $set['how'] . ', read back from lvectl)', 'backup' => $bk];
                 break;
             case 'putback':
                 $r = smpro_lv_putback($user, $actor, 'by the operator');
@@ -242,11 +264,13 @@ function smpro_lv_putback(string $user, string $actor = '', string $why = ''): a
     if ($ctl === '') return ['ok' => false, 'msg' => 'lvectl is not installed'];
     $L = $lifts[$user]; $p = (array)$L['prev'];
     $bk = smpro_lv_backup_cfg(); if ($bk === '') return ['ok' => false, 'msg' => 'could not back up ' . SMPRO_LV_VECFG . ' - the lift stays'];
-    $cmd = !empty($L['custom'])
-        ? $ctl . ' set-user ' . escapeshellarg($user) . ' --maxEntryProcs=' . (int)$p['ep'] . ' --pmem=' . (int)$p['pmem_mb'] . 'M --nproc=' . (int)$p['nproc'] . ' --speed=' . (int)$p['speed'] . '% 2>&1'
-        : $ctl . ' delete-user ' . escapeshellarg($user) . ' 2>&1';
-    $o = smpro_lv_run($cmd, 30);
-    if (stripos($o, 'error') !== false) return ['ok' => false, 'msg' => 'lvectl refused: ' . trim($o) . ' - the lift stays', 'backup' => $bk];
+    if (!empty($L['custom'])) {
+        $set = smpro_lv_set_limits($user, (int)$L['uid'], $p);
+        if (!$set['ok']) return ['ok' => false, 'msg' => 'the previous limits did not take (' . $set['out'] . ') - the lift stays', 'backup' => $bk];
+    } else {
+        $o = smpro_lv_run($ctl . ' delete-user ' . escapeshellarg($user) . ' 2>&1', 30);
+        if (stripos($o, 'error') !== false) return ['ok' => false, 'msg' => 'lvectl refused: ' . trim($o) . ' - the lift stays', 'backup' => $bk];
+    }
     unset($lifts[$user]); smpro_lv_lifts_save($lifts); smpro_lv_cron_sync();
     smpro_audit('lve_putback', ['user' => $user, 'why' => $why, 'actor' => $actor]);
     return ['ok' => true, 'msg' => $user . ': limits put back (' . (!empty($L['custom']) ? 'its own previous values' : 'package limits') . ')' . ($why ? ' ' . $why : ''), 'backup' => $bk];

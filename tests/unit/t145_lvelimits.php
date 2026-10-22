@@ -87,9 +87,13 @@ is_eq(smpro_lv_apply('lift', ['user' => 'x; rm', 'minutes' => '60'])['ok'], fals
 is_eq(smpro_lv_apply('lift', ['user' => 'alpha', 'minutes' => '7'])['ok'], false, 'F3: only 15/60/240 minutes');
 is_eq(smpro_lv_apply('nope', [])['msg'], 'unknown action', 'F4: unknown op');
 has($lv, "\$bk = smpro_lv_backup_cfg(); if (\$bk === '') { \$r = ['ok' => false, 'msg' => 'could not back up ' . SMPRO_LV_VECFG . ' - nothing changed']; break; }", 'F5: no backup, no lift');
+has($lv, 'function smpro_lv_set_limits(string $user, int $uid, array $want): array {', 'F5b: one setter for lift and put-back');
+has($lv, "[['set-user ' . escapeshellarg(\$user), 'set-user'], ['set ' . (int)\$uid, 'set by id'], ['set ' . (int)\$uid . \$opts . ' --save 2>&1; ' . \$ctl . ' apply ' . (int)\$uid, 'set by id + apply']]", 'F5c: set-user, then by id, then apply');
+has($lv, "if (\$now && (int)\$now['ep'] === (int)\$want['ep'] && (int)\$now['nproc'] === (int)\$want['nproc']) return ['ok' => true,", 'F5d: success = what lvectl list-user shows, not what the command said');
+has($lv, "the account is inside a reseller container (WHM > LVE Manager > the reseller), or the LVE kernel module refuses new LVEs", 'F5e: the refusal names the usual causes');
 has($lv, "\$prev = isset(\$lifts[\$user]['prev']) ? \$lifts[\$user]['prev'] : smpro_lv_limits_of(\$user);", 'F6: a second lift keeps the ORIGINAL limits to put back');
-has($lv, "? \$ctl . ' set-user ' . escapeshellarg(\$user) . ' --maxEntryProcs=' . (int)\$p['ep']", 'F7: put-back restores the own values when the account had them');
-has($lv, ": \$ctl . ' delete-user ' . escapeshellarg(\$user) . ' 2>&1';", 'F8: ...and returns to the package when it had none');
+has($lv, "\$set = smpro_lv_set_limits(\$user, (int)\$L['uid'], \$p);", 'F7: put-back restores the own values when the account had them');
+has($lv, "\$o = smpro_lv_run(\$ctl . ' delete-user ' . escapeshellarg(\$user) . ' 2>&1', 30);", 'F8: ...and returns to the package when it had none');
 has($lv, "if ((int)(\$L['until'] ?? 0) <= \$now) \$out[\$user] = smpro_lv_putback((string)\$user, 'cron', 'time was up');", 'F9: the tick expires lifts');
 has($lv, "if (!smpro_lv_lifts()) { if (@is_file(\$f)) @unlink(\$f); return true; }", 'F10: no lift, no cron');
 has($lv, "if (defined('SMPRO_TEST_SRC')) return true;", 'F11: a test never installs a cron');
@@ -105,6 +109,6 @@ has($pg, 'This server has no CloudLinux LVE', 'G3: a server without LVE is told 
 has($pg, "History could not be read:", 'G4: a read that could not run is said, never shown as no faults');
 has($pg, "\$expired = smpro_lv_tick();", 'G5: expired lifts go back when the page is drawn too');
 has($mn, "['id' => 'resource-limits','label' => 'Resource Limit Reached'", 'G6: in the menu');
-has($mn, "'resource-limits'    => '1.1.10-beta358',", 'G7: NEW badge');
+has($mn, "'resource-limits'    => '1.1.10-beta359',", 'G7: NEW badge');
 has($cs, "'lve lifts'          => 'smpro_lv_cron_sync',", 'G8: cron sync knows the tick');
 has($cs, "'slmaint', 'lvelimits'] as \$m) {", 'G9: cron sync loads the engine');
