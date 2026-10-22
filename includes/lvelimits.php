@@ -180,7 +180,7 @@ function smpro_lv_backup_cfg(): string {
 function smpro_lv_set_limits(string $user, int $uid, array $want): array {
     $ctl = smpro_lv_bin('lvectl'); if ($ctl === '') return ['ok' => false, 'how' => '', 'out' => 'lvectl is not installed', 'now' => []];
     $opts = ' --maxEntryProcs=' . (int)$want['ep'] . ' --pmem=' . (int)$want['pmem_mb'] . 'M --nproc=' . (int)$want['nproc'] . ' --speed=' . (int)$want['speed'] . '%';
-    $tries = [['set-user ' . escapeshellarg($user), 'set-user'], ['set ' . (int)$uid, 'set by id'], ['set ' . (int)$uid . $opts . ' --save 2>&1; ' . $ctl . ' apply ' . (int)$uid, 'set by id + apply']];
+    $tries = [['set-user ' . escapeshellarg($user), 'set-user'], ['set ' . (int)$uid, 'set by id'], ['set ' . (int)$uid . $opts . ' 2>&1; ' . $ctl . ' apply ' . (int)$uid, 'set by id + apply']];
     $outAll = [];
     foreach ($tries as [$cmd, $how]) {
         $o = trim(smpro_lv_run($ctl . ' ' . $cmd . (strpos($cmd, '--save') === false ? $opts : '') . ' 2>&1', 30));
@@ -207,7 +207,9 @@ function smpro_lv_module_versions(): array {
     $name = @is_dir('/sys/module/kmodlve') ? 'kmodlve' : (@is_dir('/sys/module/lve') ? 'lve' : '');
     $loaded = $name !== '' ? trim((string)@file_get_contents('/sys/module/' . $name . '/version')) : '';
     $disk = '';
-    foreach (['kmodlve', 'lve'] as $m) { $v = trim(smpro_lv_run('modinfo -F version ' . $m . ' 2>/dev/null', 10)); if ($v !== '') { $disk = $v; break; } }
+    // modinfo's "Module X not found" arrives on the same stream as a version on some builds: only a version-shaped answer counts
+    foreach (['kmodlve', 'lve'] as $m) { $v = trim(smpro_lv_run('modinfo -F version ' . $m . ' 2>/dev/null', 10)); if (preg_match('/^\d[\w.+-]*$/', $v)) { $disk = $v; break; } }
+    if (!preg_match('/^\d[\w.+-]*$/', $loaded)) $loaded = '';
     return ['loaded' => $loaded, 'disk' => $disk, 'mismatch' => smpro_lv_module_mismatch($disk, $loaded)];
 }
 function smpro_lv_kernel_state(): array {

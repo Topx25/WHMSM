@@ -88,7 +88,7 @@ is_eq(smpro_lv_apply('lift', ['user' => 'alpha', 'minutes' => '7'])['ok'], false
 is_eq(smpro_lv_apply('nope', [])['msg'], 'unknown action', 'F4: unknown op');
 has($lv, "\$bk = smpro_lv_backup_cfg(); if (\$bk === '') { \$r = ['ok' => false, 'msg' => 'could not back up ' . SMPRO_LV_VECFG . ' - nothing changed']; break; }", 'F5: no backup, no lift');
 has($lv, 'function smpro_lv_set_limits(string $user, int $uid, array $want): array {', 'F5b: one setter for lift and put-back');
-has($lv, "[['set-user ' . escapeshellarg(\$user), 'set-user'], ['set ' . (int)\$uid, 'set by id'], ['set ' . (int)\$uid . \$opts . ' --save 2>&1; ' . \$ctl . ' apply ' . (int)\$uid, 'set by id + apply']]", 'F5c: set-user, then by id, then apply');
+has($lv, "[['set-user ' . escapeshellarg(\$user), 'set-user'], ['set ' . (int)\$uid, 'set by id'], ['set ' . (int)\$uid . \$opts . ' 2>&1; ' . \$ctl . ' apply ' . (int)\$uid, 'set by id + apply']]", 'F5c: set-user, then by id, then apply');
 has($lv, "if (\$now && (int)\$now['ep'] === (int)\$want['ep'] && (int)\$now['nproc'] === (int)\$want['nproc']) return ['ok' => true,", 'F5d: success = what lvectl list-user shows, not what the command said');
 has($lv, "the account is inside a reseller container (WHM > LVE Manager > the reseller), or the LVE kernel module refuses new LVEs", 'F5e: the refusal names the usual causes');
 has($lv, "\$prev = isset(\$lifts[\$user]['prev']) ? \$lifts[\$user]['prev'] : smpro_lv_limits_of(\$user);", 'F6: a second lift keeps the ORIGINAL limits to put back');
@@ -109,7 +109,8 @@ has($pg, 'This server has no CloudLinux LVE', 'G3: a server without LVE is told 
 has($pg, "History could not be read:", 'G4: a read that could not run is said, never shown as no faults');
 has($pg, "\$expired = smpro_lv_tick();", 'G5: expired lifts go back when the page is drawn too');
 has($mn, "['id' => 'resource-limits','label' => 'Resource Limit Reached'", 'G6: in the menu');
-has($mn, "'resource-limits'    => '1.1.10-beta361',", 'G7: NEW badge');
+has($mn, "'resource-limits'    => '1.1.10-beta362',", 'G7: NEW badge');
+has($lv, "if (preg_match('/^\d[\w.+-]*$/', \$v)) { \$disk = \$v; break; }", 'K11: only a version-shaped modinfo answer counts, never its error text');
 is_eq(smpro_lv_module_mismatch('2.1-80.el10', '2.1-63.el10'), true, 'K7: on-disk 2.1-80 vs loaded 2.1-63 = mismatch');
 is_eq(smpro_lv_module_mismatch('2.1-80.el10', '2.1-80.el10'), false, 'K8: same = fine');
 is_eq(smpro_lv_module_mismatch('', '2.1-63.el10'), false, 'K9: unknown on-disk version is never called a mismatch');
