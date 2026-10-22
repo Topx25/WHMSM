@@ -198,16 +198,30 @@ function smpro_lv_set_limits(string $user, int $uid, array $want): array {
  * than a failed lift. Read from the kernel ring (journal, dmesg as the fallback); counted over the last 2 hours.
  * @return array{broken:bool,n:int,last:string,why:string}
  */
+/** The LVE kernel module: version on disk vs the one loaded (they differ after a package update until a reboot). Pure given its inputs. */
+function smpro_lv_module_mismatch(string $onDisk, string $loaded): bool {
+    $onDisk = trim($onDisk); $loaded = trim($loaded);
+    return $onDisk !== '' && $loaded !== '' && $onDisk !== $loaded;
+}
+function smpro_lv_module_versions(): array {
+    $name = @is_dir('/sys/module/kmodlve') ? 'kmodlve' : (@is_dir('/sys/module/lve') ? 'lve' : '');
+    $loaded = $name !== '' ? trim((string)@file_get_contents('/sys/module/' . $name . '/version')) : '';
+    $disk = '';
+    foreach (['kmodlve', 'lve'] as $m) { $v = trim(smpro_lv_run('modinfo -F version ' . $m . ' 2>/dev/null', 10)); if ($v !== '') { $disk = $v; break; } }
+    return ['loaded' => $loaded, 'disk' => $disk, 'mismatch' => smpro_lv_module_mismatch($disk, $loaded)];
+}
 function smpro_lv_kernel_state(): array {
     $o = smpro_lv_run('journalctl -k --since "2 hours ago" --no-pager -q 2>/dev/null | grep -E "LVE: .*(failed|rc[ =]-[0-9]+)" | tail -200', 15);
     if (trim($o) === '') $o = smpro_lv_run('dmesg -T 2>/dev/null | grep -E "LVE: .*(failed|rc[ =]-[0-9]+)" | tail -200', 15);
     $lines = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', $o))));
-    $n = count($lines); if ($n === 0) return ['broken' => false, 'n' => 0, 'last' => '', 'why' => ''];
+    $mv = smpro_lv_module_versions();
+    $n = count($lines); if ($n === 0) return ['broken' => false, 'n' => 0, 'last' => '', 'why' => $mv['mismatch'] ? 'the LVE kernel module was updated on disk (' . $mv['disk'] . ') but the older ' . $mv['loaded'] . ' is still loaded - a reboot loads the new one' : '', 'module' => $mv];
     $last = $lines[$n - 1];
     $why = (bool)preg_match('/noub cgroup|os_resource_setup|os_cpu_enter/', $o)
         ? 'the LVE kernel module cannot place processes in its cgroups or set CPU limits - usually a kmodlve / kernel update that is loaded half-way, or cgroup state lost since boot; the fix is a reboot into the installed kernel (lvectl apply all afterwards), not a setting on this page'
         : 'the LVE kernel module is reporting failures';
-    return ['broken' => $n >= 3, 'n' => $n, 'last' => $last, 'why' => $why];
+    if ($mv['mismatch']) $why .= '. The module on disk is ' . $mv['disk'] . ' while ' . $mv['loaded'] . ' is loaded: the update is half-way, which is exactly this symptom';
+    return ['broken' => $n >= 3, 'n' => $n, 'last' => $last, 'why' => $why, 'module' => $mv];
 }
 
 /* ------------------------------------------------------------------ actions */

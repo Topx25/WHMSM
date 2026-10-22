@@ -109,7 +109,11 @@ has($pg, 'This server has no CloudLinux LVE', 'G3: a server without LVE is told 
 has($pg, "History could not be read:", 'G4: a read that could not run is said, never shown as no faults');
 has($pg, "\$expired = smpro_lv_tick();", 'G5: expired lifts go back when the page is drawn too');
 has($mn, "['id' => 'resource-limits','label' => 'Resource Limit Reached'", 'G6: in the menu');
-has($mn, "'resource-limits'    => '1.1.10-beta360',", 'G7: NEW badge');
+has($mn, "'resource-limits'    => '1.1.10-beta361',", 'G7: NEW badge');
+is_eq(smpro_lv_module_mismatch('2.1-80.el10', '2.1-63.el10'), true, 'K7: on-disk 2.1-80 vs loaded 2.1-63 = mismatch');
+is_eq(smpro_lv_module_mismatch('2.1-80.el10', '2.1-80.el10'), false, 'K8: same = fine');
+is_eq(smpro_lv_module_mismatch('', '2.1-63.el10'), false, 'K9: unknown on-disk version is never called a mismatch');
+has($pg, 'The LVE kernel module was updated on disk', 'K10: the page says a module reboot is pending');
 has($lv, 'function smpro_lv_kernel_state(): array {', 'K1: the kernel\'s own LVE errors are read');
 has($lv, 'noub cgroup|os_resource_setup|os_cpu_enter', 'K2: the cgroup / resource_setup signatures');
 has($lv, "return ['broken' => \$n >= 3,", 'K3: three errors in two hours = broken, one is noise');
