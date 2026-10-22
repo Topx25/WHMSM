@@ -603,7 +603,8 @@ $shSafeOpen = 0; foreach ($cats as $shChecks) foreach ($shChecks as $shC) if ($s
         <div class="sh-row" data-t="<?= $tid ?>">
           <?= smpro_sh_badge($c['status']) ?>
           <div class="sh-title"><?= smpro_h($c['title']) ?><div class="sh-finding"><?= smpro_h($c['finding']) ?></div></div>
-          <button class="sh-act" type="button" data-t="<?= $tid ?>"><?= $c['status']==='ok'?'Details':($c['status']==='info'?'Review':'Fix') ?></button>
+          <?php /* the row button only OPENS the panel; it says "Fix" only when a one-click fix really sits inside, "How to fix" when the panel holds instructions only */ ?>
+          <button class="sh-act" type="button" data-t="<?= $tid ?>"<?= $applyable ? ' data-hasfix="1"' : '' ?>><?= $c['status']==='ok'?'Details':($c['status']==='info'?'Review':($applyable?'&#9889; Fix':'How to fix')) ?></button>
         </div>
         <div class="sh-detail" id="<?= $tid ?>">
           <div class="sh-kv"><span>Risk</span><?= smpro_h($c['risk']) ?></div>
@@ -664,11 +665,14 @@ $shSafeOpen = 0; foreach ($cats as $shChecks) foreach ($shChecks as $shC) if ($s
 .sh-cathead{cursor:pointer}.sh-cathead .sh-n{font-size:11.5px;font-weight:800;padding:1px 8px;border-radius:999px;background:var(--brand-bg);color:var(--brand);margin-left:4px}
 .sh-cathead .shb{margin-left:4px;min-width:0}
 @media print{.fw-nav{display:none!important}}
+.sh-applybtn.sh-flash{box-shadow:0 0 0 4px var(--brand-bg);outline:2px solid var(--brand)}
 </style>
 <script>
 (function(){
   function toggle(tid){var d=document.getElementById(tid);if(!d)return;d.classList.toggle('open');
-    var b=document.querySelector('.sh-act[data-t="'+tid+'"]');if(b){if(b.dataset.lbl===undefined)b.dataset.lbl=b.textContent;b.textContent=d.classList.contains('open')?'Hide':b.dataset.lbl;}}
+    var b=document.querySelector('.sh-act[data-t="'+tid+'"]');if(b){if(b.dataset.lbl===undefined)b.dataset.lbl=b.textContent;b.textContent=d.classList.contains('open')?'Hide':b.dataset.lbl;
+      /* a "Fix" row opened: bring the one-click Apply button into view and flash it, so the next click is the fix itself */
+      if(b.dataset.hasfix&&d.classList.contains('open')){var ap=d.querySelector('.sh-applybtn');if(ap){ap.scrollIntoView({behavior:'smooth',block:'center'});ap.classList.add('sh-flash');setTimeout(function(){ap.classList.remove('sh-flash');},1800);}}}}
   document.addEventListener('click',function(e){
     var ev=e.target.closest('.sh-evbtn');if(ev){var x=document.getElementById(ev.getAttribute('data-t'));if(x)x.classList.toggle('open');return;}
     var ap=e.target.closest('.sh-applybtn');if(ap){applyFix(ap);return;}

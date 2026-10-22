@@ -183,7 +183,8 @@ $groupsOf = function (array $rows) use ($groupKeyOf, $ccName) {
             $g[$k] = ['key' => $k, 'label' => ($b['name'] ?? '') !== '' ? (string)$b['name'] : (string)$b['assess']['label'],
                       'sub' => ($b['name'] ?? '') !== '' ? smpro_bg_kind_label((string)($b['kind'] ?? '')) : trim((string)($b['provider'] ?? '')),
                       'verdict' => (string)$b['assess']['verdict'], 'vlabel' => (string)$b['assess']['label'], 'what' => (string)$b['assess']['what'],
-                      'n' => 0, 'verified' => 0, 'hits' => 0, 'attacks' => 0, 'domains' => 0, 'cc' => [], 'ips' => [], 'first' => 0, 'last' => 0, 'family' => ($b['family'] ?? '') !== '' || smpro_bg_family((string)($b['ua'] ?? '')) !== ''];
+                      'n' => 0, 'verified' => 0, 'hits' => 0, 'attacks' => 0, 'domains' => 0, 'cc' => [], 'ips' => [], 'first' => 0, 'last' => 0, 'family' => ($b['family'] ?? '') !== '' || smpro_bg_family((string)($b['ua'] ?? '')) !== '',
+                      'prov' => trim((string)($b['provider'] ?? '')), 'advice' => (string)($b['assess']['advice'] ?? '')];
         }
         $e = &$g[$k]; $e['n']++; if (!empty($b['verified'])) $e['verified']++;
         $e['hits'] += (int)($b['hits'] ?? 0); $e['attacks'] += (int)($b['attacks'] ?? 0); $e['domains'] = max($e['domains'], (int)($b['domains'] ?? 0));
@@ -191,10 +192,23 @@ $groupsOf = function (array $rows) use ($groupKeyOf, $ccName) {
         $e['ips'][] = $ip; $f = (int)($b['first'] ?? 0); $l = (int)($b['last'] ?? 0);
         if ($f && (!$e['first'] || $f < $e['first'])) $e['first'] = $f; if ($l > $e['last']) $e['last'] = $l; unset($e);
     }
+    // what the NETWORK is (rented servers vs. a home line) - the verdict alone left the operator guessing whether
+    // "Google LLC" meant Googlebot or a box rented in Google's cloud
+    foreach ($g as $k => $e) $g[$k]['net'] = function_exists('smpro_bg_net_kind') ? smpro_bg_net_kind($e['ips'], $e['prov'], (bool)$e['family']) : ['kind' => 'unknown', 'text' => ''];
     uasort($g, fn($a, $b) => ($b['n'] <=> $a['n']) ?: ($b['attacks'] <=> $a['attacks']));
     return $g;
 };
-$groupHtml = function (array $groups, string $mode) use ($ago, $ccName) {
+/* the advice in the words of the buttons on the row */
+$adviceOf = function (array $e, string $mode): string {
+    $v = $e['verdict'];
+    if ($v === 'trusted') return 'nothing - keep it allowed; blocking costs search traffic or link previews';
+    if ($v === 'impersonator' || $v === 'attacker') return $mode === 'blocked' ? 'nothing - it is blocked; "Unblock all" only if you are sure it is a customer\'s own tool' : 'press "Block all" - no visitor is lost' . ($e['net']['kind'] === 'hosting' ? ' (rented servers, not people)' : '');
+    if ($v === 'suspicious') return 'watch it; "Block all" if the bad requests continue (auto-block takes over past the threshold)';
+    if ($v === 'scraper') return 'your policy: "Allow all" if you want the sites read by it, "Block all" if not - no visitor is lost either way';
+    if ($v === 'harmless') return '"Ignore all" - a light tool with nothing bad';
+    return 'open the group (the small arrow) and look at the domains and URLs it touches; "Verify all" re-checks a claimed crawler; then "Allow all" or "Block all"';
+};
+$groupHtml = function (array $groups, string $mode) use ($ago, $ccName, $adviceOf) {
     ob_start();
     foreach ($groups as $e) {
         arsort($e['cc']); $ccs = []; foreach (array_slice($e['cc'], 0, 4, true) as $cc => $n) $ccs[] = smpro_h($ccName((string)$cc)) . ' ×' . (int)$n;
@@ -206,7 +220,9 @@ $groupHtml = function (array $groups, string $mode) use ($ago, $ccName) {
            . '<div class="bg-note">first ' . smpro_h($ago($e['first'])) . ' · last ' . smpro_h($ago($e['last'])) . '</div></td>';
         echo '<td><span class="bg-pill bg-v-' . smpro_h($e['verdict']) . '">' . smpro_h($e['vlabel']) . '</span>'
            . ($e['verified'] ? '<span class="bg-pill v">' . (int)$e['verified'] . ' verified</span>' : '') . ($e['n'] - $e['verified'] > 0 && $e['verified'] ? '<span class="bg-pill u">' . (int)($e['n'] - $e['verified']) . ' not</span>' : '')
-           . '<div class="bg-why">' . smpro_h($e['what']) . '</div></td>';
+           . '<div class="bg-why">' . smpro_h($e['what']) . '</div>'
+           . (($e['net']['text'] ?? '') !== '' ? '<div class="bg-net ' . smpro_h($e['net']['kind']) . '"><b>What it is:</b> ' . smpro_h($e['net']['text']) . '</div>' : '')
+           . '<div class="bg-todo"><b>What to do:</b> ' . smpro_h($adviceOf($e, $mode)) . '</div></td>';
         echo '<td class="bg-imp"><div><b>' . (int)$e['hits'] . '</b> requests · <b style="color:' . ($e['attacks'] > 0 ? '#dc2626' : '#16a34a') . '">' . (int)$e['attacks'] . ' bad</b></div><div>up to ' . (int)$e['domains'] . ' domain(s) per address</div></td>';
         echo '<td class="bg-actc"><div class="bg-acts">';
         if ($e['family']) echo '<button type="button" class="bg-act" data-gact="verify">&#8635; Verify all</button>';
@@ -276,7 +292,9 @@ td.bg-actc{white-space:nowrap}td.bg-actc .bg-acts{display:grid;grid-template-col
 .bg-pill{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.03em;text-transform:uppercase;margin-right:4px}
 .bg-pill.v{background:rgba(22,163,74,.12);color:#16a34a}.bg-pill.u{background:rgba(107,114,128,.14);color:#4b5563}.bg-pill.g{background:rgba(180,83,9,.14);color:#b45309}.bg-pill.b{background:rgba(220,38,38,.12);color:#dc2626}.bg-pill.k{background:rgba(37,99,235,.12);color:#2563eb}.bg-pill.p{background:rgba(147,51,234,.14);color:#7e22ce}
 .bg-v-trusted{background:rgba(22,163,74,.12);color:#16a34a}.bg-v-impersonator{background:rgba(147,51,234,.14);color:#7e22ce}.bg-v-attacker{background:rgba(220,38,38,.12);color:#dc2626}.bg-v-suspicious{background:rgba(180,83,9,.14);color:#b45309}.bg-v-scraper{background:rgba(37,99,235,.12);color:#2563eb}.bg-v-harmless{background:rgba(107,114,128,.14);color:#4b5563}.bg-v-unknown{background:rgba(107,114,128,.14);color:#4b5563}
-.bg-why{font-size:12.3px;line-height:1.55;opacity:.92;margin-top:3px}.bg-cost{font-size:11.5px;opacity:.75;margin-top:2px}.bg-cost b{opacity:1}
+.bg-why{font-size:12.3px;line-height:1.55;opacity:.92;margin-top:3px}
+.bg-net,.bg-todo{font-size:11.8px;line-height:1.5;margin-top:4px;padding-left:7px;border-left:2px solid var(--line,#e5e7eb)}.bg-net b,.bg-todo b{opacity:1}
+.bg-net.hosting{border-left-color:#dc2626}.bg-net.home{border-left-color:#16a34a}.bg-todo{border-left-color:var(--brand,#2563eb)}.bg-cost{font-size:11.5px;opacity:.75;margin-top:2px}.bg-cost b{opacity:1}
 .bg-act{display:inline-block;border:1px solid var(--line,#d1d5db);background:var(--card,#fff);border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;margin:1px 2px 1px 0}
 .bg-act.ok{border-color:#16a34a;color:#16a34a}.bg-act.bad{border-color:#dc2626;color:#dc2626}.bg-act.pri{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:700;padding:7px 14px;font-size:13px}.bg-act:disabled{opacity:.5;cursor:default}
 .bg-empty{opacity:.7;padding:14px 8px;font-size:13px}

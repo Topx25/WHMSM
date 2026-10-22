@@ -824,3 +824,55 @@ function smpro_bg_cron_sync(): bool {
              . "$expr root $flock -n " . $lockDir . "/botguard.lock timeout 600 nice -n 10 $php $bin >/dev/null 2>&1\n";
     return function_exists('smpro_cron_install') ? smpro_cron_install($f, $desired) : (@file_put_contents($f, $desired) !== false && @chmod($f, 0644));
 }
+
+/* ------------------------------------------------------------------ what kind of network a group comes from
+   The verdict says what the client DOES; the operator also needs to know what it IS: a rented server in a hosting /
+   cloud network (no person sits behind it - a scanner, a scraper, or an attacker's box), or a home / mobile line. The
+   hosting prefix list the Site Shield uses answers that; the provider name is the fallback when the list is not here. */
+
+/** Hosting prefixes bucketed by first octet: [octet => [[net, maskbits], ...]]. Empty when the list is not fetched. */
+function smpro_bg_hosting_index(): array {
+    static $idx = null; if ($idx !== null) return $idx;
+    $idx = []; $f = function_exists('smpro_nk_file') ? smpro_nk_file('hosting') : '';
+    if ($f === '' || !@is_file($f)) return $idx;
+    foreach ((array)@file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
+        if (!preg_match('/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/', trim($l), $m)) continue;
+        $bits = (int)$m[5]; if ($bits > 32) continue;
+        $net = (int)$m[1] * 16777216 + (int)$m[2] * 65536 + (int)$m[3] * 256 + (int)$m[4];
+        $o1 = (int)$m[1]; $o2 = $bits >= 8 ? $o1 : ($o1 | (0xff >> $bits));           // a /7 or shorter spans several first octets
+        for ($o = $o1; $o <= $o2 && $o <= 255; $o++) $idx[$o][] = [$net, $bits];
+    }
+    return $idx;
+}
+/** true / false from the list, null when the list is not on this server (never a guess). */
+function smpro_bg_is_hosting_ip(string $ip): ?bool {
+    $idx = smpro_bg_hosting_index(); if (!$idx) return null;
+    if (!preg_match('/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/', $ip, $m)) return null;
+    $n = (int)$m[1] * 16777216 + (int)$m[2] * 65536 + (int)$m[3] * 256 + (int)$m[4];
+    foreach ($idx[(int)$m[1]] ?? [] as [$net, $bits]) { if ($bits === 0) return true; $mask = (0xffffffff << (32 - $bits)) & 0xffffffff; if (($n & $mask) === ($net & $mask)) return true; }
+    return false;
+}
+/**
+ * One plain sentence about the NETWORK a group of addresses comes from, for the group row. Pure given its inputs.
+ * @param string[] $ips   addresses of the group (the first few are tested)
+ * @param string   $prov  provider / AS name as the intel gave it
+ * @param bool     $crawler true when the group is a named crawler family (the sentence then only adds the network)
+ * @return array{kind:string,text:string}  kind: hosting | home | unknown
+ */
+function smpro_bg_net_kind(array $ips, string $prov, bool $crawler = false): array {
+    $hits = 0; $tested = 0;
+    foreach (array_slice($ips, 0, 3) as $ip) { $r = smpro_bg_is_hosting_ip((string)$ip); if ($r === null) continue; $tested++; if ($r) $hits++; }
+    $byName = (bool)preg_match('/\b(amazon|aws|google llc|google cloud|microsoft|azure|digitalocean|ovh|hetzner|linode|akamai|oracle|alibaba|tencent|vultr|contabo|scaleway|leaseweb|choopa|m247|datacamp|hosting|host|cloud|server|data ?cent|colo|vps|dedicated)\b/i', $prov);
+    $kind = $tested ? ($hits > 0 ? 'hosting' : 'home') : ($byName ? 'hosting' : 'unknown');
+    $p = $prov !== '' ? $prov : 'an unnamed network';
+    if ($crawler) return ['kind' => $kind, 'text' => $kind === 'hosting' ? 'comes from ' . $p . ' (a hosting / cloud network - normal for a crawler)' : 'comes from ' . $p];
+    // a cloud provider that also runs a well-known crawler: say explicitly that this is NOT that crawler
+    $pub = preg_match('/\b(google|microsoft|amazon|facebook|meta|apple|yandex|baidu)\b/i', $prov, $pm) ? $pm[1] : '';
+    if ($kind === 'hosting') {
+        $t = 'rented servers in the ' . $p . ' hosting / cloud network - no person is behind these requests; a scanner, a scraper or an attacker\'s machine';
+        if ($pub !== '') $t .= '. This is NOT the ' . ucfirst(strtolower($pub)) . ' crawler: a real crawler is verified by reverse DNS / published ranges and is shown as "Verified crawler"';
+        return ['kind' => 'hosting', 'text' => $t];
+    }
+    if ($kind === 'home') return ['kind' => 'home', 'text' => 'a home / mobile / office line of ' . $p . ' - a person\'s connection, or an infected PC used as a bot'];
+    return ['kind' => 'unknown', 'text' => 'network of ' . $p . ' (the hosting prefix list is not fetched yet, so home vs. server cannot be told)'];
+}

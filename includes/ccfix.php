@@ -45,6 +45,9 @@ function smpro_cx_ops(): array {
         'ftp_delete'   => ['label' => 'Delete the login, keep the files', 'confirm' => 'Delete this FTP sub-account? Only the LOGIN goes: its home folder and every file in it stay exactly where they are (cPanel is told destroy=0), and the FTP password file is backed up first.', 'args' => ['user' => $user, 'login' => '/^[A-Za-z0-9._-]{1,64}@[A-Za-z0-9.-]{1,253}$/']],
         'fwd_delete'   => ['label' => 'Delete forwarder', 'confirm' => 'Delete this forwarder?', 'args' => ['user' => $user, 'address' => '/^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}$/', 'target' => '/^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}$/']],
         'cron_clean'   => ['label' => 'Remove fetch/decode lines', 'confirm' => 'Remove every cron line of this account that fetches or decodes code (crontab backed up first)? Routine lines stay.', 'args' => ['user' => $user]],
+        'cron_line_off'=> ['label' => 'Switch off', 'confirm' => 'Switch this cron line off? It stays in the crontab as a comment (# SMPRO-OFF ...), stops running at once, and one click puts it back. The crontab is backed up first.', 'args' => ['user' => $user, 'sha' => $sha]],
+        'cron_line_rm' => ['label' => 'Remove', 'confirm' => 'Remove this one cron line? The crontab is backed up first; the other lines stay.', 'args' => ['user' => $user, 'sha' => $sha]],
+        'cron_line_on' => ['label' => 'Put back', 'confirm' => 'Put this switched-off cron line back into service?', 'args' => ['user' => $user, 'sha' => $sha]],
         'sshkey_clear' => ['label' => 'Remove all keys', 'confirm' => 'Remove every authorised SSH key of this account (file backed up first)? The customer re-adds theirs in cPanel.', 'args' => ['user' => $user]],
         'token_revoke' => ['label' => 'Revoke', 'confirm' => 'Revoke this cPanel API token? It stops working at once and cannot be brought back - anything using it must be given a new one.', 'args' => ['user' => $user, 'name' => '/^[A-Za-z0-9._-]{1,128}$/']],
         'token_disable'=> ['label' => 'Disable (expire now)', 'confirm' => 'Give this account token an expiry in the past? It stops opening anything immediately and stays in the list with its name and history. Done through the token store cPanel itself uses, then read back through the public API to confirm.', 'args' => ['user' => $user, 'name' => '/^[A-Za-z0-9._-]{1,128}$/']],
@@ -221,6 +224,9 @@ function smpro_cx_apply(string $op, array $args, string $actor = ''): array {
                 smpro_cx_run('crontab -u ' . escapeshellarg($a['user']) . ' ' . escapeshellarg($tmp) . ' 2>&1', 20); @unlink($tmp);
                 $r = ['ok' => true, 'msg' => $n . ' cron line(s) removed for ' . $a['user'], 'backup' => $bk];
                 break;
+            case 'cron_line_off': case 'cron_line_rm': case 'cron_line_on':
+                $r = smpro_cx_cron_line($a['user'], $a['sha'], substr($op, 10));
+                break;
             case 'sshkey_clear':
                 $pw = function_exists('posix_getpwnam') ? @posix_getpwnam($a['user']) : null;
                 if (!is_array($pw)) { $r = ['ok' => false, 'msg' => 'no such account']; break; }
@@ -291,6 +297,35 @@ function smpro_cx_cron_suspicious(string $l, string $user): bool {
         foreach ($ownDoms as $d) if ($h === $d || substr($h, -strlen('.' . $d)) === '.' . $d) return false;
     }
     return true;
+}
+
+/**
+ * One cron line of one account, identified by sha1(trim(line)): 'off' turns it into "# SMPRO-OFF <line>" (stops, kept,
+ * reversible), 'rm' removes it, 'on' turns a switched-off line back into a live one. The crontab is backed up first and
+ * written back through crontab(1) so cron reloads it; every other line is untouched.
+ * @return array{ok:bool,msg:string,backup?:string}
+ */
+function smpro_cx_cron_line(string $user, string $sha, string $mode): array {
+    $cf = '/var/spool/cron/' . $user;
+    $lines = @file($cf, FILE_IGNORE_NEW_LINES); if (!is_array($lines)) return ['ok' => false, 'msg' => 'no crontab'];
+    $out = []; $n = 0;
+    foreach ($lines as $l) {
+        $t = trim($l);
+        if ($mode === 'on') {
+            if (preg_match('/^#\s*SMPRO-OFF\s(.+)$/', $t, $m) && sha1(trim($m[1])) === $sha) { $out[] = trim($m[1]); $n++; continue; }
+        } elseif ($t !== '' && $t[0] !== '#' && sha1($t) === $sha) {
+            $n++; if ($mode === 'off') $out[] = '# SMPRO-OFF ' . $t;
+            continue;
+        }
+        $out[] = $l;
+    }
+    if ($n === 0) return ['ok' => false, 'msg' => 'that line is no longer in the crontab (changed since the page was drawn) - nothing changed'];
+    $bk = smpro_cx_backup($cf); if ($bk === '') return ['ok' => false, 'msg' => 'could not back up the crontab - nothing changed'];
+    $tmp = tempnam(sys_get_temp_dir(), 'smprocron'); @file_put_contents($tmp, implode("\n", $out) . ($out ? "\n" : ''));
+    $o = smpro_cx_run('crontab -u ' . escapeshellarg($user) . ' ' . escapeshellarg($tmp) . ' 2>&1', 20); @unlink($tmp);
+    if (stripos($o, 'error') !== false) return ['ok' => false, 'msg' => 'crontab refused the new file: ' . trim($o) . ' - the original is untouched', 'backup' => $bk];
+    $what = ['off' => 'switched off (kept as a comment)', 'rm' => 'removed', 'on' => 'put back'][$mode];
+    return ['ok' => true, 'msg' => '1 cron line of ' . $user . ' ' . $what, 'backup' => $bk];
 }
 
 /* ------------------------------------------------------------------ scheduled scan */

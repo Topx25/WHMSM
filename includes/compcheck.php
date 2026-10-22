@@ -305,7 +305,7 @@ function smpro_cc_fix(string $id): string {
         'hidden'   => 'A process ps cannot see is a rootkit: run rkhunter / chkrootkit, check /etc/ld.so.preload and lsmod for unknown modules. Do not clean it in place - restore from a backup taken before the compromise, or reinstall the server.',
         'ftp'      => 'cPanel > FTP Accounts > delete the sub-account (or remove its line from /etc/proftpd/USER as root). Then reset the account\'s passwords from Firewall > Threat Report.',
         'forwarder'=> 'cPanel > Forwarders > delete it. Mail already copied to the outside address is gone; change the mailbox password too.',
-        'cron'     => 'cPanel > Cron Jobs > delete the line (or crontab -u USER -e). Scan the account for the payload: imunify360-agent malware on-demand start --path=/home/USER.',
+        'cron'     => 'Each line below has its own choice: SWITCH OFF keeps the line in the crontab as a comment (it stops running, nothing is lost, one click puts it back); REMOVE takes the line out (the crontab is backed up first); EDIT the wording in cPanel > Cron Jobs when the command is the customer\'s own but wrong. Then scan the account for the payload: imunify360-agent malware on-demand start --path=/home/USER.',
         'sshkey'   => 'cPanel > SSH Access > Manage SSH Keys > delete/deauthorize the key, or remove the line from ~/.ssh/authorized_keys.',
         'contact'  => 'cPanel > Contact Information > put the customer\'s real address back. Password-reset links have been going to the attacker until then.',
         'mailbox'  => 'cPanel > Email Accounts > change the password (or delete a mailbox the customer never created). A created mailbox is a door AND a spam source.',
@@ -518,7 +518,17 @@ function smpro_cc_account_doors(array $acct, int $since): array {
         };
         $sus = 0; foreach ($lines as $l) if ($isSus($l)) $sus++;
         $cr = smpro_cc_created($u, 'cron', $since);
-        if ($lines) $add('cron', count($lines) . ' cron entr' . (count($lines) === 1 ? 'y' : 'ies') . ($sus ? ', ' . $sus . ' fetching/decoding' : ''), $cr ? $cr[0] : $mt, ($cr ? 'an entry was added ' . date('Y-m-d H:i', $cr[0]) . ' from ' . $cr[1] : 'crontab changed ' . date('Y-m-d H:i', $mt)) . ($sus ? ' - ' . implode(' | ', array_slice(array_filter($lines, $isSus), 0, 2)) : ''), $sus > 0 || $cr !== null || $mt >= $since, $sus ? ['op' => 'cron_clean', 'user' => $u] : []);
+        // lines switched off from this page earlier ("# SMPRO-OFF <line>") are listed too, so they can be put back
+        $off = []; foreach ((array)@file($cf, FILE_IGNORE_NEW_LINES) as $l) if (preg_match('/^#\s*SMPRO-OFF\s(.+)$/', trim($l), $m)) $off[] = trim($m[1]);
+        if ($lines || $off) {
+            $add('cron', count($lines) . ' cron entr' . (count($lines) === 1 ? 'y' : 'ies') . ($sus ? ', ' . $sus . ' fetching/decoding' : '') . ($off ? ', ' . count($off) . ' switched off' : ''), $cr ? $cr[0] : $mt, ($cr ? 'an entry was added ' . date('Y-m-d H:i', $cr[0]) . ' from ' . $cr[1] : 'crontab changed ' . date('Y-m-d H:i', $mt)), $sus > 0 || $cr !== null || $mt >= $since, $sus ? ['op' => 'cron_clean', 'user' => $u] : []);
+            // every line, with its own verdict, so the operator can act on ONE line (switch off / remove / restore) and
+            // see exactly what runs - not only the two suspicious ones quoted in the summary
+            $rows = [];
+            foreach ($lines as $l) $rows[] = ['sha' => sha1($l), 'text' => $l, 'state' => $isSus($l) ? 'sus' : 'routine'];
+            foreach ($off as $l) $rows[] = ['sha' => sha1($l), 'text' => $l, 'state' => 'off'];
+            $f[array_key_last($f)]['lines'] = $rows;
+        }
     }
     // SSH keys
     $kf = $home . '/.ssh/authorized_keys';

@@ -168,6 +168,12 @@ smpro_layout_header('Compromise Check');
 .cc-door .n{font-weight:700}.cc-door .d{color:var(--muted);margin-left:6px}
 .cc-door .fx{display:block;font-size:11.5px;color:var(--muted);margin:3px 0 0 0;padding-left:8px;border-left:2px solid var(--brand)}
 .cc-door .lnk{font-size:11.5px}
+.cc-cron{margin:6px 0 0 8px;border-left:2px solid var(--line);padding-left:8px;display:flex;flex-direction:column;gap:4px}
+.cc-cl{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px}
+.cc-cl .st{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;min-width:118px}
+.cc-cl code{flex:1 1 320px;font-size:11.5px;word-break:break-all;white-space:pre-wrap;background:var(--bg);padding:2px 6px;border-radius:5px}
+.cc-cl.off code{opacity:.55;text-decoration:line-through}
+.cc-cl .ops{display:flex;gap:6px}.cc-cl .ops .cc-btn{padding:3px 9px;font-size:11px}
 @media(max-width:900px){.cc-ah{grid-template-columns:16px minmax(0,1fr) 60px}.cc-ah .chips,.cc-ah .when{display:none}.cc-ab{padding-left:16px}}
 .cc-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cc-empty{padding:18px 16px;color:var(--muted)}
@@ -286,6 +292,16 @@ smpro_layout_header('Compromise Check');
               <?php if (($f['flag'] || $f['kind'] === 'token') && $op !== '' && isset($OPS[$op]) && !$stored): $alt = is_array($fix['alt'] ?? null) ? $fix['alt'] : null; $args = array_diff_key($fix, ['op' => 1, 'alt' => 1]); ?>
               <div class="cc-acts"><button type="button" class="cc-btn" data-op="<?= smpro_h($op) ?>" data-args="<?= smpro_h(json_encode($args)) ?>" data-confirm="<?= smpro_h($OPS[$op]['confirm']) ?>"><?= smpro_h($OPS[$op]['label']) ?></button><?php if ($alt && isset($OPS[$alt['op']])): $aargs = array_diff_key($alt, ['op' => 1]); ?> <button type="button" class="cc-btn" data-op="<?= smpro_h($alt['op']) ?>" data-args="<?= smpro_h(json_encode($aargs)) ?>" data-confirm="<?= smpro_h($OPS[$alt['op']]['confirm']) ?>"><?= smpro_h($OPS[$alt['op']]['label']) ?></button><?php endif; ?><span class="meta" style="font-size:11.5px">backs up first, audited</span></div>
               <?php endif; ?>
+              <?php if ($f['kind'] === 'cron' && !empty($f['lines'])): $cl = ['sus' => ['fetches / decodes code', 'var(--dang)'], 'routine' => ['routine', 'var(--muted)'], 'off' => ['switched off', 'var(--warn, #b45309)']]; ?>
+              <div class="cc-cron">
+                <?php foreach ((array)$f['lines'] as $ln): [$sl, $sc] = $cl[$ln['state']] ?? $cl['routine']; $la = json_encode(['user' => $r['user'], 'sha' => $ln['sha']]); ?>
+                <div class="cc-cl <?= smpro_h($ln['state']) ?>"><span class="st" style="color:<?= $sc ?>"><?= smpro_h($sl) ?></span><code><?= smpro_h($ln['text']) ?></code>
+                  <?php if (!$stored): ?><span class="ops"><?php if ($ln['state'] === 'off'): ?><button type="button" class="cc-btn" data-op="cron_line_on" data-args="<?= smpro_h($la) ?>" data-confirm="<?= smpro_h($OPS['cron_line_on']['confirm']) ?>"><?= smpro_h($OPS['cron_line_on']['label']) ?></button><?php else: ?><button type="button" class="cc-btn" data-op="cron_line_off" data-args="<?= smpro_h($la) ?>" data-confirm="<?= smpro_h($OPS['cron_line_off']['confirm']) ?>"><?= smpro_h($OPS['cron_line_off']['label']) ?></button> <button type="button" class="cc-btn" data-op="cron_line_rm" data-args="<?= smpro_h($la) ?>" data-confirm="<?= smpro_h($OPS['cron_line_rm']['confirm']) ?>"><?= smpro_h($OPS['cron_line_rm']['label']) ?></button><?php endif; ?></span><?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+                <div class="meta" style="font-size:11.5px">Switch off = kept as a comment, reversible here · Remove = taken out, crontab backed up first · to change the wording, edit it in cPanel &gt; Cron Jobs of the account.</div>
+              </div>
+              <?php endif; ?>
             </div>
           <?php endforeach; ?>
         </div>
@@ -346,10 +362,11 @@ smpro_layout_header('Compromise Check');
     b.addEventListener('click', function(){
       if (!confirm(b.getAttribute('data-confirm') || 'Apply this fix?')) return;
       b.disabled = true; var old = b.innerHTML; b.textContent = 'working…';
-      var fd = new FormData(); fd.append('cc_action','fix'); fd.append('smpro_csrf', CSRF); fd.append('op', b.getAttribute('data-op'));
+      /* url-encoded on purpose: index.cgi reads POST bodies with parse_str and refuses multipart (FormData) outright */
+      var fd = new URLSearchParams(); fd.append('cc_action','fix'); fd.append('smpro_csrf', CSRF); fd.append('op', b.getAttribute('data-op'));
       var args = {}; try { args = JSON.parse(b.getAttribute('data-args')||'{}'); } catch(e){}
       Object.keys(args).forEach(function(k){ fd.append('args['+k+']', args[k]); });
-      fetch('index.cgi?page=compromise-check', {method:'POST', body:fd, credentials:'same-origin'}).then(function(r){ return r.json(); }).then(function(j){
+      fetch('index.cgi?page=compromise-check', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:fd.toString(), credentials:'same-origin'}).then(function(r){ return r.json(); }).then(function(j){
         var res = document.createElement('div'); res.className = 'cc-res ' + (j.ok ? 'ok' : 'bad');
         res.textContent = (j.ok ? 'Done: ' : 'Not done: ') + (j.msg || '') + (j.backup ? '  [backup: ' + j.backup + ']' : '');
         b.parentNode.insertAdjacentElement('afterend', res);
