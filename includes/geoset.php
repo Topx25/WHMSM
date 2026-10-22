@@ -23,7 +23,12 @@ if (!defined('SMPRO_GS_SET'))   define('SMPRO_GS_SET',   'smpro_geo');
 if (!defined('SMPRO_GS_TAG'))   define('SMPRO_GS_TAG',   'smpro-geologin');
 if (!defined('SMPRO_GS_TMAX'))  define('SMPRO_GS_TMAX',  2147483);   // ipset's largest timeout (~24.8 days); longer lives are renewed by restore()
 
-function smpro_gs_x(string $cmd, int $t = 15): array { $o = []; $rc = 1; @exec('timeout ' . $t . ' ' . $cmd . ' 2>&1', $o, $rc); return [$rc, trim(implode("\n", $o))]; }
+/** Every kernel command goes through here. A command that CHANGES the set or the rules drops the per-request snapshots
+ *  (members, rule presence), so a read right after a change sees the change; pure reads (list, -S, test, -C) keep them. */
+function smpro_gs_x(string $cmd, int $t = 15): array {
+    if (!preg_match('/ (list|-S|test|-C) /', ' ' . $cmd . ' ')) $GLOBALS['smpro_gs_cache'] = ['members' => [], 'rules' => []];
+    $o = []; $rc = 1; @exec('timeout ' . $t . ' ' . $cmd . ' 2>&1', $o, $rc); return [$rc, trim(implode("\n", $o))];
+}
 function smpro_gs_ipset(): string { static $b = null; if ($b !== null) return $b; $b = ''; foreach (['/usr/sbin/ipset', '/sbin/ipset', '/usr/bin/ipset'] as $c) if (@is_executable($c)) { $b = $c; break; } if ($b === '') { $c = trim((string)@shell_exec('command -v ipset 2>/dev/null')); if ($c !== '') $b = $c; } return $b; }
 /** The iptables binary CSF actually drives (the one whose rules hold LOCALINPUT), else the first present. */
 function smpro_gs_ipt(bool $v6): string {
@@ -99,11 +104,27 @@ function smpro_gs_ensure(array $ports, bool $v6 = false): array {
     if (function_exists('smpro_audit')) @smpro_audit('geologin_set_rules', ['family' => $v6 ? 6 : 4, 'rules' => count($want), 'chain' => $chain]);
     return ['ok' => true, 'msg' => implode(', ', $did), 'did' => $did];
 }
-function smpro_gs_rule_live(bool $v6 = false): bool { return smpro_gs_available() && count(smpro_gs_rules_present($v6)) > 0; }
-function smpro_gs_has(string $ip): bool {
+/** Is our DROP rule in the kernel? Read once per request per family (the Firewall page asked this for every address). */
+function smpro_gs_rule_live(bool $v6 = false, bool $fresh = false): bool {
+    $k = $v6 ? '6' : '4'; $c = &$GLOBALS['smpro_gs_cache']; if (!is_array($c)) $c = ['members' => [], 'rules' => []];
+    if ($fresh || !isset($c['rules'][$k])) $c['rules'][$k] = smpro_gs_available() && count(smpro_gs_rules_present($v6)) > 0;
+    return $c['rules'][$k];
+}
+/** The set's members, read once per request per family through `ipset list` (one command, not one `ipset test` per address). */
+function smpro_gs_members(bool $v6 = false, bool $fresh = false): array {
+    $k = $v6 ? '6' : '4'; $c = &$GLOBALS['smpro_gs_cache']; if (!is_array($c)) $c = ['members' => [], 'rules' => []];
+    if (!$fresh && isset($c['members'][$k])) return $c['members'][$k];
+    $out = [];
+    if (smpro_gs_available()) {
+        [$rc, $o] = smpro_gs_x(escapeshellarg(smpro_gs_ipset()) . ' list ' . escapeshellarg(smpro_gs_setname($v6)), 15);
+        if ($rc === 0) foreach (explode("\n", $o) as $l) { $l = trim($l); if ($l !== '' && preg_match('/^([0-9a-fA-F:.\/]+)(\s|$)/', $l, $mm) && strpos($l, ':') !== 4) { $ip = strtolower($mm[1]); if (filter_var(explode('/', $ip)[0], FILTER_VALIDATE_IP)) $out[$ip] = true; } }
+    }
+    return $c['members'][$k] = $out;
+}
+function smpro_gs_has(string $ip, bool $fresh = false): bool {
     if (!smpro_gs_available()) return false;
-    [$rc] = smpro_gs_x(escapeshellarg(smpro_gs_ipset()) . ' test ' . escapeshellarg(smpro_gs_setname(smpro_gs_is6($ip))) . ' ' . escapeshellarg($ip), 5);
-    return $rc === 0;
+    if ($fresh) { [$rc] = smpro_gs_x(escapeshellarg(smpro_gs_ipset()) . ' test ' . escapeshellarg(smpro_gs_setname(smpro_gs_is6($ip))) . ' ' . escapeshellarg($ip), 5); return $rc === 0; }
+    return isset(smpro_gs_members(smpro_gs_is6($ip))[strtolower($ip)]);
 }
 /** Put one address in the set for $ttl seconds (renewed if already there) and remember why. */
 function smpro_gs_add(string $ip, int $ttl, string $cc, string $account, string $why, array $ports): array {

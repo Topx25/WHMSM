@@ -937,7 +937,8 @@ function smpro_layout_footer() {
     var nav=document.querySelector('.fw-nav'); if(!nav) return;
     var k='smpro:tabs:'+page(), seen=null; try{ seen=localStorage.getItem(k); }catch(err){}
     if(seen==='1') return;
-    closeAll(nav); try{ localStorage.setItem(k,'1'); }catch(err){}
+    if(nav.getAttribute('data-keep-open')!=='1') closeAll(nav);   /* a page may keep its sections open on the first visit (load-monitor) */
+    try{ localStorage.setItem(k,'1'); }catch(err){}
     if(location.hash){ var c=nav.querySelector('a[data-go="'+location.hash.slice(1)+'"]'); if(c) c.click(); }
   });
   window.smproTabs=true;

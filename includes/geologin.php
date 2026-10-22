@@ -247,7 +247,7 @@ function smpro_gl_denyin_snapshot(bool $refresh = false): array {
 /** Is a written rule really in the kernel? A line in csf.deny alone is a request. */
 function smpro_gl_rule_live(string $ip, bool $refresh = false): bool {
     if ($ip === '') return false;
-    if (smpro_gl_use_set()) return smpro_gs_has($ip) && smpro_gs_rule_live(smpro_gs_is6($ip));
+    if (smpro_gl_use_set()) return smpro_gs_has($ip, $refresh) && smpro_gs_rule_live(smpro_gs_is6($ip), $refresh);   // one snapshot per request; a fresh read only right after a change
     $snap = smpro_gl_denyin_snapshot($refresh);
     return isset($snap[strtolower($ip)]);
 }

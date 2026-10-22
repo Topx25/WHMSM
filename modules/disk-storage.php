@@ -963,7 +963,7 @@ if (!empty($hmJob['phase']) && $hmJob['phase'] !== 'idle' && empty($hmJob['done'
 .hm-file:last-child{border-bottom:none}
 .hm-rowbar{height:5px;border-radius:5px;background:var(--brand-bg);overflow:hidden;margin-top:5px;min-width:80px}
 .hm-rowbar i{display:block;height:100%;background:var(--brand);transition:width .5s ease}
-.hm-batch{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.hm-batch{border:1px solid var(--line);border-radius:10px;overflow:hidden}.hm-batch table{width:100%;table-layout:fixed}.hm-batch td{word-break:break-word}
 .hm-batch-h{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px}
 .hm-batch-s{padding:8px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
 .hm-sum{display:flex;align-items:center;gap:10px;padding:13px 16px;cursor:pointer;list-style:none;font-size:14px;user-select:none}

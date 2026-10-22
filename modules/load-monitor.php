@@ -112,7 +112,8 @@ if (isset($_GET['live'])) {
     header('Content-Type: application/json');
     $L = smpro_lo_live();
     $hist = smpro_lo_hist_tick(is_array($L['load'] ?? null) ? ($L['load']['1m'] ?? 0) : 0);
-    echo json_encode(['ok' => true, 'live' => $L, 'hist' => $hist], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+    $health = function_exists('smpro_sv_snapshot') ? smpro_sv_snapshot() : null;   // one request feeds both the live cards and the health ring
+    echo json_encode(['ok' => true, 'live' => $L, 'hist' => $hist, 'health' => $health], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
 /* ---------------- render ---------------- */
@@ -187,15 +188,15 @@ $loKpis = [
   ['lo-topcpu', 'Processes',    number_format((int)$L['procs']),                    'brand',                                           $L['load']['running'] . ' running'],
   ['lo-mem',    'Memory',       $L['mem']['pct'] . '%',                             (float)$L['mem']['pct'] >= 90 ? 'dang' : ((float)$L['mem']['pct'] >= 75 ? 'warn' : 'good'), smpro_lo_human($L['mem']['used']) . ' of ' . smpro_lo_human($L['mem']['total']) . ' · swap ' . $L['swap']['pct'] . '%'],
   ['lo-fs',     'Fullest disk', $loFsMax ? (int)$loFsMax['pct'] . '%' : 'n/a',      $loFsCls,                                          $loFsMax ? $loFsMax['mount'] . ' · ' . smpro_lo_human($loFsMax['used']) . ' used' : 'no mounts'],
-  ['lo-hw',     'Platform',     (int)$hw['cpus'] . ' CPU · ' . $hw['mem_total_gb'] . ' GB', 'brand',                                  trim($hw['virt'] . ' · up ' . smpro_lo_dur($L['uptime']), ' ·')],
+  ['lo-hw',     'Platform',     (int)$hw['cpus'] . ' CPU · ' . $hw['mem_total_gb'] . ' GB', 'brand',                                  trim($hw['virt'] . ' · up ' . smpro_lo_dur($L['uptime']), ' ·'), 'lo-vs'],
 ];
 ?>
 <div class="fw-kpis">
   <?php foreach ($loKpis as $k): ?>
-  <a class="fw-kpi <?= $k[3] ?>" href="#<?= $k[0] ?>" data-go="<?= $k[0] ?>"><div class="l"><?= smpro_h($k[1]) ?></div><div class="v"><?= smpro_h($k[2]) ?></div><div class="s"><?= smpro_h($k[4]) ?></div></a>
+  <a class="fw-kpi <?= $k[3] ?><?= !empty($k[5]) ? ' ' . $k[5] : '' ?>" href="#<?= $k[0] ?>" data-go="<?= $k[0] ?>"><div class="l"><?= smpro_h($k[1]) ?></div><div class="v"><?= smpro_h($k[2]) ?></div><div class="s"><?= smpro_h($k[4]) ?></div></a>
   <?php endforeach; ?>
 </div>
-<nav class="fw-nav" id="loNav"><a href="#lo-live" data-go="lo-live">&#128200; Live load</a><a href="#lo-hist" data-go="lo-hist">&#128197; 24 hours</a><a href="#lo-cores" data-go="lo-cores">Per-core</a><a href="#lo-mem" data-go="lo-mem">Memory</a><a href="#lo-topcpu" data-go="lo-topcpu">Top CPU</a><a href="#lo-topmem" data-go="lo-topmem">Top memory</a><a href="#lo-fs" data-go="lo-fs">&#128190; Disks</a><a href="#lo-hw" data-go="lo-hw">&#128421; Hardware</a><a href="#coolCard" data-go="coolCard">&#10052; Cooler</a><a href="#ovCard" data-go="ovCard">&#128269; Overload</a><span class="sp"></span><button type="button" class="fw-navx" id="loOpenAll">expand all</button><button type="button" class="fw-navx" id="loCloseAll">collapse all</button></nav>
+<nav class="fw-nav" id="loNav" data-keep-open="1"><a href="#lo-live" data-go="lo-live">&#128200; Live load</a><a href="#lo-hist" data-go="lo-hist">&#128197; 24 hours</a><a href="#lo-cores" data-go="lo-cores">Per-core</a><a href="#lo-mem" data-go="lo-mem">Memory</a><a href="#lo-topcpu" data-go="lo-topcpu">Top CPU</a><a href="#lo-topmem" data-go="lo-topmem">Top memory</a><a href="#lo-fs" data-go="lo-fs">&#128190; Disks</a><a href="#lo-hw" data-go="lo-hw">&#128421; Hardware</a><a href="#coolCard" data-go="coolCard">&#10052; Cooler</a><a href="#ovCard" data-go="ovCard">&#128269; Overload</a><span class="sp"></span><button type="button" class="fw-navx" id="loOpenAll">expand all</button><button type="button" class="fw-navx" id="loCloseAll">collapse all</button></nav>
 
 <!-- load history sparkline -->
 <div class="card" id="lo-live" style="margin-bottom:14px">
@@ -355,7 +356,9 @@ foreach (glob('/sys/class/thermal/thermal_zone*/temp') ?: [] as $tf) { $tc = (in
 .lo-tw{overflow:auto;max-height:340px}.lo-tw thead th{position:sticky;top:0;background:var(--card);z-index:1;box-shadow:inset 0 -1px 0 var(--line)}
 .smpro-table{width:100%;border-collapse:collapse;font-size:12.5px}.smpro-table th,.smpro-table td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 .smpro-table th{font-size:11px;text-transform:uppercase;color:var(--muted)}.smpro-table td.num,.smpro-table th.num{text-align:right}
-.lo-kv td:first-child{color:var(--muted);width:140px}
+.lo-kv{width:100%;table-layout:fixed}.lo-kv td{word-break:break-word}.lo-kv td:first-child{color:var(--muted);width:140px}
+#coolCard>h2.lo-hd,#ovCard>h2.lo-hd{font-size:15px;margin:2px 0 6px}
+.fw-kpi.lo-vs .v{font-size:15px;white-space:normal;line-height:1.3}
 .lo-cmd{max-width:280px;overflow:hidden;text-overflow:ellipsis}
 .lo-hw{display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px}.lo-hw b{color:var(--muted);font-weight:700}.lo-hwlink{margin-left:auto;color:var(--brand);text-decoration:none;font-weight:600}
 .mono{font-family:ui-monospace,Consolas,monospace}.meta{color:var(--muted)}
@@ -425,7 +428,7 @@ foreach (glob('/sys/class/thermal/thermal_zone*/temp') ?: [] as $tf) { $tc = (in
   }
   apply(<?= json_encode($L, JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_INVALID_UTF8_SUBSTITUTE) ?>);   /* HEX flags: top_cpu/top_mem cmd+user from ps are attacker-influenced */
   drawHist(<?= json_encode(smpro_lo_hist_read(), JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE) ?>);   // seed 24h chart from the server ring
-  function tick(){if(paused)return;fetch('index.cgi?page=load-monitor&live=1',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok){apply(j.live);drawHist(j.hist);}}).catch(function(){});}
+  function tick(){if(paused)return;fetch('index.cgi?page=load-monitor&live=1',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok){apply(j.live);drawHist(j.hist);if(j.health&&window.loApplyHealth)window.loApplyHealth(j.health);}}).catch(function(){});}
   setInterval(tick,3000);
 })();
 </script>
@@ -437,8 +440,7 @@ foreach (glob('/sys/class/thermal/thermal_zone*/temp') ?: [] as $tf) { $tc = (in
     var ti=document.getElementById('svTitle');if(ti)ti.textContent=d.status_title;
     var hero=document.querySelector('.sv-hero');if(hero)hero.className='card sv-hero '+d.cls;
     var ex=document.getElementById('svExpl');if(ex&&d.load)ex.innerHTML=d.cause+' 1m <b>'+d.load['1m'].v+'</b>, 5m <b>'+d.load['5m'].v+'</b>, 15m <b>'+d.load['15m'].v+'</b> on '+d.cores+' cores. Effective pressure: <b>'+d.eff+'%</b>.';}
-  function tick(){if(document.hidden)return;fetch('index.cgi?format=json&metric=serverhealth',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok&&j.data)apply(j.data);}).catch(function(){});}
-  setInterval(tick,3000);document.addEventListener('visibilitychange',function(){if(!document.hidden)tick();});
+  window.loApplyHealth=apply;   /* fed by the page's single live poller (beta363) - no second 3-second poll */
 })();
 </script>
 
@@ -566,21 +568,8 @@ foreach (glob('/sys/class/thermal/thermal_zone*/temp') ?: [] as $tf) { $tc = (in
       }).catch(function(e){b.disabled=false;m.innerHTML='&#10007; network: '+e;m.style.color='#b91c1c';});});
 
   renderStatus(<?= json_encode($coolSt, JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_INVALID_UTF8_SUBSTITUTE) ?>);loadSources();setInterval(refresh,5000);   /* HEX flags: cooled targets[].comm from ps */
-  /* collapsible sections: every card folds by clicking its header (h2/h3/.tp-th) */
-  (function(){var ks={};try{ks=JSON.parse(localStorage.getItem('smpro_lm_folds')||'{}')||{};}catch(e){}
-    document.querySelectorAll('.wrap .card, .smpro-main .card, .card').forEach(function(card,i){
-      if(card.getAttribute('data-fold'))return;card.setAttribute('data-fold','1');
-      var hdr=card.querySelector(':scope > h2, :scope > h3, :scope > .tp-th, :scope > .svc-kicker + h2');
-      if(!hdr){var k=card.querySelector('.svc-kicker');if(k&&k.nextElementSibling)hdr=k.nextElementSibling;}
-      if(!hdr)return;
-      var key=(hdr.textContent||('sec'+i)).trim().slice(0,40);
-      hdr.style.cursor='pointer';hdr.style.userSelect='none';
-      var chev=document.createElement('span');chev.textContent='▾ ';chev.style.cssText='color:var(--muted);font-size:12px;transition:transform .15s;display:inline-block';hdr.insertBefore(chev,hdr.firstChild);
-      var start=hdr; var sib=card.querySelector('.svc-kicker'); // keep kicker+header visible
-      function set(folded){Array.prototype.forEach.call(card.children,function(c){if(c!==hdr&&c!==sib)c.style.display=folded?'none':'';});chev.style.transform=folded?'rotate(-90deg)':'';}
-      var folded=!!ks[key];set(folded);
-      hdr.addEventListener('click',function(e){if(e.target.closest('a,button,input,select'))return;folded=!folded;set(folded);ks[key]=folded;try{localStorage.setItem('smpro_lm_folds',JSON.stringify(ks));}catch(e){}});
-    });})();
+  /* folding is the shared card engine below (fw-toggle); the page's own fold script was removed in beta363 - it
+     doubled every header's chevron and fought the shared one for the same cards */
 })();</script>
 
 <!-- ===== Overload Investigator ===== -->

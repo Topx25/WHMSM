@@ -24,7 +24,7 @@ is_eq(smpro_gs_parse_legacy('203.0.113.9 # smpro-geologin-t134 x 2026-10-15'), n
 
 /* ---- wiring: the lock prefers the set, reads liveness from set + rule, and still has the csf.deny fallback ---- */
 has($gl, "if (smpro_gl_use_set()) {\n        \$why = 'login from '", 'W1: block() takes the set path first');
-has($gl, "if (smpro_gl_use_set()) return smpro_gs_has(\$ip) && smpro_gs_rule_live(smpro_gs_is6(\$ip));", 'W2: live = the kernel holds the address AND the rule is in place');
+has($gl, "if (smpro_gl_use_set()) return smpro_gs_has(\$ip, \$refresh) && smpro_gs_rule_live(smpro_gs_is6(\$ip), \$refresh);", 'W2: live = the kernel holds the address AND the rule is in place (one snapshot per request since beta363)');
 has($gl, "smpro_gl_ensure_deny_limit(); @file_put_contents(SMPRO_GL_DENY", 'W3: the csf.deny fallback is still there for a server without ipset');
 has($gl, "if (smpro_gl_use_set()) smpro_gl_set_up(\$c);", 'W4: arming makes the set, the hook and the migration');
 has($src, "-m comment --comment ' . SMPRO_GS_TAG . ' -j DROP", 'W5: every rule carries the tag, so it can be found and removed exactly');
