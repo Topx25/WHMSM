@@ -133,4 +133,4 @@ $tick = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/fi
 hasnt($tick, 'smpro_ctl_disabled()) exit', 'U10: the tick keeps collecting when the plugin is switched off - that history is the one that gets asked for');
 $cs = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/cron_sync.php'));
 has($cs, "'file changes'       => 'smpro_fa_cron_sync'", 'U10: cron sync installs it');
-has($cs, "'evship', 'fileaudit', 'learn', 'sysupd', 'slmaint']", 'U10: and loads the module so the function exists when it looks');
+has($cs, "'evship', 'fileaudit', 'learn', 'sysupd', 'slmaint', 'lvelimits']", 'U10: and loads the module so the function exists when it looks');

@@ -23,7 +23,7 @@ has($sl, "if (\$has) \$cur = preg_replace('/^.*' . preg_quote(SMPRO_SLM_MARK, '/
 has($sl, "if (defined('SMPRO_TEST_SRC')) return ['ok' => true, 'msg' => 'test: hooks are never installed'];", 'H5: a test never installs hooks');
 has($bn, 'exit(0);', 'H6: the hook script always exits 0 - a failing hook must never stop cPanel\'s update');
 has($sq, "if (function_exists('smpro_slm_hooks_sync')) { try { smpro_slm_hooks_sync(); }", 'H7: Site Protection\'s cron sync installs the hooks');
-has($cs, "'sysupd', 'slmaint']", 'H8: cron_sync loads the module');
+has($cs, "'sysupd', 'slmaint', 'lvelimits']", 'H8: cron_sync loads the module');
 
 // release / relock on a fixture: exactly what was lifted is put back, permanent unlocks are left alone
 $vl = SMPRO_VARLIB; @mkdir($vl . '/php_harden', 0700, true);
