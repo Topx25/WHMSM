@@ -43,16 +43,24 @@ $limits = smpro_lv_limits();
 $lifts = smpro_lv_lifts();
 $doms = smpro_lv_domains_map();
 
-/* the rows: every account that hit a limit in the period, is at its ceiling this second, or has a lift in force */
-$users = array_keys($hist['rows']);
-foreach ($now as $u => $n) if (($n['lep'] > 0 && $n['ep'] >= $n['lep']) || ($n['lmemphy_mb'] > 0 && $n['memphy_mb'] >= $n['lmemphy_mb'] * 0.95) || ($n['lnproc'] > 0 && $n['nproc'] >= $n['lnproc'])) $users[] = $u;
-foreach (array_keys($lifts) as $u) $users[] = $u;
-// a searched domain / account that hit nothing is still shown - as a row that SAYS it hit nothing - instead of an empty table
-$lookedUp = $q !== '' ? smpro_lv_resolve($q, $doms) : ''; if ($lookedUp !== '') array_unshift($users, $lookedUp);
-$users = array_values(array_unique($users));
+/* the rows: EVERY account on the server - the ones that hit a limit in the period first, then the ones at a ceiling
+   this second, then lifted ones, then the calm ones (a calm account is a row that says it hit nothing, so the operator
+   can search any site and see its state and processes). Processes come from ONE ps for the whole server. */
+$atCeil = function (?array $n): bool { return $n && (($n['lep'] > 0 && $n['ep'] >= $n['lep']) || ($n['lmemphy_mb'] > 0 && $n['memphy_mb'] >= $n['lmemphy_mb'] * 0.95) || ($n['lnproc'] > 0 && $n['nproc'] >= $n['lnproc'])); };
+$allAcct = smpro_lv_accounts();
+$rank = [];
+foreach ($allAcct as $u) $rank[$u] = (isset($hist['rows'][$u]) ? 0 : ($atCeil($now[$u] ?? null) ? 1 : (isset($lifts[$u]) ? 2 : 3)));
+foreach (array_keys($hist['rows']) as $u) if (!isset($rank[$u])) $rank[$u] = 0;     // an LVE id that is not in /var/cpanel/users is still shown
+foreach ($now as $u => $n) if (!isset($rank[$u]) && $atCeil($n)) $rank[$u] = 1;
+foreach (array_keys($lifts) as $u) if (!isset($rank[$u])) $rank[$u] = 2;
+$lookedUp = $q !== '' ? smpro_lv_resolve($q, $doms) : ''; if ($lookedUp !== '') $rank[$lookedUp] = -1;   // the searched one first
+uksort($rank, function ($a, $b) use ($rank, $hist) { return ($rank[$a] <=> $rank[$b]) ?: ((int)($hist['rows'][$b]['faults'] ?? 0) <=> (int)($hist['rows'][$a]['faults'] ?? 0)) ?: strcasecmp($a, $b); });
+$users = array_keys($rank);
+$procsAll = smpro_lv_procs_all();
 $hitNow = 0; foreach ($users as $u) { $n = $now[$u] ?? null; if ($n && (($n['lep'] > 0 && $n['ep'] >= $n['lep']) || ($n['lnproc'] > 0 && $n['nproc'] >= $n['lnproc']))) $hitNow++; }
 $totalFaults = 0; foreach ($hist['rows'] as $r) $totalFaults += $r['faults'];
-smpro_audit('resource_limits_view', ['period' => $period, 'accounts' => count($users), 'faults' => $totalFaults, 'now' => $hitNow, 'lifts' => count($lifts)]);
+$calm = 0; foreach ($rank as $u => $r) if ($r === 3) $calm++;
+smpro_audit('resource_limits_view', ['period' => $period, 'accounts' => count($users), 'hit' => count($hist['rows']), 'faults' => $totalFaults, 'now' => $hitNow, 'lifts' => count($lifts)]);
 $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h' . intdiv($s % 3600, 60) . 'm' : ($s >= 60 ? intdiv($s, 60) . 'm' . ($s % 60) . 's' : $s . 's'); };
 ?>
 <style>
@@ -63,7 +71,7 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
 .lv-tbl td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}.lv-tbl tr:last-child td{border-bottom:0}.lv-tbl tr.hide{display:none}.lv-tbl tr.sel td{background:var(--brand-bg)}
 .lv-u{font-weight:800;font-size:13.5px}.lv-dom{font-size:11.5px;color:var(--muted);word-break:break-all}
 .lv-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin:0 4px 4px 0}
-.lv-chip.ep{background:var(--dang-bg);color:var(--dang)}.lv-chip.mem{background:var(--warn-bg);color:var(--warn)}.lv-chip.np{background:var(--brand-bg);color:var(--brand)}.lv-chip.cpu{background:var(--bg);color:var(--text)}.lv-chip.io{background:var(--bg);color:var(--muted)}.lv-chip.lift{background:var(--good-bg);color:var(--good)}
+.lv-chip.ep{background:var(--dang-bg);color:var(--dang)}.lv-chip.mem{background:var(--warn-bg);color:var(--warn)}.lv-chip.np{background:var(--brand-bg);color:var(--brand)}.lv-chip.cpu{background:var(--bg);color:var(--text)}.lv-chip.io{background:var(--bg);color:var(--muted)}.lv-chip.lift{background:var(--good-bg);color:var(--good)}.lv-chip.calm{background:var(--good-bg);color:var(--good);font-weight:600}
 .lv-why{font-size:12px;color:var(--muted);line-height:1.5;margin-top:3px}
 .lv-todo{font-size:12.3px;line-height:1.5;margin-top:6px;padding:6px 9px;border-radius:7px;background:var(--bg);border-left:3px solid var(--brand)}.lv-todo b{color:var(--brand)}
 .lv-todo.kill{border-left-color:var(--dang)}.lv-todo.kill b{color:var(--dang)}.lv-todo.lift{border-left-color:var(--warn)}.lv-todo.lift b{color:var(--warn)}.lv-todo.none,.lv-todo.cpu,.lv-todo.io{border-left-color:var(--line)}.lv-todo.none b,.lv-todo.cpu b,.lv-todo.io b{color:var(--muted)}
@@ -91,6 +99,7 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
   <div class="lv-kpi <?= count($hist['rows']) ? 'warn' : 'good' ?>"><div class="v"><?= $hist['ok'] ? count($hist['rows']) : '?' ?></div><div class="l">accounts that hit a limit (<?= smpro_h($period) ?>)</div></div>
   <div class="lv-kpi"><div class="v"><?= $hist['ok'] ? $totalFaults : '?' ?></div><div class="l">refused / throttled events (<?= smpro_h($period) ?>)</div></div>
   <div class="lv-kpi <?= $lifts ? 'warn' : '' ?>"><div class="v"><?= count($lifts) ?></div><div class="l">lifts in force (go back by themselves)</div></div>
+  <div class="lv-kpi good"><div class="v"><?= $calm ?></div><div class="l">calm accounts (of <?= count($users) ?> on the server) - listed too, below the others</div></div>
 </div>
 <?php if ($q !== '' && $lookedUp === ''): ?><div class="lv-warn">&#9888; "<?= smpro_h($q) ?>" is not an account on this server and no account owns that domain (checked cPanel's own domain list).</div><?php endif; ?>
 <?php if ($q !== '' && $lookedUp !== '' && !isset($hist['rows'][$lookedUp]) && !isset($lifts[$lookedUp])): ?><div class="lv-res ok">"<?= smpro_h($q) ?>" belongs to account <b><?= smpro_h($lookedUp) ?></b>, which hit NO limit in the <?= smpro_h($period) ?> period - its row is shown first so you can see what runs now; a 508 on this site right now would come from something else (a PHP error page, the handler, Site Shield). Try the 7-day period to be sure.</div><?php endif; ?>
@@ -101,7 +110,7 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
   <form method="get" style="display:inline-flex;gap:6px;align-items:center"><input type="hidden" name="page" value="resource-limits"><label class="sub" for="lvP">Period</label>
     <select class="lv-sel" id="lvP" name="period" onchange="this.form.submit()"><?php foreach (['1h' => 'last hour', '24h' => 'last 24 hours', '7d' => 'last 7 days'] as $k => $v): ?><option value="<?= $k ?>"<?= $k === $period ? ' selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></form>
   <input class="lv-sel" id="lvF" type="search" placeholder="search: account or domain (example.com) - Enter looks it up server-wide" style="min-width:300px" value="<?= smpro_h($q) ?>">
-  <select class="lv-sel" id="lvV"><option value="">every kind</option><option value="ep">entry processes</option><option value="mem">memory</option><option value="np">processes</option><option value="cpu">CPU</option><option value="io">I/O</option><option value="lift">lifted</option><option value="hung">hung processes now</option></select>
+  <select class="lv-sel" id="lvV"><option value="">every account</option><option value="hit">hit a limit (<?= smpro_h($period) ?>)</option><option value="calm">calm - hit nothing</option><option value="ep">entry processes</option><option value="mem">memory</option><option value="np">processes</option><option value="cpu">CPU</option><option value="io">I/O</option><option value="lift">lifted</option><option value="hung">hung processes now</option></select>
   <select class="lv-sel" id="lvS"><option value="25">25 / page</option><option value="50">50 / page</option><option value="100">100 / page</option></select>
   <span class="sub" id="lvCount"></span>
 </div>
@@ -120,14 +129,14 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
 
 <div class="card" style="margin-top:8px" data-nopage="1">
 <?php if (!$users): ?>
-  <div class="sub" style="padding:12px">No account hit a limit in the <?= smpro_h($period) ?> period and none is at a ceiling this second<?= $hist['ok'] ? '' : ' (as far as the kernel table shows; the history could not be read)' ?>.</div>
+  <div class="sub" style="padding:12px">No cPanel account was found on this server (nothing in /var/cpanel/users and no domain map).</div>
 <?php else: ?>
   <div class="smpro-tablewrap"><table class="lv-tbl" id="lvTbl"><thead><tr><th><input type="checkbox" id="lvAll" title="select every account shown on this page"></th><th>Account</th><th>What was hit (<?= smpro_h($period) ?>) and what to do</th><th>This second</th><th>Limits</th><th>Actions</th></tr></thead><tbody>
   <?php foreach ($users as $u): $f = $hist['rows'][$u] ?? []; $n = $now[$u] ?? null; $L = smpro_lv_limits_of($u, $limits); $lift = $lifts[$u] ?? null;
-        $procs = smpro_lv_procs($u); $hung = 0; foreach ($procs as $p) if (($p['kind'] === 'php' || $p['kind'] === 'cron') && $p['secs'] >= 120) $hung++;
+        $procs = $procsAll[$u] ?? []; $hung = 0; foreach ($procs as $p) if (($p['kind'] === 'php' || $p['kind'] === 'cron') && $p['secs'] >= 120) $hung++;
         $epHit = $n && $n['lep'] > 0 && $n['ep'] >= $n['lep'];
         $ud = $doms[$u] ?? []; $adv = smpro_lv_advice($f, $n, $hung, (bool)$lift);
-        $kinds = []; if (!empty($f['ep_f'])) $kinds[] = 'ep'; if (!empty($f['pmem_f']) || !empty($f['vmem_f'])) $kinds[] = 'mem'; if (!empty($f['nproc_f'])) $kinds[] = 'np'; if (!empty($f['cpu_f'])) $kinds[] = 'cpu'; if (!empty($f['io_f'])) $kinds[] = 'io'; if ($lift) $kinds[] = 'lift'; if ($hung) $kinds[] = 'hung'; if ($epHit) $kinds[] = 'ep';
+        $kinds = [$f ? 'hit' : 'calm']; if (!empty($f['ep_f'])) $kinds[] = 'ep'; if (!empty($f['pmem_f']) || !empty($f['vmem_f'])) $kinds[] = 'mem'; if (!empty($f['nproc_f'])) $kinds[] = 'np'; if (!empty($f['cpu_f'])) $kinds[] = 'cpu'; if (!empty($f['io_f'])) $kinds[] = 'io'; if ($lift) $kinds[] = 'lift'; if ($hung) $kinds[] = 'hung'; if ($epHit) $kinds[] = 'ep';
         $needle = strtolower($u . ' ' . implode(' ', $ud)); ?>
     <tr data-u="<?= smpro_h($u) ?>" data-s="<?= smpro_h($needle) ?>" data-k="<?= smpro_h(implode(' ', array_unique($kinds))) ?>" data-lift="<?= $lift ? 1 : 0 ?>" data-hung="<?= (int)$hung ?>">
       <td><input type="checkbox" class="lvSel" value="<?= smpro_h($u) ?>"></td>
@@ -142,7 +151,7 @@ $fmtAge = function (int $s): string { return $s >= 3600 ? intdiv($s, 3600) . 'h'
           <?php if ($f['nproc_f']): ?><span class="lv-chip np">processes &times;<?= (int)$f['nproc_f'] ?></span><?php endif; ?>
           <?php if ($f['cpu_f'] || ($f['cpu_lim'] > 0 && $f['cpu_max'] >= $f['cpu_lim'] * 0.98)): ?><span class="lv-chip cpu">CPU throttled<?= $f['cpu_f'] ? ' &times;' . (int)$f['cpu_f'] : '' ?></span><?php endif; ?>
           <?php if ($f['io_f']): ?><span class="lv-chip io">I/O throttled &times;<?= (int)$f['io_f'] ?></span><?php endif; ?>
-        <?php elseif ($lift): ?><span class="sub">nothing in this period</span><?php else: ?><span class="lv-chip ep">at a ceiling now</span><?php endif; ?>
+        <?php elseif ($lift): ?><span class="sub">nothing in this period</span><?php elseif ($epHit || $atCeil($n)): ?><span class="lv-chip ep">at a ceiling now</span><?php else: ?><span class="lv-chip calm">no limit hit (<?= smpro_h($period) ?>)</span><?php endif; ?>
         <div class="lv-why"><?= smpro_h(smpro_lv_explain($f, $n ?? [])) ?></div>
         <div class="lv-todo <?= smpro_h($adv['kind']) ?>"><b>What to do:</b> <?= smpro_h($adv['text']) ?></div>
       </td>

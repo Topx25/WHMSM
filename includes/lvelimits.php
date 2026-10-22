@@ -283,6 +283,26 @@ function smpro_lv_domains_map(): array {
     return $map;
 }
 
+/** Every cPanel account on this server, from cPanel's own /var/cpanel/users (the domain map as the fallback). */
+function smpro_lv_accounts(): array {
+    $out = [];
+    foreach ((array)@scandir('/var/cpanel/users') as $n) if (preg_match('/^[a-z0-9][a-z0-9._-]{0,63}$/i', (string)$n) && $n !== 'system') $out[] = (string)$n;
+    if (!$out) $out = array_keys(smpro_lv_domains_map());
+    sort($out, SORT_STRING | SORT_FLAG_CASE);
+    return array_values(array_unique($out));
+}
+/** Processes of EVERY account in one ps (not one ps per account): [user => rows as smpro_lv_parse_ps gives them]. */
+function smpro_lv_procs_all(): array {
+    $txt = smpro_lv_run('ps -eo user=,pid=,etimes=,pcpu=,rss=,args= 2>/dev/null', 20); $by = [];
+    foreach (preg_split('/\r?\n/', trim($txt)) as $l) {
+        if (!preg_match('/^\s*(\S+)\s+(\d+\s+\d+\s+[\d.]+\s+\d+\s+.*)$/', $l, $m)) continue;
+        $u = $m[1]; if ($u === 'root' || preg_match('/^\d+$/', $u)) continue;
+        $by[$u][] = $m[2];
+    }
+    $out = [];
+    foreach ($by as $u => $lines) $out[$u] = smpro_lv_parse_ps(implode("\n", $lines));
+    return $out;
+}
 /** A search term -> the account it names: an account name, or any domain of one (www. and case ignored). '' when none. */
 function smpro_lv_resolve(string $q, ?array $map = null): string {
     $q = strtolower(trim($q)); $q = preg_replace('#^https?://#', '', $q); $q = preg_replace('#/.*$#', '', $q); $q = preg_replace('/^www\./', '', $q);

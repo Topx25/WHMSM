@@ -55,11 +55,23 @@ is_eq(smpro_lv_resolve('shop.example.net', $map), 'alpha', 'L3: a www. domain in
 is_eq(smpro_lv_resolve('alpha', $map), 'alpha', 'L4: account name');
 is_eq(smpro_lv_resolve('nobody.example', ['x' => []]), '', 'L5: unknown -> empty, never a guess');
 is_eq(smpro_lv_resolve('a; rm -rf', $map), '', 'L6: shell-looking input is refused');
-has($pg, "\$lookedUp = \$q !== '' ? smpro_lv_resolve(\$q, \$doms) : ''; if (\$lookedUp !== '') array_unshift(\$users, \$lookedUp);", 'L7: the looked-up account is a row, first');
+has($pg, "if (\$lookedUp !== '') \$rank[\$lookedUp] = -1;", 'L7: the looked-up account is a row, first');
 has($pg, "is not an account on this server and no account owns that domain", 'L8: an unknown search is told so');
 has($pg, "which hit NO limit in the", 'L9: a calm account is told so, not hidden');
 has($pg, "if (e.key === 'Enter') { e.preventDefault();", 'L10: Enter = server-wide lookup');
 has($pg, "not in this list - press Enter to look it up across every account on the server", 'L11: the count line says what to do when nothing matches');
+
+// B3. every account is a row, in a stated order, with one ps for all
+has($pg, "\$allAcct = smpro_lv_accounts();", 'M1: every account on the server');
+has($pg, "\$rank[\$u] = (isset(\$hist['rows'][\$u]) ? 0 : (\$atCeil(\$now[\$u] ?? null) ? 1 : (isset(\$lifts[\$u]) ? 2 : 3)));", 'M2: hit -> ceiling -> lifted -> calm');
+has($pg, "\$procsAll = smpro_lv_procs_all();", 'M3: one ps for the whole server');
+hasnt($pg, "\$procs = smpro_lv_procs(\$u);", 'M4: never one ps per account on the page');
+has($pg, '<span class="lv-chip calm">no limit hit (<?= smpro_h($period) ?>)</span>', 'M5: a calm account says so');
+has($pg, '<option value="calm">calm - hit nothing</option>', 'M6: filter to calm / hit');
+has($lv, "foreach ((array)@scandir('/var/cpanel/users') as \$n)", 'M7: accounts from cPanel\'s own list');
+has($lv, "if (\$u === 'root' || preg_match('/^\\d+\$/', \$u)) continue;", 'M8: root and numeric uids are not accounts');
+$all = smpro_lv_procs_all();
+ok(is_array($all), 'M9: procs_all answers an array even where ps is foreign');
 
 // C. frozen purge: every id through exiqgrep, honest count, finishes after the tab closes
 has($sp, 'function smpro_sp_frozen_ids(string $exim): ?array {', 'C1: helper');

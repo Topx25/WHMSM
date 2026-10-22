@@ -391,6 +391,28 @@ function smpro_lr_hunt(int $budget = 500): array {
 }
 
 /* ---------------- quarantine ---------------- */
+/** The immutable / append-only flags of one path as lsattr prints them ('' when none or unreadable). */
+function smpro_lr_attrs(string $path): string {
+    $o = (string)@shell_exec('lsattr -d ' . escapeshellarg($path) . ' 2>/dev/null'); $f = trim((string)strtok($o, ' '));
+    return preg_replace('/[^ia]/', '', $f);
+}
+/**
+ * Remove one file even when the account's folders are locked. Safety Lock (this product) and WP Guard lock
+ * wp-includes / wp-admin / the docroot itself with chattr +i on the DIRECTORY; unlink needs the parent writable, so
+ * the file's own flag being cleared was not enough and the quarantine failed with "immutable or permissions". The
+ * parent's flag is lifted for the one unlink and put back EXACTLY as it was, so the other product's lock survives.
+ * @return array{ok:bool,why:string,relocked:bool}
+ */
+function smpro_lr_unlink_locked(string $file): array {
+    @exec('chattr -i -a ' . escapeshellarg($file) . ' 2>/dev/null');
+    if (@unlink($file)) return ['ok' => true, 'why' => '', 'relocked' => false];
+    $dir = dirname($file); $flags = smpro_lr_attrs($dir);
+    if ($flags === '') return ['ok' => false, 'why' => 'the folder ' . $dir . ' is not writable by root (' . (is_writable($dir) ? 'unlink refused' : 'permissions') . ')', 'relocked' => false];
+    @exec('chattr -i -a ' . escapeshellarg($dir) . ' 2>/dev/null');
+    $ok = @unlink($file);
+    @exec('chattr +' . $flags . ' ' . escapeshellarg($dir) . ' 2>/dev/null');   // put the lock back exactly as it was
+    return ['ok' => $ok, 'why' => $ok ? '' : 'the folder ' . $dir . ' is locked (chattr +' . $flags . ') and could not be unlocked - lift the lock in Safety Lock / WP Guard, then quarantine again', 'relocked' => true];
+}
 function smpro_lr_quarantine(string $path, string $source): array {
     if (!preg_match('#^/home[0-9]*/([^/]+)/#', $path, $m)) return ['ok' => false, 'msg' => 'Only files inside an account home.'];
     $user = $m[1];
@@ -403,13 +425,13 @@ function smpro_lr_quarantine(string $path, string $source): array {
     $qd = smpro_lr_dir('quarantine/' . $user); $q = $qd . '/' . date('Ymd-His') . '-' . substr($sha, 0, 12) . '-' . preg_replace('/[^A-Za-z0-9._-]/', '_', basename($safe));
     if (!@copy($safe, $q)) return ['ok' => false, 'msg' => 'Could not keep a copy — nothing was moved.'];
     @chmod($q, 0600);
-    @exec('chattr -i ' . escapeshellarg($safe) . ' 2>/dev/null');
-    if (!@unlink($safe)) { @unlink($q); return ['ok' => false, 'msg' => 'The file could not be removed (immutable or permissions).']; }
+    $rm = smpro_lr_unlink_locked($safe);
+    if (!$rm['ok']) { @unlink($q); return ['ok' => false, 'msg' => 'The file could not be removed: ' . $rm['why'] . '.']; }
     $rec = ['at' => time(), 'orig' => $safe, 'kept' => $q, 'sha' => $sha, 'size' => (int)($st['size'] ?? 0), 'mode' => (int)($st['mode'] ?? 0) & 07777, 'uid' => (int)($st['uid'] ?? 0), 'gid' => (int)($st['gid'] ?? 0), 'mtime' => (int)($st['mtime'] ?? 0), 'source' => $source, 'restored' => 0];
     @file_put_contents(smpro_lr_dir() . '/quarantine.jsonl', json_encode($rec, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
     smpro_lr_learn_file($q, $safe, 'quarantine');
     if (function_exists('smpro_audit')) smpro_audit('learn_quarantine', ['path' => $safe, 'sha256' => $sha, 'kept' => $q, 'source' => $source]);
-    return ['ok' => true, 'msg' => 'Moved to the root-only store (Restore puts it back).', 'kept' => $q];
+    return ['ok' => true, 'msg' => 'Moved to the root-only store (Restore puts it back).' . ($rm['relocked'] ? ' The folder was locked; it was unlocked for the move and locked again.' : ''), 'kept' => $q];
 }
 function smpro_lr_quarantined(int $limit = 200): array {
     $rows = []; foreach (array_reverse(@file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: []) as $l) { $r = json_decode($l, true); if (is_array($r)) $rows[] = $r; if (count($rows) >= $limit) break; }
