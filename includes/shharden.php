@@ -116,9 +116,13 @@ function smpro_shh_php2shell_fixed_versions(): array { return ['8.2' => '8.2.35'
 function smpro_shh_php2shell_cves(): array { return ['CVE-2026-109618', 'CVE-2026-109619']; }
 /** Pure: the standing of one build. $ver = PHP_VERSION, $cveInChangelog = the installed package names a CVE,
  *  $mitigated = upload progress off, $domains = sites served by this build. Returns [state, why]. */
-function smpro_shh_php2shell_state(string $ver, bool $cveInChangelog, bool $mitigated, int $domains): array {
+function smpro_shh_php2shell_state(string $ver, bool $cveInChangelog, bool $mitigated, int $domains, bool $staleRun = false): array {
     $branch = implode('.', array_slice(explode('.', $ver), 0, 2));
     $fixed = smpro_shh_php2shell_fixed_versions()[$branch] ?? null;
+    // a fixed package on disk is not a fix while a PHP-FPM pool (or Apache with mod_php) started before it still
+    // runs the old code: the second flaw lives in exactly such long-lived workers (suphp/cgi spawn a fresh binary
+    // per request and never have this problem)
+    if ($staleRun && $domains > 0 && ($cveInChangelog || ($fixed !== null && version_compare($ver, $fixed, '>=')))) return ['restart', 'the fixed package is installed but a PHP process serving sites started before it and still runs the old code' . ($mitigated ? ' - the interim mitigation is on' : ' and the interim mitigation is off')];
     if ($cveInChangelog) return ['patched', 'the installed package names the fix (vendor backport)'];
     if ($fixed !== null && version_compare($ver, $fixed, '>=')) return ['patched', 'at or past ' . $fixed];
     if ($domains === 0) return ['idle', 'no site runs on it' . ($fixed === null ? ' (branch gets no release)' : '')];
@@ -139,9 +143,11 @@ function smpro_shh_php2shell(): array {
         // the package changelog does not change between installs: remembered for six hours, so a page never waits on rpm
         $clCmd = 'rpm -q --changelog ' . escapeshellarg($pkg) . ' 2>/dev/null | grep -c ' . escapeshellarg(implode('\|', smpro_shh_php2shell_cves()));
         $cl = function_exists('smpro_memo_cmd') ? smpro_memo_cmd('p2s_cl_' . $pkg, 21600, $clCmd, 20) : (string)@shell_exec('timeout 20 ' . $clCmd);
-        $builds[$name] = ['version' => $ver, 'cve' => (int)trim($cl) > 0, 'mitigated' => ($up === '' || $up === '0' || strtolower($up) === 'off'), 'domains' => 0, 'handler' => '', 'pending' => false];
+        $builds[$name] = ['version' => $ver, 'cve' => (int)trim($cl) > 0, 'mitigated' => ($up === '' || $up === '0' || strtolower($up) === 'off'), 'domains' => 0, 'handler' => '', 'pending' => false, 'stale' => false, 'stale_pid' => 0];
     }
     if (!$builds) return [];
+    $stale = smpro_shh_php2shell_stale_runs(array_keys($builds));
+    foreach ($stale as $n => $pid) if (isset($builds[$n])) { $builds[$n]['stale'] = true; $builds[$n]['stale_pid'] = $pid; }
     $w = ''; foreach (['/usr/local/cpanel/bin/whmapi1', '/usr/sbin/whmapi1'] as $b) if (is_executable($b)) { $w = $b; break; }
     if ($w !== '') {
         $j = json_decode((string)@shell_exec('timeout 60 ' . $w . ' php_get_vhost_versions --output=json 2>/dev/null'), true);
@@ -160,8 +166,61 @@ function smpro_shh_php2shell(): array {
         $cl = function_exists('smpro_memo_cmd') ? smpro_memo_cmd('p2s_repo_' . $pkg, 21600, $rqCmd, 60, 604800, true) : '';
         $b['pending'] = (int)trim($cl) > 0;
     } unset($b);
-    foreach ($builds as $n => &$b) [$b['state'], $b['why']] = smpro_shh_php2shell_state($b['version'], $b['cve'], $b['mitigated'], $b['domains']); unset($b);
+    foreach ($builds as $n => &$b) {
+        // Apache with mod_php (handler dso) is the long-lived process for that build
+        if ($b['handler'] === 'dso' && !$b['stale'] && isset($stale['httpd'])) { $b['stale'] = true; $b['stale_pid'] = $stale['httpd']; }
+        [$b['state'], $b['why']] = smpro_shh_php2shell_state($b['version'], $b['cve'], $b['mitigated'], $b['domains'], $b['stale']);
+    } unset($b);
     return $builds;
+}
+/** Which builds have a running PHP-FPM master older than their installed FPM package (plus 'httpd' when the Apache
+ *  parent is older than the newest PHP module package). Returns build => pid. Pure helper below does the comparing. */
+function smpro_shh_php2shell_stale_runs(array $names): array {
+    $procs = smpro_shh_php2shell_procs((string)@shell_exec('ps -eo pid=,etimes=,args= 2>/dev/null'));
+    $inst = [];
+    foreach ($names as $n) {
+        $pkg = strpos($n, 'ea-') === 0 ? $n . '-php-fpm' : $n . '-php-fpm';
+        $t = (int)trim((string)@shell_exec('rpm -q --qf ' . escapeshellarg('%{INSTALLTIME}\n') . ' ' . escapeshellarg($pkg) . ' 2>/dev/null | head -1'));
+        if ($t > 0) $inst[$n] = $t;
+        if (strpos($n, 'ea-') === 0) { $t2 = (int)trim((string)@shell_exec('rpm -q --qf ' . escapeshellarg('%{INSTALLTIME}\n') . ' ' . escapeshellarg($n . '-php') . ' 2>/dev/null | head -1')); if ($t2 > 0) $inst['httpd'] = max($inst['httpd'] ?? 0, $t2); }
+    }
+    return smpro_shh_php2shell_stale_cmp($procs, $inst, time());
+}
+/** Pure: ps output -> [build|'httpd' => [pid, started_at]] for the oldest FPM master per build and the Apache parent. */
+function smpro_shh_php2shell_procs(string $ps, ?int $now = null): array {
+    $now = $now ?? time(); $out = [];
+    foreach (preg_split('/\r?\n/', $ps) as $l) {
+        if (!preg_match('/^\s*(\d+)\s+(\d+)\s+(.*)$/', $l, $m)) continue;
+        [$pid, $age, $cmd] = [(int)$m[1], (int)$m[2], $m[3]];
+        $key = null;
+        if (preg_match('#/opt/cpanel/(ea-php\d+)/root/usr/sbin/php-fpm#', $cmd, $k) || preg_match('#^php-fpm: master process \(/opt/cpanel/(ea-php\d+)/#', $cmd, $k)) $key = $k[1];
+        elseif (preg_match('#/opt/alt/(php\d+)/usr/sbin/php-fpm#', $cmd, $k) || preg_match('#^php-fpm: master process \(/opt/alt/(php\d+)/#', $cmd, $k)) $key = 'alt-' . $k[1];
+        elseif (preg_match('#^/usr/sbin/httpd(\s|$)#', $cmd)) $key = 'httpd';
+        if ($key === null) continue;
+        $st = $now - $age;
+        if (!isset($out[$key]) || $st < $out[$key][1]) $out[$key] = [$pid, $st];
+    }
+    return $out;
+}
+/** Pure: a process that started before its package was installed is stale. Returns key => pid. */
+function smpro_shh_php2shell_stale_cmp(array $procs, array $installed, int $now): array {
+    $r = [];
+    foreach ($procs as $k => [$pid, $started]) if (isset($installed[$k]) && $started < $installed[$k] && $installed[$k] <= $now) $r[$k] = $pid;
+    return $r;
+}
+/** Fix: restart every PHP-FPM pool (and Apache for mod_php) still running code older than its installed package. */
+function smpro_shh_fix_php2shell_restart(): array {
+    $builds = smpro_shh_php2shell(); $done = []; $undo = [];
+    foreach ($builds as $n => $b) {
+        if (empty($b['stale']) || $b['state'] !== 'restart') continue;
+        if ($b['handler'] === 'dso') { smpro_shh_x('/usr/local/cpanel/scripts/restartsrv_httpd', 120); $done[] = 'apache'; continue; }
+        $svc = $n . '-php-fpm';
+        [$rc, $st] = smpro_shh_x('systemctl is-active ' . escapeshellarg($svc), 5);
+        if (trim($st) === 'active') { smpro_shh_x('systemctl restart ' . escapeshellarg($svc), 60); $done[] = $svc; }
+    }
+    if (!$done) return [true, 'nothing was still running old code', []];
+    smpro_shh_php2shell_probe_write();
+    return [true, 'restarted ' . implode(', ', array_unique($done)) . ' - every worker now runs the installed package', $undo];
 }
 /** The probe takes seconds (two php runs per build, rpm, whmapi1 twice, dnf): it never runs inside a page. The card
  *  reads this cache; a miss starts the probe detached and the card says "being read now". The System updates worker
@@ -377,6 +436,7 @@ function smpro_shh_fixes(): array {
         'shm_noexec'     => ['/dev/shm without exec', 'smpro_shh_fix_shm'],
         'php_urlinclude' => ['PHP allow_url_include Off', 'smpro_shh_fix_php'],
         'php_uploadprogress' => ['PHP session.upload_progress Off', 'smpro_shh_fix_php_uploadprogress'],
+        'php2shell_restart'  => ['Restart PHP workers still running the old code', 'smpro_shh_fix_php2shell_restart'],
         'csf_harden'     => ['CSF/LFD hardening', 'smpro_shh_fix_csf'],
         'mail_caps'      => ['Outgoing mail caps', 'smpro_shh_fix_tweaks'],
         'csf_cc_allow'   => ['Country exemption that voids every block', 'smpro_shh_fix_cc_allow'],
@@ -452,12 +512,13 @@ function smpro_shh_checks(): array {
             'Two flaws in the PHP core let a request run code on the server without a login; every web-serving PHP is affected and the only complete fix is the release.', 'Reload the page in a minute.', '', '');
     } elseif ($p2) {
         $exposed = array_filter($p2, fn($b) => $b['state'] === 'exposed'); $mit = array_filter($p2, fn($b) => $b['state'] === 'mitigated'); $pend = array_filter($p2, fn($b) => !empty($b['pending']));
+        $rst = array_filter($p2, fn($b) => $b['state'] === 'restart'); $rstOpen = array_filter($rst, fn($b) => empty($b['mitigated']));
         $ev = '';
-        foreach ($p2 as $n => $b) $ev .= $n . ' ' . $b['version'] . ' [' . strtoupper($b['state']) . '] ' . $b['domains'] . ' site(s)' . ($b['handler'] !== '' ? ', ' . $b['handler'] : '') . ' - ' . $b['why'] . (!empty($b['pending']) ? ' - a fixed package is waiting in the repository' : '') . "\n";
-        $C[] = smpro_sh_mk('PHP core release of 2026-10-21 (' . implode(', ', smpro_shh_php2shell_cves()) . ')', $exposed ? 'critical' : ($mit ? 'warning' : 'ok'),
-            $exposed ? count($exposed) . ' PHP build(s) serving sites are NOT fixed and the interim mitigation is off.' : ($mit ? count($mit) . ' PHP build(s) serving sites are not fixed yet; the interim mitigation is on' . ($pend ? ' and a fixed package is waiting in the repository' : '') . '.' : 'Every PHP build serving a site is fixed (release or vendor backport).'),
-            'Two flaws in the PHP core let a request run code on the server without a login; every web-serving PHP is affected. The only complete fix is the release; vendors backport it under the old version number, so the package changelog is read for the CVE ids rather than trusting the number. The interim mitigation (upload progress off) narrows the hole, it does not close it. Branches 8.1 and older get no release at all.',
-            $exposed ? 'Apply the mitigation below now, then install the fixed packages from System updates (or move the sites on an unsupported branch to a supported one).' : ($mit ? 'Install the fixed packages from System updates' . ($pend ? ' - they are already waiting' : ' as soon as the vendor ships them') . '.' : 'No action needed.'), $ev . 'read ' . date('Y-m-d H:i', (int)($p2c['at'] ?? 0)), $exposed ? 'php_uploadprogress' : '');
+        foreach ($p2 as $n => $b) $ev .= $n . ' ' . $b['version'] . ' [' . strtoupper($b['state']) . '] ' . $b['domains'] . ' site(s)' . ($b['handler'] !== '' ? ', ' . $b['handler'] : '') . ' - ' . $b['why'] . (!empty($b['pending']) ? ' - a fixed package is waiting in the repository' : '') . (!empty($b['stale_pid']) ? ' - pid ' . (int)$b['stale_pid'] : '') . "\n";
+        $C[] = smpro_sh_mk('PHP core release of 2026-10-21 (' . implode(', ', smpro_shh_php2shell_cves()) . ')', ($exposed || $rstOpen) ? 'critical' : (($mit || $rst) ? 'warning' : 'ok'),
+            $exposed ? count($exposed) . ' PHP build(s) serving sites are NOT fixed and the interim mitigation is off.' : ($rst ? count($rst) . ' PHP build(s) have the fixed package installed but a running PHP process still runs the old code - a restart is needed.' : ($mit ? count($mit) . ' PHP build(s) serving sites are not fixed yet; the interim mitigation is on' . ($pend ? ' and a fixed package is waiting in the repository' : '') . '.' : 'Every PHP build serving a site is fixed (release or vendor backport) and every running PHP process is on the installed package.')),
+            'Two flaws in the PHP core let a request run code on the server without a login; every web-serving PHP is affected. The only complete fix is the release; vendors backport it under the old version number, so the package changelog is read for the CVE ids rather than trusting the number. A fixed package is not in effect until PHP is restarted: PHP-FPM pools and Apache with mod_php keep the old code in memory (the second flaw lives in exactly such long-lived workers); suphp and cgi start a fresh binary per request. The interim mitigation (upload progress off) narrows the hole, it does not close it. Branches 8.1 and older get no release at all.',
+            $exposed ? 'Apply the mitigation below now, then install the fixed packages from System updates (or move the sites on an unsupported branch to a supported one).' : ($rst ? 'Apply: restart the listed PHP-FPM pool(s) / Apache so every worker runs the installed package.' : ($mit ? 'Install the fixed packages from System updates' . ($pend ? ' - they are already waiting' : ' as soon as the vendor ships them') . '.' : 'No action needed.')), $ev . 'read ' . date('Y-m-d H:i', (int)($p2c['at'] ?? 0)), $exposed ? 'php_uploadprogress' : ($rst ? 'php2shell_restart' : ''));
     }
     $up = smpro_shh_php_uploadprogress();
     $C[] = smpro_sh_mk('PHP session.upload_progress', $up ? 'warning' : 'ok',
