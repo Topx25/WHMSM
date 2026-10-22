@@ -72,7 +72,7 @@ is_eq($k[1236], 'cron', 'D6: a wp-cron fetch is cron');
 
 // E. the explanation names the limit and the usual cause
 $why = smpro_lv_explain($f['alpha'], ['ep' => 20, 'lep' => 20]);
-ok(strpos($why, 'entry processes 20 of 20') !== false, 'E1: entry processes with the numbers');
+ok(strpos($why, 'the limit of 20 entry processes was refused 12 time(s)') !== false, 'E1: entry processes with the numbers');
 ok(strpos($why, 'more memory than its limit (peak 56 of 1024 MB)') !== false, 'E2: memory with the numbers');
 ok(strpos($why, 'more processes than allowed') !== false, 'E3: nproc');
 ok(strpos($why, 'disk I/O throttled') !== false, 'E4: io');
@@ -105,6 +105,6 @@ has($pg, 'This server has no CloudLinux LVE', 'G3: a server without LVE is told 
 has($pg, "History could not be read:", 'G4: a read that could not run is said, never shown as no faults');
 has($pg, "\$expired = smpro_lv_tick();", 'G5: expired lifts go back when the page is drawn too');
 has($mn, "['id' => 'resource-limits','label' => 'Resource Limit Reached'", 'G6: in the menu');
-has($mn, "'resource-limits'    => '1.1.10-beta353',", 'G7: NEW badge');
+has($mn, "'resource-limits'    => '1.1.10-beta354',", 'G7: NEW badge');
 has($cs, "'lve lifts'          => 'smpro_lv_cron_sync',", 'G8: cron sync knows the tick');
 has($cs, "'slmaint', 'lvelimits'] as \$m) {", 'G9: cron sync loads the engine');

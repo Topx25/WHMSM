@@ -95,6 +95,15 @@ function smpro_sp_queue_messages($limit = 500) {
     if ($cur !== null && count($msgs) < $limit) $msgs[] = $cur;
     return $msgs;
 }
+/** Every frozen message id in the queue through exiqgrep (no cap); null when exiqgrep is not installed. */
+function smpro_sp_frozen_ids(string $exim): ?array {
+    $g = is_executable('/usr/sbin/exiqgrep') ? '/usr/sbin/exiqgrep' : (is_executable('/usr/bin/exiqgrep') ? '/usr/bin/exiqgrep' : '');
+    if ($g === '') return null;
+    $out = (string)@shell_exec('timeout 120 ' . $g . ' -z -i 2>/dev/null');
+    $ids = [];
+    foreach (preg_split('/\r?\n/', trim($out)) as $l) { $l = trim($l); if ($l !== '' && smpro_sp_valid_msgid($l)) $ids[] = $l; }
+    return $ids;
+}
 /** Validate an Exim message-id. */
 /** Exim message id. Legacy is 6-6-2; Exim 4.97+ (cPanel 11.136 ships 4.99) uses a LONGER middle and tail —
  *  e.g. 1wnyZN-00000007Q4y-3WB0. Pinning the old widths made every modern id fail validation, which silently
@@ -419,27 +428,32 @@ if ($reqMethod === 'POST' && in_array(($_POST['sp_action'] ?? ''), ['queue_rm_fr
     // review-then-delete flow the per-message queue tools already use.
     if ($_POST['sp_action'] === 'queue_frozen_preview') {
         $frozen = array_values(array_filter(smpro_sp_queue_messages(500), fn($m) => !empty($m['frozen'])));
+        // the parser stops at 500 messages; the REAL frozen count comes from exiqgrep so a 2,000-message queue is
+        // announced as 2,000, not 500 (the old number made the purge look as if it had left most of them behind)
+        $allFrozen = smpro_sp_frozen_ids($exim); $total = $allFrozen === null ? count($frozen) : count($allFrozen);
         foreach ($frozen as &$fm) { $fm['owner'] = smpro_sp_owner($fm['sender']); } unset($fm);
         $senders = [];
         foreach ($frozen as $fm) { $s = (string)$fm['sender']; $senders[$s] = ($senders[$s] ?? 0) + 1; }
         arsort($senders);
-        echo json_encode(['ok' => true, 'count' => count($frozen), 'messages' => array_slice($frozen, 0, 200),
+        echo json_encode(['ok' => true, 'count' => $total, 'messages' => array_slice($frozen, 0, 200),
             'top_senders' => array_slice($senders, 0, 8, true)], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
     }
     if ($_POST['sp_action'] === 'queue_rm_frozen') {
         // Delete BY ID — the same set the preview enumerated — so what the admin reviewed is what is removed,
         // and the reported count is real (the old pipeline counted xargs output lines, not deleted messages).
-        $ids = [];
-        foreach (smpro_sp_queue_messages(500) as $m) {
-            if (!empty($m['frozen']) && smpro_sp_valid_msgid((string)$m['id'])) $ids[] = $m['id'];   // one validator, so both id formats stay in sync
+        @ignore_user_abort(true); @set_time_limit(1800);   // a started purge finishes even if the page is closed
+        $ids = smpro_sp_frozen_ids($exim);
+        if ($ids === null) {   // no exiqgrep: the parser's first 500
+            $ids = [];
+            foreach (smpro_sp_queue_messages(500) as $m) if (!empty($m['frozen']) && smpro_sp_valid_msgid((string)$m['id'])) $ids[] = $m['id'];
         }
         if (!$ids) { echo json_encode(['ok' => true, 'msg' => 'No frozen messages are in the queue — nothing was deleted.']); exit; }
-        $n = 0;
-        foreach (array_chunk($ids, 50) as $chunk) {
-            @shell_exec('timeout 90 ' . $exim . ' -Mrm ' . implode(' ', array_map('escapeshellarg', $chunk)) . ' 2>/dev/null');
-            $n += count($chunk);
-        }
-        smpro_audit('spam_queue_rm_frozen', ['removed' => $n]);
+        $before = count($ids);
+        foreach (array_chunk($ids, 100) as $chunk) @shell_exec('timeout 120 ' . $exim . ' -Mrm ' . implode(' ', array_map('escapeshellarg', $chunk)) . ' 2>/dev/null');
+        // the count is read back from the queue, never assumed from what was sent
+        $after = smpro_sp_frozen_ids($exim); $left = $after === null ? 0 : count($after); $n = max(0, $before - $left);
+        smpro_audit('spam_queue_rm_frozen', ['requested' => $before, 'removed' => $n, 'left' => $left]);
+        if ($left > 0) { echo json_encode(['ok' => false, 'msg' => 'Removed ' . $n . ' of ' . $before . ' frozen message(s); ' . $left . ' are still in the queue (exim refused them, or new ones froze meanwhile). Press again; if they stay, check that exim -Mrm works as root and /var/spool/exim is writable.']); exit; }
         echo json_encode(['ok' => true, 'msg' => 'Removed ' . $n . ' frozen message(s) from the mail queue.']); exit;
     }
     $sender = strtolower(trim((string)($_POST['sender'] ?? '')));

@@ -272,10 +272,41 @@ function smpro_lv_cron_sync(): bool {
 
 /* ------------------------------------------------------------------ the picture for the page */
 
+/** [user => [domain, ...]] from cPanel's own /etc/userdomains (one read, cached). Used for search by site name. */
+function smpro_lv_domains_map(): array {
+    static $map = null; if ($map !== null) return $map;
+    $map = [];
+    foreach ((array)@file('/etc/userdomains', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $ln) {
+        if (!preg_match('/^([^:\s]+):\s*([A-Za-z0-9._-]+)$/', trim((string)$ln), $m) || $m[1] === '*') continue;
+        $map[$m[2]][] = strtolower($m[1]);
+    }
+    return $map;
+}
+
+/**
+ * The one thing to do for this row, in the words of the buttons. Pure.
+ * @param array $f     history row (may be empty)   @param array|null $now  this second (may be null)
+ * @param int   $hung  PHP/cron processes older than 2 min   @param bool $lift  a lift is in force
+ */
+function smpro_lv_advice(array $f, ?array $now, int $hung, bool $lift): array {
+    $ep = (int)($f['ep_f'] ?? 0); $mem = (int)($f['pmem_f'] ?? 0) + (int)($f['vmem_f'] ?? 0); $np = (int)($f['nproc_f'] ?? 0);
+    $cpu = (int)($f['cpu_f'] ?? 0); $io = (int)($f['io_f'] ?? 0);
+    $atCeil = $now && (($now['lep'] > 0 && $now['ep'] >= $now['lep']) || ($now['lnproc'] > 0 && $now['nproc'] >= $now['lnproc']));
+    if ($hung > 0) return ['kind' => 'kill', 'text' => 'Press "End the hung PHP processes": ' . $hung . ' request(s) of this account have run for 2+ minutes and hold the slots. The 508 clears the moment they are gone. Then open the process list to see WHICH script hangs and fix it at the source (a stuck wp-cron, a slow database, a remote call).'];
+    if ($atCeil) return ['kind' => 'lift', 'text' => 'At its ceiling this second with no hung process - many SHORT requests are arriving at once. Press "Lift the limits x2" to get the site back up now, then look at Bot Guard for this domain (a crawler or a flood) and at Top Processes.'];
+    if ($lift) return ['kind' => 'watch', 'text' => 'A lift is in force. If the site is fine now, leave it until the time is up ("Put back" ends it early). If it still hits 508 even lifted, the limit is not the problem: find the hanging script (process list) or the traffic (Bot Guard).'];
+    if ($ep > 0 && $mem === 0) return ['kind' => 'traffic', 'text' => 'Entry processes were refused ' . $ep . ' time(s) but nothing hangs right now - bursts of short requests. Look at Bot Guard and Site Shield for this domain (crawlers and scanners are the usual cause). If the traffic is real, raise the entry-process limit in the package (WHM > LVE Manager) or press "Lift the limits x2" during the peak.'];
+    if ($mem > 0) return ['kind' => 'memory', 'text' => 'Memory was refused ' . $mem . ' time(s): a heavy plugin, an import, or many processes at once. "Lift the limits x2" covers an import or a cleanup; a site that needs it every day needs a bigger package (WHM > LVE Manager), not a lift.'];
+    if ($np > 0) return ['kind' => 'procs', 'text' => 'More processes than allowed ' . $np . ' time(s): cron jobs piling up or a script forking. Check the account\'s cron jobs (Compromise Check lists every line) and the process list.'];
+    if ($cpu > 0 && $io === 0) return ['kind' => 'cpu', 'text' => 'CPU throttled ' . $cpu . ' time(s) - slow pages, not 508. Nothing to reset: find the heavy script in Top Processes; a lift only helps for a short peak.'];
+    if ($io > 0) return ['kind' => 'io', 'text' => 'Disk I/O throttled ' . $io . ' time(s) - slow pages, not 508. Usually a backup, an import, or a crawler reading everything; check Bot Guard and the account\'s cron jobs. Nothing to reset.'];
+    return ['kind' => 'none', 'text' => 'Nothing is hitting a limit for this account in this period.'];
+}
+
 /** Why the 508 happens for this row, in one line. Pure. */
 function smpro_lv_explain(array $f, array $now): string {
     $parts = [];
-    if (($f['ep_f'] ?? 0) > 0 || (($now['lep'] ?? 0) > 0 && ($now['ep'] ?? 0) >= $now['lep'])) $parts[] = 'too many requests running at once (entry processes ' . ($now['ep'] ?? '?') . ' of ' . ($now['lep'] ?: ($f['ep_lim'] ?? '?')) . ') - the usual cause is PHP requests that hang (a slow database, a stuck wp-cron, a remote call that never answers) or a bot flood';
+    if (($f['ep_f'] ?? 0) > 0 || (($now['lep'] ?? 0) > 0 && ($now['ep'] ?? 0) >= $now['lep'])) $parts[] = 'too many requests running at once (' . (($f['ep_f'] ?? 0) > 0 ? 'the limit of ' . ($f['ep_lim'] ?: ($now['lep'] ?? '?')) . ' entry processes was refused ' . $f['ep_f'] . ' time(s)' : 'entry processes ' . ($now['ep'] ?? '?') . ' of ' . ($now['lep'] ?? '?') . ' this second') . ') - the usual cause is PHP requests that hang (a slow database, a stuck wp-cron, a remote call that never answers) or a bot flood';
     if (($f['pmem_f'] ?? 0) > 0 || ($f['vmem_f'] ?? 0) > 0) $parts[] = 'the site needed more memory than its limit (peak ' . ($f['pmem_max'] ?? '?') . ' of ' . ($f['pmem_lim'] ?? '?') . ' MB) - a heavy plugin, an import, or many processes at once';
     if (($f['nproc_f'] ?? 0) > 0) $parts[] = 'more processes than allowed (peak ' . ($f['nproc_max'] ?? '?') . ' of ' . ($f['nproc_lim'] ?? '?') . ') - cron jobs piling up, or a script forking';
     if (($f['cpu_f'] ?? 0) > 0 || (($f['cpu_lim'] ?? 0) > 0 && ($f['cpu_max'] ?? 0) >= $f['cpu_lim'] * 0.98)) $parts[] = 'CPU at its ceiling ' . (($f['cpu_f'] ?? 0) > 0 ? $f['cpu_f'] . ' time(s) ' : '') . '(peak ' . ($f['cpu_max'] ?? '?') . '% of ' . ($f['cpu_lim'] ?? '?') . '%) - throttled, not refused: pages get slow rather than 508, and a site that is slow for minutes at a time is usually a hung request or a crawler, not real visitors';
