@@ -86,3 +86,19 @@ foreach (['findings', 'ld-store', 'ld-lessons', 'ld-tools'] as $id) has($pg, 'id
 has($pg, 'data-go="ld-store"', 'C16: the store tile opens the store');
 hasnt($pg, 'class="ld-two"', 'C17: the old two-column layout is gone');
 hasnt($pg, 'data-confirm="Put this file back where it was, and remember it as not malicious?"', 'C18: the old unconditional Restore is gone');
+
+// D. the quarantine that put a file in the store taught lessons FROM it; they must not judge the same file
+$own = $mk('own.html', "<html><body><p>Plain page of the customer.</p></body></html>
+"); $osha = hash('sha256', file_get_contents($own));
+file_put_contents($jf, $row($own, '/home/acct1/public_html/own.html') . "
+", FILE_APPEND);
+$L = smpro_lr_lessons();
+smpro_lr_lesson_add($L, 'hash', $osha . ':' . filesize($own), 'self', ['path' => '/home/acct1/public_html/own.html', 'sha' => $osha, 'at' => time(), 'source' => 'quarantine']);
+smpro_lr_lesson_add($L, 'hash', $osha . ':' . filesize($own), 'self', ['path' => '/home/acct1/public_html/own.html', 'sha' => $osha, 'at' => time(), 'source' => 'relearn']);
+smpro_lr_save('lessons', $L);
+is_eq(smpro_lr_verdict($own)['verdict'], 'clean', 'D1: a hash lesson whose only incidents are this file own quarantine / relearn does not make it malicious');
+$L = smpro_lr_lessons();
+smpro_lr_lesson_add($L, 'hash', $osha . ':' . filesize($own), 'self', ['path' => '/home/acct2/public_html/own.html', 'sha' => $osha, 'at' => time(), 'source' => 'quarantine']);
+smpro_lr_save('lessons', $L);
+is_eq(smpro_lr_verdict($own)['verdict'], 'malicious', 'D2: ...but the same file quarantined at ANOTHER place is a second incident, and counts');
+has($ln, "if (\$strong !== '') \$r['signs'][] = (strpos(\$strong, 'a ') === 0 ? \$strong : 'code that ' . \$strong);", 'D3: a sign reads as a sentence');

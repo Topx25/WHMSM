@@ -468,9 +468,19 @@ function smpro_lr_verdict(string $kept): array {
     if ($store === false || $real === false || strpos($real, $store . DIRECTORY_SEPARATOR) !== 0 || !is_file($real) || !is_readable($real)) { $r['soft'][] = 'the kept copy could not be read'; return $r; }
     $sha = (string)@hash_file('sha256', $real); $r['sha'] = $sha;
     $L = smpro_lr_lessons(); $known = in_array($sha, smpro_lr_load('allow'), true);
+    // The quarantine that put this file here TAUGHT lessons from it (its hash, its header). Those lessons must not
+    // judge the same file - every kept file would be "the exact file of a confirmed incident" by construction. A
+    // lesson counts only when it has an incident that is not this file's own quarantine: Imunify's delete or clean,
+    // the operator's delete, a taught folder, or the same file quarantined at ANOTHER place.
+    $orig = ''; foreach (@file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: [] as $l0) { $q0 = json_decode($l0, true); if (is_array($q0) && ($q0['kept'] ?? '') === $kept) { $orig = (string)($q0['orig'] ?? ''); break; } }
+    $confirmed = function (array $l) use ($orig): bool {
+        if (($l['source'] ?? '') === 'shared') return true;
+        foreach ((array)($l['incidents'] ?? []) as $i) if (!in_array((string)($i['source'] ?? ''), ['quarantine', 'relearn'], true) || ($i['path'] ?? '') !== $orig) return true;
+        return false;
+    };
     // 1. the lessons: is this the exact file of an incident somebody confirmed?
     foreach ($L as $l) {
-        if (($l['state'] ?? 'on') !== 'on' || ($l['type'] ?? '') !== 'hash' || strpos((string)$l['key'], $sha . ':') !== 0 || empty($l['incidents'])) continue;
+        if (($l['state'] ?? 'on') !== 'on' || ($l['type'] ?? '') !== 'hash' || strpos((string)$l['key'], $sha . ':') !== 0 || empty($l['incidents']) || !$confirmed($l)) continue;
         $r['signs'][] = ($l['source'] ?? '') === 'shared' ? 'the exact file of an incident confirmed on another server' : 'the exact file of an incident confirmed on this server'; break;
     }
     // 2. the code itself
@@ -480,10 +490,10 @@ function smpro_lr_verdict(string $kept): array {
     $hasPhp = (bool)preg_match('/<\?php|<\?=|<script\s+language\s*=\s*["\']?php/i', $code);
     if ($hasPhp && in_array($ext, ['ico', 'jpg', 'jpeg', 'png', 'gif', 'svg', 'txt', 'css', 'js', 'json', 'xml', 'log', 'pdf', 'zip', 'mo', 'po', 'ttf', 'woff'], true)) $r['signs'][] = 'PHP code inside a file named as a .' . $ext . ' (an image, text or asset never carries PHP)';
     $tags = smpro_lr_tags($code); $strong = smpro_lr_tags_strong($tags, $code);
-    if ($strong !== '') $r['signs'][] = 'code that ' . $strong;
+    if ($strong !== '') $r['signs'][] = (strpos($strong, 'a ') === 0 ? $strong : 'code that ' . $strong);
     if (preg_match('/^\s*<\?php\s*(?:\/\*.*?\*\/\s*|\/\/[^\n]*\n\s*)*@?(?:eval|assert)\s*\(/is', $code)) $r['signs'][] = 'the file does nothing but run a payload';
     $dk = smpro_lr_docblock_key($code);
-    if ($dk !== '') foreach ($L as $l) if (($l['state'] ?? 'on') === 'on' && ($l['type'] ?? '') === 'docblock' && ($l['key'] ?? '') === $dk) { $r['signs'][] = 'opens with the same header as a confirmed incident'; break; }
+    if ($dk !== '') foreach ($L as $l) if (($l['state'] ?? 'on') === 'on' && ($l['type'] ?? '') === 'docblock' && ($l['key'] ?? '') === $dk && $confirmed($l)) { $r['signs'][] = 'opens with the same header as a confirmed incident'; break; }
     $softMap = ['obfuscated' => 'heavily escaped or packed code', 'dyn_exec' => 'runs code built at run time (eval / assert / create_function)', 'cmd_exec' => 'can run system commands'];
     if ($strong === '') foreach ($tags as $t) if (isset($softMap[$t])) $r['soft'][] = $softMap[$t];
     // 3. ClamAV when the server has it: a third opinion, never the only one
