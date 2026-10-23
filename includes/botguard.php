@@ -87,7 +87,7 @@ function smpro_bg_log(string $line): void {
 function smpro_bg_catalog(): array {
     static $memo = null;
     if ($memo !== null) return $memo;
-    return $memo = array_replace(smpro_bg_catalog_builtin(), smpro_bg_catalog_custom());
+    return $memo = array_replace(smpro_bg_catalog_builtin(), function_exists('smpro_tf_families') ? smpro_tf_families() : [], smpro_bg_catalog_custom());
 }
 /** The list we ship. Kept separate so a custom entry can be seen to be an addition, never a silent replacement. */
 function smpro_bg_catalog_builtin(): array {

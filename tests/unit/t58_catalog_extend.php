@@ -69,7 +69,7 @@ is_eq($badSfx, [], 'E4: every shipped suffix is specific enough to be safe — a
 is_eq($badUa, [], 'E4: every shipped UA pattern compiles');
 
 $src = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/botguard.php'));
-has($src, 'return $memo = array_replace(smpro_bg_catalog_builtin(), smpro_bg_catalog_custom());',
+has($src, "return \$memo = array_replace(smpro_bg_catalog_builtin(), function_exists('smpro_tf_families') ? smpro_tf_families() : [], smpro_bg_catalog_custom());",
     'E4: custom entries are layered OVER the shipped list, so an upgrade cannot silently drop them and they cannot silently drop ours');
 has($src, 'a guessed suffix is worse than none', 'E4: and the rule for adding one is written down where the list is');
 

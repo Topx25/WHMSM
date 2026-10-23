@@ -254,6 +254,13 @@ function smpro_fw_allow_fetch($key) {
 }
 /** Current ranges for display/apply: cached fetch if present, else the static seed. Does NOT hit the network. */
 function smpro_fw_allow_ranges($key) {
+    // the signed list from the licence server (official sources fetched, checked and signed in one place) wins;
+    // a never-block provider keeps its shipped seeds underneath so a thinner feed can never drop a published block
+    if (function_exists('smpro_tf_ranges') && ($tf = smpro_tf_ranges((string)$key)) !== null) {
+        $pv = smpro_fw_allow_providers()[$key] ?? null;
+        if ($pv && !empty($pv['never_block'])) foreach ((array)$pv['ranges'] as $seed) if (!in_array($seed, $tf, true)) $tf[] = $seed;
+        return $tf;
+    }
     $f = smpro_fw_allow_cache_file($key);
     if (@is_file($f)) { $d = json_decode((string)@file_get_contents($f), true); if (is_array($d) && !empty($d['ranges'])) return $d['ranges']; }
     $pv = smpro_fw_allow_providers()[$key] ?? null; return $pv['ranges'] ?? [];

@@ -122,4 +122,4 @@ has($pg, 'The LVE kernel module is refusing to enforce limits on this server', '
 has($pg, 'NEW processes may be running outside their limits', 'K5: ...and says why that matters');
 has($lv, "\$ks = smpro_lv_kernel_state(); \$r = ['ok' => false, 'msg' => 'the limits did not take", 'K6: a refused lift names the kernel when the kernel is the cause');
 has($cs, "'lve lifts'          => 'smpro_lv_cron_sync',", 'G8: cron sync knows the tick');
-has($cs, "'slmaint', 'lvelimits'] as \$m) {", 'G9: cron sync loads the engine');
+has($cs, "'slmaint', 'lvelimits', 'trustfeed'] as \$m) {", 'G9: cron sync loads the engine');

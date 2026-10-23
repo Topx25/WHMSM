@@ -20,6 +20,7 @@ if ($reqMethod === 'POST' && isset($_POST['bg_action'])) {
     $act = (string)$_POST['bg_action']; $by = function_exists('smpro_current_actor') ? smpro_current_actor() : 'root';
     $out = ['ok' => false, 'msg' => 'Unknown action.'];
     if ($act === 'rows') { $bgRowsReq = true; }   // one page of one list: answered below, once the lists exist
+    elseif ($act === 'tf_refresh') { $r = function_exists('smpro_tf_fetch') ? smpro_tf_fetch() : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode(['ok' => (bool)$r['ok'], 'msg' => (string)$r['msg']]); exit; }
     elseif ($act === 'settings') {
         $patch = [
             'enabled' => !empty($_POST['enabled']), 'auto_block' => !empty($_POST['auto_block']), 'allow_verified' => !empty($_POST['allow_verified']),
@@ -267,7 +268,9 @@ if (!empty($bgRowsReq)) {   // one page of one list, filtered on the server (ans
 smpro_audit('botguard_view', ['pending' => count($groups['pending']), 'gray' => count($groups['gray']), 'print' => $print ? 1 : 0]);
 smpro_layout_header('Bot Guard');
 ?>
-<script>var BG_CSRF=<?= json_encode($csrf) ?>;</script>
+<script>var BG_CSRF=<?= json_encode($csrf) ?>;
+document.addEventListener('DOMContentLoaded',function(){var b=document.getElementById('bgTfRefresh');if(!b)return;b.addEventListener('click',function(){b.disabled=true;var m=document.getElementById('bgTfMsg');m.textContent='pulling…';var fd=new URLSearchParams();fd.set('bg_action','tf_refresh');fd.set('smpro_csrf',BG_CSRF);
+  fetch('index.cgi?page=bot-guard',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString(),cache:'no-store'}).then(function(r){return r.json();}).then(function(j){m.textContent=(j.ok?'done: ':'not updated: ')+(j.msg||'');if(j.ok)setTimeout(function(){location.reload();},1500);else b.disabled=false;}).catch(function(){m.textContent='the request did not complete';b.disabled=false;});});});</script>
 <style>
 /* .fw-kpis / .fw-nav / .fw-collapse / pager styles: shared, in includes/layout.php */
 .bg-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line,#e5e7eb)}
@@ -467,6 +470,18 @@ if (!$print): ?>
   </form>
 </div></div>
 
+<?php $tf = function_exists('smpro_tf_status') ? smpro_tf_status() : ['have' => false, 'why' => 'not available in this build', 'sources' => [], 'ranges' => 0, 'families' => 0, 'generated' => 0, 'fetched' => 0]; ?>
+<div class="card bg-c" id="bg-trusted"><div class="bg-hd"><b>&#10004; Trusted bots list</b><span class="bg-n"><?= $tf['have'] ? count($tf['sources']) : 0 ?></span><span class="meta">the official crawler and mail-server ranges, fetched and checked on the licence server from each publisher's own feed, signed, and pulled here every six hours - one verified list for every installation</span></div><div class="pad">
+  <?php if ($tf['have']): ?>
+  <div class="meta" style="margin-bottom:8px">List built <b><?= smpro_h(date('Y-m-d H:i', $tf['generated'])) ?></b> on the licence server &middot; pulled here <b><?= $tf['fetched'] ? smpro_h(date('Y-m-d H:i', $tf['fetched'])) : '-' ?></b> &middot; <b><?= (int)$tf['ranges'] ?></b> ranges in <b><?= count($tf['sources']) ?></b> sources &middot; signature verified against the pinned licence key &middot; <?= (int)$tf['families'] ?> crawler famil<?= $tf['families'] === 1 ? 'y' : 'ies' ?> added to the catalogue below</div>
+  <div class="smpro-tablewrap"><table class="bg-tbl" data-nopage="1"><thead><tr><th>Source</th><th>Kind</th><th>Ranges</th><th>Publisher's copy fetched</th><th>Standing</th></tr></thead><tbody>
+  <?php foreach ($tf['sources'] as $k => $s): ?><tr><td><b><?= smpro_h($s['name']) ?></b><div class="bg-note"><?= smpro_h($k) ?></div></td><td><?= smpro_h($s['kind']) ?></td><td><?= (int)$s['count'] ?></td><td><?= $s['fetched_at'] ? smpro_h(date('Y-m-d H:i', $s['fetched_at'])) : '-' ?></td><td><?= $s['stale'] !== '' ? '<span class="bg-pill bg-v-suspicious">last good copy kept</span> <span class="bg-note" style="display:inline">' . smpro_h($s['stale']) . '</span>' : '<span class="bg-pill bg-v-trusted">fresh</span>' ?><?= $s['never_block'] ? ' <span class="bg-pill v">never blocked</span>' : '' ?></td></tr><?php endforeach; ?>
+  </tbody></table></div>
+  <?php else: ?>
+  <div class="bg-warn">&#9888; No verified list is held yet (<?= smpro_h($tf['why']) ?>). The allow-list providers use their shipped seeds and the publishers' own feeds until the first pull succeeds.</div>
+  <?php endif; ?>
+  <div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button type="button" class="bg-act" id="bgTfRefresh">&#8635; Pull the list now</button><span class="meta" id="bgTfMsg">next automatic pull within six hours</span></div>
+</div></div>
 <div class="card bg-c" id="bg-cat"><div class="bg-hd"><b>Recognised crawler families</b><span class="meta">how each one is verified — a User-Agent string alone proves nothing, anyone can send "Googlebot"</span></div><div class="pad">
 <?php foreach ($catalog as $k => $f): ?>
   <div><b><?= smpro_h($f['name']) ?></b> <span class="bg-pill k"><?= smpro_h(smpro_bg_kind_label($f['kind'])) ?></span> — <?= $f['rdns'] ? 'rDNS under ' . smpro_h(implode(', ', $f['rdns'])) : ($f['ranges'] !== '' ? 'published IP ranges' : '<i>no publisher verification → always pending</i>') ?><?= $f['rdns'] && $f['ranges'] !== '' ? ' or published IP ranges' : '' ?></div>

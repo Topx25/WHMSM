@@ -85,6 +85,7 @@ require __DIR__ . '/includes/geohulk.php';
 require __DIR__ . '/includes/loadhist.php';
 require __DIR__ . '/includes/backupmon.php';   // backup auto-retry cron (cron_sync-able)     // 24 h load ring (cron-fed)
 require __DIR__ . '/includes/ccfix.php';       // Compromise Check fixes + scheduled scan
+require __DIR__ . '/includes/trustfeed.php';      // trusted-bots list from the licence server (verified official ranges)
 require __DIR__ . '/includes/fwallow.php';        // Firewall recommended allow-lists + live fetch + auto-update (uses smpro_csf_allowlisted)
 require __DIR__ . '/includes/svcmon.php';         // Service catalog + controls + background service monitor (auto-restart + notify; uses smpro_notify)
 require __DIR__ . '/includes/migrate.php';
