@@ -444,11 +444,17 @@ function smpro_lr_restore(string $kept): array {
     if ($hit === null || !is_file($kept)) return ['ok' => false, 'msg' => 'Nothing to restore.'];
     if (file_exists($hit['orig'])) return ['ok' => false, 'msg' => 'A file already exists at the original place; nothing was overwritten.'];
     if (!preg_match('#^/home[0-9]*/([^/]+)/#', $hit['orig'], $m) || !is_dir(dirname($hit['orig'])) || is_link(dirname($hit['orig']))) return ['ok' => false, 'msg' => 'The original folder is gone.'];
-    if (!@copy($kept, $hit['orig'])) return ['ok' => false, 'msg' => 'Could not write the file back.'];
+    // the folder may be locked (chattr +i by Safety Lock / WP Guard) exactly like it was when the file was taken out:
+    // lift the flag for the one write and put it back as it was, the same way the quarantine did
+    $dir = dirname($hit['orig']); $flags = smpro_lr_attrs($dir);
+    if ($flags !== '') @exec('chattr -i -a ' . escapeshellarg($dir) . ' 2>/dev/null');
+    $wrote = @copy($kept, $hit['orig']);
+    if ($flags !== '') @exec('chattr +' . $flags . ' ' . escapeshellarg($dir) . ' 2>/dev/null');
+    if (!$wrote) return ['ok' => false, 'msg' => 'Could not write the file back' . ($flags !== '' ? ' - the folder ' . $dir . ' is locked (chattr +' . $flags . ') and could not be unlocked' : ' - the folder ' . $dir . ' is not writable by root') . '.'];
     @chown($hit['orig'], $hit['uid']); @chgrp($hit['orig'], $hit['gid']); @chmod($hit['orig'], $hit['mode'] ?: 0644); @touch($hit['orig'], $hit['mtime'] ?: time());
     @file_put_contents(smpro_lr_dir() . '/quarantine.jsonl', implode("\n", $out) . "\n", LOCK_EX);
     smpro_lr_mark_fp($hit['sha']);
-    return ['ok' => true, 'msg' => 'Put back, and remembered as not malicious.'];
+    return ['ok' => true, 'msg' => 'Put back, and remembered as not malicious.' . ($flags !== '' ? ' The folder was locked; it was unlocked for the write and locked again.' : '')];
 }
 /** "Not malicious": this exact file is never reported again; every lesson it fed loses trust and switches off at 2. */
 function smpro_lr_mark_fp(string $sha): void {

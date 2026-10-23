@@ -30,3 +30,8 @@ has($ln, "@exec('chattr +' . \$flags . ' ' . escapeshellarg(\$dir) . ' 2>/dev/nu
 has($ln, "\$rm = smpro_lr_unlink_locked(\$safe);\n    if (!\$rm['ok']) { @unlink(\$q); return ['ok' => false, 'msg' => 'The file could not be removed: ' . \$rm['why'] . '.']; }", 'C5: the reason is in the answer, the kept copy is dropped');
 hasnt($ln, "'The file could not be removed (immutable or permissions).'", 'C6: the old blind message is gone');
 is_eq(smpro_lr_attrs('/definitely/not/here'), '', 'C7: no attrs for a path that is not there');
+
+// D. restore through a locked folder, the same way
+has($ln, "\$dir = dirname(\$hit['orig']); \$flags = smpro_lr_attrs(\$dir);\n    if (\$flags !== '') @exec('chattr -i -a ' . escapeshellarg(\$dir) . ' 2>/dev/null');\n    \$wrote = @copy(\$kept, \$hit['orig']);\n    if (\$flags !== '') @exec('chattr +' . \$flags . ' ' . escapeshellarg(\$dir) . ' 2>/dev/null');", 'D1: restore lifts the parent lock for the write and puts it back');
+has($ln, "is locked (chattr +' . \$flags . ') and could not be unlocked", 'D2: a failed write names the folder and the flag');
+hasnt($ln, "return ['ok' => false, 'msg' => 'Could not write the file back.'];", 'D3: the old blind message is gone');
