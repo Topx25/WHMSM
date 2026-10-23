@@ -473,15 +473,24 @@ function smpro_lr_verdict(string $kept): array {
     // lesson counts only when it has an incident that is not this file's own quarantine: Imunify's delete or clean,
     // the operator's delete, a taught folder, or the same file quarantined at ANOTHER place.
     $orig = ''; foreach (@file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: [] as $l0) { $q0 = json_decode($l0, true); if (is_array($q0) && ($q0['kept'] ?? '') === $kept) { $orig = (string)($q0['orig'] ?? ''); break; } }
-    $confirmed = function (array $l) use ($orig): bool {
-        if (($l['source'] ?? '') === 'shared') return true;
-        foreach ((array)($l['incidents'] ?? []) as $i) if (!in_array((string)($i['source'] ?? ''), ['quarantine', 'relearn'], true) || ($i['path'] ?? '') !== $orig) return true;
-        return false;
+    // What a lesson says about a kept file: 'shared' (received from another server), 'confirmed' (an incident that was
+    // not a quarantine: Imunify's delete or clean, the operator's delete, a taught folder), 'other:N' (quarantines of
+    // the same thing at N other places - one bulk selection of identical copies is one decision, so three places at
+    // least), or '' (fed only by this file's own quarantine: says nothing about it).
+    $saysOf = function (array $l) use ($orig): string {
+        if (($l['source'] ?? '') === 'shared') return 'shared';
+        $other = [];
+        foreach ((array)($l['incidents'] ?? []) as $i) {
+            if (!in_array((string)($i['source'] ?? ''), ['quarantine', 'relearn'], true)) return 'confirmed';
+            if (($i['path'] ?? '') !== $orig && ($i['path'] ?? '') !== '') $other[dirname((string)$i['path'])] = true;
+        }
+        return count($other) >= 3 ? 'other:' . count($other) : '';
     };
     // 1. the lessons: is this the exact file of an incident somebody confirmed?
     foreach ($L as $l) {
-        if (($l['state'] ?? 'on') !== 'on' || ($l['type'] ?? '') !== 'hash' || strpos((string)$l['key'], $sha . ':') !== 0 || empty($l['incidents']) || !$confirmed($l)) continue;
-        $r['signs'][] = ($l['source'] ?? '') === 'shared' ? 'the exact file of an incident confirmed on another server' : 'the exact file of an incident confirmed on this server'; break;
+        if (($l['state'] ?? 'on') !== 'on' || ($l['type'] ?? '') !== 'hash' || strpos((string)$l['key'], $sha . ':') !== 0 || empty($l['incidents'])) continue;
+        $say = $saysOf($l); if ($say === '') continue;
+        $r['signs'][] = $say === 'shared' ? 'the exact file of an incident confirmed on another server' : ($say === 'confirmed' ? 'the exact file of an incident confirmed on this server' : 'the same file was quarantined at ' . substr($say, 6) . ' other places'); break;
     }
     // 2. the code itself
     $code = (string)@file_get_contents($real, false, null, 0, 1048576);
@@ -493,7 +502,8 @@ function smpro_lr_verdict(string $kept): array {
     if ($strong !== '') $r['signs'][] = (strpos($strong, 'a ') === 0 ? $strong : 'code that ' . $strong);
     if (preg_match('/^\s*<\?php\s*(?:\/\*.*?\*\/\s*|\/\/[^\n]*\n\s*)*@?(?:eval|assert)\s*\(/is', $code)) $r['signs'][] = 'the file does nothing but run a payload';
     $dk = smpro_lr_docblock_key($code);
-    if ($dk !== '') foreach ($L as $l) if (($l['state'] ?? 'on') === 'on' && ($l['type'] ?? '') === 'docblock' && ($l['key'] ?? '') === $dk && $confirmed($l)) { $r['signs'][] = 'opens with the same header as a confirmed incident'; break; }
+    if ($dk !== '') foreach ($L as $l) { if (($l['state'] ?? 'on') !== 'on' || ($l['type'] ?? '') !== 'docblock' || ($l['key'] ?? '') !== $dk) continue; $say = $saysOf($l); if ($say === '') continue;
+        $r['signs'][] = strpos($say, 'other:') === 0 ? 'opens with the same header as files quarantined at ' . substr($say, 6) . ' other places' : 'opens with the same header as a confirmed incident'; break; }
     $softMap = ['obfuscated' => 'heavily escaped or packed code', 'dyn_exec' => 'runs code built at run time (eval / assert / create_function)', 'cmd_exec' => 'can run system commands'];
     if ($strong === '') foreach ($tags as $t) if (isset($softMap[$t])) $r['soft'][] = $softMap[$t];
     // 3. ClamAV when the server has it: a third opinion, never the only one

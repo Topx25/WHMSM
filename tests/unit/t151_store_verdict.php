@@ -100,5 +100,15 @@ is_eq(smpro_lr_verdict($own)['verdict'], 'clean', 'D1: a hash lesson whose only 
 $L = smpro_lr_lessons();
 smpro_lr_lesson_add($L, 'hash', $osha . ':' . filesize($own), 'self', ['path' => '/home/acct2/public_html/own.html', 'sha' => $osha, 'at' => time(), 'source' => 'quarantine']);
 smpro_lr_save('lessons', $L);
-is_eq(smpro_lr_verdict($own)['verdict'], 'malicious', 'D2: ...but the same file quarantined at ANOTHER place is a second incident, and counts');
+is_eq(smpro_lr_verdict($own)['verdict'], 'clean', 'D2: ...nor one more quarantine of it elsewhere (one bulk selection of copies is one decision)');
+$L = smpro_lr_lessons();
+foreach (['acct3', 'acct4'] as $a) smpro_lr_lesson_add($L, 'hash', $osha . ':' . filesize($own), 'self', ['path' => '/home/' . $a . '/public_html/own.html', 'sha' => $osha, 'at' => time(), 'source' => 'quarantine']);
+smpro_lr_save('lessons', $L);
+$v = smpro_lr_verdict($own);
+is_eq($v['verdict'], 'malicious', 'D2b: ...but the same file quarantined at three other places is a pattern, and counts');
+ok(in_array('the same file was quarantined at 3 other places', $v['signs'], true), 'D2c: ...said as what it is, not as a "confirmed incident"');
+$L = smpro_lr_lessons();
+smpro_lr_lesson_add($L, 'hash', $osha . ':' . filesize($own), 'self', ['path' => '/home/acct9/public_html/own.html', 'sha' => $osha, 'at' => time(), 'source' => 'imunify cleanup']);
+smpro_lr_save('lessons', $L);
+ok(in_array('the exact file of an incident confirmed on this server', smpro_lr_verdict($own)['signs'], true), 'D2d: an incident that was not a quarantine (Imunify, a delete, a taught folder) is a confirmed one');
 has($ln, "if (\$strong !== '') \$r['signs'][] = (strpos(\$strong, 'a ') === 0 ? \$strong : 'code that ' . \$strong);", 'D3: a sign reads as a sentence');
