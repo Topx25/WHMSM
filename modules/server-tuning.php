@@ -58,7 +58,17 @@ if ($reqMethod === 'POST' && ($_POST['cphide_action'] ?? '') !== '') {
 // smpro_tun_scan() is a heavy probe stack (imunify config show, whmapi1, sshd -T, httpd -M ×2, php -r ×3,
 // getent, cagefsctl…). Cache it off the render path; the ?tuning=1 handler busts the cache after any apply/
 // restore so the posture reloads fresh.
-$scan = smpro_cache_through('tun_scan', 300, fn() => smpro_tun_scan());
+// A stale copy is shown AT ONCE and refreshed by a detached worker (job 'rescan'); the operator waited twelve seconds
+// at every fifth-minute visit before. Only a server with no scan yet (first visit, or right after an apply busted the
+// cache) computes inline, because then there is nothing honest to show.
+$scan = smpro_cache_through('tun_scan', 300, fn() => smpro_tun_scan(), false);
+$scanAge = 0; $scanRefreshing = false;
+if ($scan === null) $scan = smpro_cache_through('tun_scan', 300, fn() => smpro_tun_scan());
+else {
+    $ctf = SMPRO_CACHE . '/ct_tun_scan.json'; $ctj = @is_file($ctf) ? json_decode((string)@file_get_contents($ctf), true) : null;
+    $scanAge = time() - (int)($ctj['ts'] ?? time());
+    if ($scanAge >= 300) { $rs = smpro_tun_job_start('rescan', []); $scanRefreshing = !empty($rs['ok']); }
+}
 $csrf = smpro_csrf_generate('tuning');
 $byEngine = [];
 foreach ($scan['recs'] as $r) $byEngine[$r['engine']][] = $r;
@@ -77,6 +87,7 @@ smpro_layout_header('Server Tune-up');
 AI_JOB=<?= json_encode($aiJob, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>,SA_JOB=<?= json_encode($saJob, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>,APPLY_JOB=<?= json_encode($applyJob, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;</script>
 <div class="svc-kicker">Performance &amp; Security</div>
 <h1 class="h" style="margin:2px 0 4px">&#128295; Server Tune-up</h1>
+<?php if ($scanRefreshing): ?><div class="card" style="border-left:4px solid var(--brand);padding:8px 14px;margin-bottom:10px;font-size:12.5px">&#8635; This posture is from <b><?= $scanAge >= 3600 ? floor($scanAge / 3600) . ' h ' . floor(($scanAge % 3600) / 60) . ' min' : floor($scanAge / 60) . ' min' ?></b> ago; a fresh scan is running in the background - reload in about a minute for the new one.</div><?php endif; ?>
 <p class="sub">Scans your server engines (<?= smpro_h(implode(', ', array_map(fn($e) => $e['label'], $scan['engines']))) ?>) and recommends performance &amp; security improvements. Every apply backs up the config first and records a profile. <b><?= (int)$scan['cores'] ?></b> cores · <b><?= round($scan['ram_mb'] / 1024) ?></b> GB RAM.</p>
 
 <?php $cph = smpro_cphide_status(); if ($cph['available']): ?>

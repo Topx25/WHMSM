@@ -303,6 +303,7 @@ function smpro_tun_job_run(string $job, array $args): void {
         elseif ($job === 'secadvisor' && function_exists('smpro_tun_secadvisor')) $res = smpro_tun_secadvisor();
         elseif ($job === 'applyall' && function_exists('smpro_tun_ai_apply_all')) $res = smpro_tun_ai_apply_all((array)($args['ids'] ?? []), 'applyall');   // writes progress into this job's state
         elseif ($job === 'posture')                                              { smpro_tun_scan(); $res = ['ok' => true]; }   // scan writes the dashboard posture cache as a side-effect
+        elseif ($job === 'rescan')                                               { smpro_cache_bust('tun_scan'); smpro_cache_through('tun_scan', 300, fn() => smpro_tun_scan()); $res = ['ok' => true]; }   // refreshes the Tune-up page's own cache, off the render path
         else                                                                      $res = ['ok' => false, 'msg' => 'unknown job'];
     } catch (\Throwable $e) { $res = ['ok' => false, 'msg' => 'Scan crashed: ' . $e->getMessage()]; }
     smpro_tun_job_write($job, ['status' => (!empty($res['ok']) ? 'done' : 'error'), 'started_at' => $started, 'updated_at' => time(), 'targets' => $args['targets'] ?? [], 'result' => $res]);
@@ -310,7 +311,7 @@ function smpro_tun_job_run(string $job, array $args): void {
 }
 /** Start the job in the BACKGROUND (detached) and return immediately. Won't double-spawn a fresh running job. */
 function smpro_tun_job_start(string $job, array $args): array {
-    $job = preg_replace('/[^a-z]/', '', $job); if (!in_array($job, ['aioptimize', 'secadvisor', 'applyall', 'posture'], true)) return ['ok' => false, 'msg' => 'unknown job'];
+    $job = preg_replace('/[^a-z]/', '', $job); if (!in_array($job, ['aioptimize', 'secadvisor', 'applyall', 'posture', 'rescan'], true)) return ['ok' => false, 'msg' => 'unknown job'];
     $st = smpro_tun_job_read($job);
     if (($st['status'] ?? '') === 'running' && (time() - (int)($st['started_at'] ?? 0)) < 600)
         return ['ok' => true, 'started' => false, 'status' => 'running', 'started_at' => (int)($st['started_at'] ?? 0), 'msg' => 'A scan is already running in the background.'];

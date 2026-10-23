@@ -112,3 +112,13 @@ smpro_lr_lesson_add($L, 'hash', $osha . ':' . filesize($own), 'self', ['path' =>
 smpro_lr_save('lessons', $L);
 ok(in_array('the exact file of an incident confirmed on this server', smpro_lr_verdict($own)['signs'], true), 'D2d: an incident that was not a quarantine (Imunify, a delete, a taught folder) is a confirmed one');
 has($ln, "if (\$strong !== '') \$r['signs'][] = (strpos(\$strong, 'a ') === 0 ? \$strong : 'code that ' . \$strong);", 'D3: a sign reads as a sentence');
+
+// E. beta372: Server Tune-up shows a stale scan at once and refreshes it in the background
+$st = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/server-tuning.php'));
+$tu = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/tuning.php'));
+has($st, "\$scan = smpro_cache_through('tun_scan', 300, fn() => smpro_tun_scan(), false);", 'E1: the render path never blocks on a stale cache');
+has($st, "if (\$scan === null) \$scan = smpro_cache_through('tun_scan', 300, fn() => smpro_tun_scan());", 'E2: only a server with no scan yet computes inline');
+has($st, "if (\$scanAge >= 300) { \$rs = smpro_tun_job_start('rescan', []); \$scanRefreshing = !empty(\$rs['ok']); }", 'E3: a stale scan starts the detached refresh');
+has($tu, "elseif (\$job === 'rescan')                                               { smpro_cache_bust('tun_scan'); smpro_cache_through('tun_scan', 300, fn() => smpro_tun_scan()); \$res = ['ok' => true]; }", 'E4: ...which rewrites the page cache');
+has($tu, "['aioptimize', 'secadvisor', 'applyall', 'posture', 'rescan']", 'E5: ...and is an allowed job');
+has($st, 'a fresh scan is running in the background - reload in about a minute for the new one.', 'E6: the page says what it shows');
