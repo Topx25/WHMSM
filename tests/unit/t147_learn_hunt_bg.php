@@ -41,3 +41,8 @@ has($ln, 'function smpro_lr_drop_finding(string $path): void {', 'E1: helper');
 has($ln, "    smpro_lr_drop_finding(\$safe);   // the row leaves the list now, not at the next hunt", 'E2: quarantine drops the row');
 has($pg, "if ((\$f['path'] ?? '') !== '' && !@file_exists(\$f['path'])) \$gone[] = \$i;", 'E3: the page hides findings whose file is already gone');
 has($pg, "smpro_lr_save('findings', \$F); }", 'E4: ...and writes the cache back so the counters agree');
+
+// F. a bulk quarantine must not re-probe the same file name for every file
+has($ln, "static \$memo = [];\n    if (isset(\$memo[\$name])) return \$memo[\$name];", 'F1: a name is probed once per request');
+has($ln, "if ((\$l['type'] ?? '') === 'name' && strtolower((string)(\$l['key'] ?? '')) === \$name) return \$memo[\$name] = true;", 'F2: a name that already has a lesson is not probed at all');
+has($ln, "if (time() - \$t0 > 20) break;", 'F3: the probe is bounded');

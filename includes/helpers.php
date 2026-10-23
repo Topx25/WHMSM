@@ -1763,6 +1763,8 @@ function smpro_imunify_fw_available() {
 function smpro_imunify_block_ip($ip, $reason = '') {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return ['ok' => false, 'msg' => 'invalid IP'];
     if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) return ['ok' => false, 'msg' => 'refused: Cloudflare edge IP'];
+    if (!function_exists('smpro_fw_never_block')) { $fwf = __DIR__ . '/fwallow.php'; if (is_file($fwf)) require_once $fwf; }
+    if (function_exists('smpro_fw_never_block') && ($nb = smpro_fw_never_block($ip)) !== '') return ['ok' => false, 'msg' => 'refused: ' . $ip . ' belongs to ' . $nb . ' - blocking it would bounce your customers\' mail'];
     $reason = preg_replace('/[^A-Za-z0-9 ._\-\/:()]/', '', mb_substr((string)$reason, 0, 80)) ?: 'smpro';
     $out = (string)@shell_exec('timeout 40 /usr/bin/imunify360-agent blacklist ip add ' . escapeshellarg($ip)
         . ' --comment ' . escapeshellarg($reason) . ' 2>&1');
@@ -1820,6 +1822,14 @@ function smpro_fw_block_ip($ip, $reason = '', $force = false) {
     $cfIp = $isCidr ? $cm[1] : $ip;                                    // Cloudflare check uses the network address
     if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($cfIp))
         return ['ok'=>false,'engine'=>'','recorded'=>false,'msg'=>'refused: Cloudflare edge IP — blocking it would cut ALL inbound traffic.'];
+    // MAIL-PROVIDER SHIELD. Google's and Microsoft's sending ranges (as they publish them in SPF) are never blocked,
+    // not even with force: a block there has no symptom on this server and every Gmail / Microsoft 365 message to
+    // the customers bounces until somebody notices. Refused here, at the one point every block passes through.
+    if (!function_exists('smpro_fw_never_block')) { $fwf = __DIR__ . '/fwallow.php'; if (@is_file($fwf)) require_once $fwf; }
+    if (function_exists('smpro_fw_never_block') && ($nb = smpro_fw_never_block($cfIp)) !== '') {
+        if (function_exists('smpro_audit')) smpro_audit('firewall_block_refused_mail', ['ip'=>$ip,'provider'=>$nb,'reason'=>(string)$reason]);
+        return ['ok'=>false,'engine'=>'','recorded'=>false,'msg'=>'refused: ' . $ip . ' belongs to ' . $nb . ' - blocking it would bounce your customers\' mail. If this address really attacks, report it to the provider; it must not be blocked here.'];
+    }
 
     // VERIFIED CRAWLER SHIELD. Blocking Googlebot or Bingbot has no error and no symptom: the site simply falls
     // out of the index over the following days, and nothing on this server ever connects the two events. So a

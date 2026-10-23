@@ -240,12 +240,19 @@ function smpro_lr_learn_file(string $read, string $where, string $source): array
 function smpro_lr_name_rare(string $name): bool {
     if ($name === '' || strlen($name) < 6 || strpos($name, '.') === false) return false;
     if (in_array($name, ['index.php', 'index.html', '.htaccess', 'wp-load.php', 'wp-config.php', 'functions.php', 'config.php', 'readme.html', 'license.txt', 'error_log'], true)) return false;
-    $n = 0;
+    // The probe walks every document root (a find per site: ~15 s on a server with eighty sites). It ran once PER
+    // QUARANTINED FILE, so "Quarantine selected" on fifty copies of the same two names took twelve minutes. Now: a name
+    // that already has a lesson is known (no probe), and a name probed once in this request is not probed again.
+    static $memo = [];
+    if (isset($memo[$name])) return $memo[$name];
+    foreach (smpro_lr_lessons() as $l) if (($l['type'] ?? '') === 'name' && strtolower((string)($l['key'] ?? '')) === $name) return $memo[$name] = true;
+    $n = 0; $t0 = time();
     foreach (array_keys(smpro_lr_docroots()) as $r) {
-        $c = (int)trim((string)@shell_exec('timeout 20 find ' . escapeshellarg($r) . ' -xdev -maxdepth 8 -iname ' . escapeshellarg($name) . ' -print 2>/dev/null | head -1 | wc -l'));
-        if ($c > 0 && ++$n >= 3) return false;
+        if (time() - $t0 > 20) break;   // a slow disk must not hold the operator's click for a minute per file
+        $c = (int)trim((string)@shell_exec('timeout 5 find ' . escapeshellarg($r) . ' -xdev -maxdepth 8 -iname ' . escapeshellarg($name) . ' -print 2>/dev/null | head -1 | wc -l'));
+        if ($c > 0 && ++$n >= 3) return $memo[$name] = false;
     }
-    return true;
+    return $memo[$name] = true;
 }
 /** Structural signs that need no lesson: an .htaccess that turns an odd extension into a CGI program, and a native
  *  (ELF) executable inside a document root. Both were how a planted "cgi-bin" ran compiled kernel exploits and a

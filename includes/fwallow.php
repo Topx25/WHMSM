@@ -90,6 +90,7 @@ function smpro_fw_live_block($ip, $comment = 'SM Pro block') {
     $ip = trim((string)$ip);
     if (!smpro_fw_cidr_valid($ip)) return ['ok' => false, 'msg' => 'Enter a valid IP or CIDR.'];
     if (function_exists('smpro_admin_ip') && $ip === smpro_admin_ip()) return ['ok' => false, 'msg' => 'Refused — that is YOUR current IP; blocking it would lock you out.'];
+    if (($nb = smpro_fw_never_block($ip)) !== '') return ['ok' => false, 'msg' => 'Refused — ' . $ip . ' belongs to ' . $nb . '; blocking it would bounce your customers\' mail.'];
     if (function_exists('smpro_csf_is_cloudflare_ip') && smpro_csf_is_cloudflare_ip($ip)) return ['ok' => false, 'msg' => 'Refused — that is a Cloudflare edge IP; blocking it would cut every proxied site. Block the visitor at Cloudflare instead.'];
     $did = [];
     if (smpro_fw_has_imunify()) { @shell_exec('timeout 30 imunify360-agent blacklist ip add ' . escapeshellarg($ip) . ' --comment ' . escapeshellarg($comment) . ' 2>&1'); $did[] = 'Imunify block-list'; }
@@ -155,6 +156,24 @@ function smpro_fw_allow_providers() {
             'fetch_json'=> 'prefixes',
             'ranges'    => [],
         ],
+        'google_mail' => [
+            'name'      => 'Google mail servers (Gmail / Google Workspace)',
+            'desc'      => 'The addresses Google sends mail from, as Google publishes them in SPF (_spf.google.com). Never blocked by this plugin: a block here means every Gmail and Workspace message to your customers bounces or is lost.',
+            'note'      => 'Refreshed from DNS with the other providers; the seed is Google\'s published netblocks. The plugin refuses to block any of them even by hand.',
+            'fetch_spf' => ['_spf.google.com'],
+            'never_block' => true,
+            'ranges'    => ['35.190.247.0/24','35.191.0.0/16','64.233.160.0/19','66.102.0.0/20','66.249.80.0/20','72.14.192.0/18','74.125.0.0/16','108.177.8.0/21','108.177.96.0/19','130.211.0.0/22',
+                            '172.217.0.0/19','172.217.32.0/20','172.217.128.0/19','172.217.160.0/20','172.217.192.0/19','172.253.56.0/21','172.253.112.0/20','173.194.0.0/16','209.85.128.0/17','216.58.192.0/19','216.239.32.0/19',
+                            '2001:4860:4000::/36','2404:6800:4000::/36','2607:f8b0:4000::/36','2800:3f0:4000::/36','2a00:1450:4000::/36','2c0f:fb50:4000::/36'],
+        ],
+        'microsoft_mail' => [
+            'name'      => 'Microsoft mail servers (Microsoft 365 / Outlook.com / Hotmail)',
+            'desc'      => 'The addresses Microsoft sends mail from, as Microsoft publishes them in SPF (spf.protection.outlook.com, Outlook.com, Hotmail). Never blocked by this plugin: a block here means every Microsoft 365 and Outlook message to your customers bounces or is lost.',
+            'note'      => 'Refreshed from DNS with the other providers; the seed is Microsoft\'s published netblocks. The plugin refuses to block any of them even by hand.',
+            'fetch_spf' => ['spf.protection.outlook.com', 'spfa.protection.outlook.com', 'spfb.protection.outlook.com', 'spfc.protection.outlook.com', 'spf-a.outlook.com', 'spf-b.outlook.com', 'spf-a.hotmail.com'],
+            'never_block' => true,
+            'ranges'    => ['40.92.0.0/15','40.107.0.0/16','52.100.0.0/14','52.238.78.88/32','104.47.0.0/17','2a01:111:f400::/48','2a01:111:f403::/48'],
+        ],
         'cpanel' => [
             'name'   => 'cPanel license servers',
             'desc'   => 'cPanel license-verification servers — allow-list so LFD never blocks license checks (a blocked check can suspend cPanel/WHM).',
@@ -178,9 +197,31 @@ function smpro_fw_cidr_valid($c) {
 
 /* ----------------------------- live fetch + cache ----------------------------- */
 function smpro_fw_allow_cache_file($key) { return SMPRO_FWA_CACHE . '/' . preg_replace('/[^a-z0-9]/', '', (string)$key) . '.json'; }
+/** The ip4:/ip6: entries behind one SPF record, following include: and redirect= (depth 6, 40 lookups), via DNS. Pure given the resolver. */
+function smpro_fw_spf_ranges(string $host, int $depth = 0, array &$seen = [], ?callable $txt = null): array {
+    $host = strtolower(trim($host)); if ($host === '' || $depth > 6 || isset($seen[$host]) || count($seen) > 40 || !preg_match('/^[a-z0-9._-]+$/', $host)) return [];
+    $seen[$host] = 1;
+    $txt = $txt ?: function (string $h): array { $r = @dns_get_record($h, DNS_TXT); $o = []; foreach ((array)$r as $e) if (!empty($e['txt'])) $o[] = (string)$e['txt']; return $o; };
+    $out = [];
+    foreach ($txt($host) as $rec) {
+        if (stripos($rec, 'v=spf1') !== 0) continue;
+        foreach (preg_split('/\s+/', trim($rec)) as $tok) {
+            if (preg_match('/^[+]?ip[46]:(.+)$/i', $tok, $m)) { $c = $m[1]; if (strpos($c, '/') === false) $c .= (strpos($c, ':') !== false ? '/128' : '/32'); if (smpro_fw_cidr_valid($c)) $out[$c] = 1; }
+            elseif (preg_match('/^(?:include:|redirect=)(.+)$/i', $tok, $m)) foreach (smpro_fw_spf_ranges($m[1], $depth + 1, $seen, $txt) as $c) $out[$c] = 1;
+        }
+    }
+    return array_keys($out);
+}
+/** Is this address one the plugin must never block (a mail provider's sending range)? '' or the provider's name. */
+function smpro_fw_never_block($ip): string {
+    $k = smpro_fw_allow_covers($ip); if ($k === '') return '';
+    $pv = smpro_fw_allow_providers()[$k] ?? [];
+    return !empty($pv['never_block']) ? (string)($pv['name'] ?? $k) : '';
+}
 /** Fetch the CURRENT ranges live from the provider feed(s). URLs are fixed constants (no SSRF). Returns [] on failure. */
 function smpro_fw_allow_fetch_raw($pv) {
     $out = [];
+    foreach ((array)($pv['fetch_spf'] ?? []) as $h) { $seen = []; foreach (smpro_fw_spf_ranges((string)$h, 0, $seen) as $c) $out[$c] = 1; }
     foreach ((array)($pv['fetch'] ?? []) as $url) {
         if (!preg_match('#^https://[A-Za-z0-9._~:/?\#\[\]@!$&\'()*+,;=%-]+$#', (string)$url)) continue;   // https only
         // -L is REQUIRED: Google now 302s googlebot.json to /static/crawling/ipranges/common-crawlers.json,
@@ -201,8 +242,9 @@ function smpro_fw_allow_fetch_raw($pv) {
 }
 /** Fetch + write the per-provider cache; returns the fetched ranges (or [] if the feed was unreachable). */
 function smpro_fw_allow_fetch($key) {
-    $pv = smpro_fw_allow_providers()[$key] ?? null; if (!$pv || empty($pv['fetch'])) return [];
+    $pv = smpro_fw_allow_providers()[$key] ?? null; if (!$pv || (empty($pv['fetch']) && empty($pv['fetch_spf']))) return [];
     $r = smpro_fw_allow_fetch_raw($pv);
+    if ($r && !empty($pv['never_block'])) foreach ((array)$pv['ranges'] as $seed) if (!in_array($seed, $r, true)) $r[] = $seed;   // a never-block list only grows: a half answer from DNS must not drop a published block
     if ($r) {
         @is_dir(SMPRO_FWA_CACHE) || @mkdir(SMPRO_FWA_CACHE, 0700, true);
         $f = smpro_fw_allow_cache_file($key); $t = $f . '.tmp';
