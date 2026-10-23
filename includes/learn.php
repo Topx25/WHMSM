@@ -429,9 +429,17 @@ function smpro_lr_quarantine(string $path, string $source): array {
     if (!$rm['ok']) { @unlink($q); return ['ok' => false, 'msg' => 'The file could not be removed: ' . $rm['why'] . '.']; }
     $rec = ['at' => time(), 'orig' => $safe, 'kept' => $q, 'sha' => $sha, 'size' => (int)($st['size'] ?? 0), 'mode' => (int)($st['mode'] ?? 0) & 07777, 'uid' => (int)($st['uid'] ?? 0), 'gid' => (int)($st['gid'] ?? 0), 'mtime' => (int)($st['mtime'] ?? 0), 'source' => $source, 'restored' => 0];
     @file_put_contents(smpro_lr_dir() . '/quarantine.jsonl', json_encode($rec, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+    smpro_lr_drop_finding($safe);   // the row leaves the list now, not at the next hunt
     smpro_lr_learn_file($q, $safe, 'quarantine');
     if (function_exists('smpro_audit')) smpro_audit('learn_quarantine', ['path' => $safe, 'sha256' => $sha, 'kept' => $q, 'source' => $source]);
     return ['ok' => true, 'msg' => 'Moved to the root-only store (Restore puts it back).' . ($rm['relocked'] ? ' The folder was locked; it was unlocked for the move and locked again.' : ''), 'kept' => $q];
+}
+/** Take one path out of the findings cache (after a quarantine, or when the file is found gone). */
+function smpro_lr_drop_finding(string $path): void {
+    $F = smpro_lr_load('findings'); if (empty($F['findings'])) return;
+    $n = count($F['findings']);
+    $F['findings'] = array_values(array_filter((array)$F['findings'], fn($f) => (string)($f['path'] ?? '') !== $path));
+    if (count($F['findings']) !== $n) smpro_lr_save('findings', $F);
 }
 function smpro_lr_quarantined(int $limit = 200): array {
     $rows = []; foreach (array_reverse(@file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: []) as $l) { $r = json_decode($l, true); if (is_array($r)) $rows[] = $r; if (count($rows) >= $limit) break; }

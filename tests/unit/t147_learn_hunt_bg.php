@@ -35,3 +35,9 @@ is_eq(smpro_lr_attrs('/definitely/not/here'), '', 'C7: no attrs for a path that 
 has($ln, "\$dir = dirname(\$hit['orig']); \$flags = smpro_lr_attrs(\$dir);\n    if (\$flags !== '') @exec('chattr -i -a ' . escapeshellarg(\$dir) . ' 2>/dev/null');\n    \$wrote = @copy(\$kept, \$hit['orig']);\n    if (\$flags !== '') @exec('chattr +' . \$flags . ' ' . escapeshellarg(\$dir) . ' 2>/dev/null');", 'D1: restore lifts the parent lock for the write and puts it back');
 has($ln, "is locked (chattr +' . \$flags . ') and could not be unlocked", 'D2: a failed write names the folder and the flag');
 hasnt($ln, "return ['ok' => false, 'msg' => 'Could not write the file back.'];", 'D3: the old blind message is gone');
+
+// E. a quarantined row leaves the list at once (the owner pressed Quarantine, the file moved, the row stayed: "does nothing")
+has($ln, 'function smpro_lr_drop_finding(string $path): void {', 'E1: helper');
+has($ln, "    smpro_lr_drop_finding(\$safe);   // the row leaves the list now, not at the next hunt", 'E2: quarantine drops the row');
+has($pg, "if ((\$f['path'] ?? '') !== '' && !@file_exists(\$f['path'])) \$gone[] = \$i;", 'E3: the page hides findings whose file is already gone');
+has($pg, "smpro_lr_save('findings', \$F); }", 'E4: ...and writes the cache back so the counters agree');

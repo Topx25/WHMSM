@@ -55,6 +55,10 @@ if ($reqMethod === 'POST' && $act !== '') {
 $cfg = smpro_lr_cfg(); $L = smpro_lr_lessons(); $F = smpro_lr_load('findings'); $P = smpro_lr_load('procs');
 $Q = smpro_lr_quarantined(100);
 $findings = (array)($F['findings'] ?? []); $procs = (array)($P['rows'] ?? []);
+// the cache is a photograph of the last hunt; a file that is gone since (quarantined here, deleted by Imunify360, cleaned
+// by hand) must not stay on the list - that is what read as "quarantine does nothing"
+$gone = []; foreach ($findings as $i => $f) if (($f['path'] ?? '') !== '' && !@file_exists($f['path'])) $gone[] = $i;
+if ($gone) { foreach ($gone as $i) unset($findings[$i]); $findings = array_values($findings); $F['findings'] = $findings; smpro_lr_save('findings', $F); }
 if (!$P || time() - (int)($P['at'] ?? 0) > 900) { $procs = smpro_lr_procs(); }   // the page always shows a fresh process check
 $onN = count(array_filter($L, fn($l) => ($l['state'] ?? 'on') === 'on'));
 $shN = count(array_filter($L, fn($l) => ($l['source'] ?? '') === 'shared'));
