@@ -452,11 +452,98 @@ function smpro_lr_quarantined(int $limit = 200): array {
     $rows = []; foreach (array_reverse(@file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: []) as $l) { $r = json_decode($l, true); if (is_array($r)) $rows[] = $r; if (count($rows) >= $limit) break; }
     return $rows;
 }
-/** Put a quarantined file back and record it as a false positive (its exact file is never reported again). */
-function smpro_lr_restore(string $kept): array {
-    $all = @file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: []; $hit = null; $out = [];
-    foreach ($all as $l) { $r = json_decode($l, true); if (is_array($r) && $r['kept'] === $kept && empty($r['restored']) && $hit === null) { $hit = $r; $r['restored'] = time(); } $out[] = json_encode($r, JSON_UNESCAPED_SLASHES); }
+/* ---------------- the store: judge a kept file BEFORE it may go back ---------------- */
+/**
+ * Three opinions on one kept copy, each named in the result so the operator sees WHY: the lessons (the exact file of
+ * a confirmed incident, the header a confirmed family opens with), the code itself (a behaviour combination that calls
+ * a file malicious on its own, PHP hidden inside a file named as an image or text, a file that only runs a payload, a
+ * native executable), and ClamAV when the server has it (bounded to a minute). A copy that cannot be read is
+ * 'unknown', never 'clean': a check that could not run must never look like nothing found. 'clean' means no
+ * malicious sign was found by these three readers - it is a reason to consider Restore, not a guarantee.
+ * @return array{verdict:string,signs:array,soft:array,checked:int,sha:string,clam:string}  verdict: malicious | suspicious | clean | unknown
+ */
+function smpro_lr_verdict(string $kept): array {
+    $r = ['verdict' => 'unknown', 'signs' => [], 'soft' => [], 'checked' => time(), 'sha' => '', 'clam' => ''];
+    $store = realpath(smpro_lr_dir('quarantine')); $real = realpath($kept);
+    if ($store === false || $real === false || strpos($real, $store . DIRECTORY_SEPARATOR) !== 0 || !is_file($real) || !is_readable($real)) { $r['soft'][] = 'the kept copy could not be read'; return $r; }
+    $sha = (string)@hash_file('sha256', $real); $r['sha'] = $sha;
+    $L = smpro_lr_lessons(); $known = in_array($sha, smpro_lr_load('allow'), true);
+    // 1. the lessons: is this the exact file of an incident somebody confirmed?
+    foreach ($L as $l) {
+        if (($l['state'] ?? 'on') !== 'on' || ($l['type'] ?? '') !== 'hash' || strpos((string)$l['key'], $sha . ':') !== 0 || empty($l['incidents'])) continue;
+        $r['signs'][] = ($l['source'] ?? '') === 'shared' ? 'the exact file of an incident confirmed on another server' : 'the exact file of an incident confirmed on this server'; break;
+    }
+    // 2. the code itself
+    $code = (string)@file_get_contents($real, false, null, 0, 1048576);
+    $origName = preg_replace('/^\d{8}-\d{6}-[0-9a-f]{12}-/', '', basename($kept)); $ext = strtolower((string)pathinfo($origName, PATHINFO_EXTENSION));
+    if (substr($code, 0, 4) === "\x7fELF") $r['signs'][] = 'a native (ELF) executable kept from inside a web folder';
+    $hasPhp = (bool)preg_match('/<\?php|<\?=|<script\s+language\s*=\s*["\']?php/i', $code);
+    if ($hasPhp && in_array($ext, ['ico', 'jpg', 'jpeg', 'png', 'gif', 'svg', 'txt', 'css', 'js', 'json', 'xml', 'log', 'pdf', 'zip', 'mo', 'po', 'ttf', 'woff'], true)) $r['signs'][] = 'PHP code inside a file named as a .' . $ext . ' (an image, text or asset never carries PHP)';
+    $tags = smpro_lr_tags($code); $strong = smpro_lr_tags_strong($tags, $code);
+    if ($strong !== '') $r['signs'][] = 'code that ' . $strong;
+    if (preg_match('/^\s*<\?php\s*(?:\/\*.*?\*\/\s*|\/\/[^\n]*\n\s*)*@?(?:eval|assert)\s*\(/is', $code)) $r['signs'][] = 'the file does nothing but run a payload';
+    $dk = smpro_lr_docblock_key($code);
+    if ($dk !== '') foreach ($L as $l) if (($l['state'] ?? 'on') === 'on' && ($l['type'] ?? '') === 'docblock' && ($l['key'] ?? '') === $dk) { $r['signs'][] = 'opens with the same header as a confirmed incident'; break; }
+    $softMap = ['obfuscated' => 'heavily escaped or packed code', 'dyn_exec' => 'runs code built at run time (eval / assert / create_function)', 'cmd_exec' => 'can run system commands'];
+    if ($strong === '') foreach ($tags as $t) if (isset($softMap[$t])) $r['soft'][] = $softMap[$t];
+    // 3. ClamAV when the server has it: a third opinion, never the only one
+    $clam = trim((string)@shell_exec('command -v clamscan 2>/dev/null'));
+    if ($clam === '') $r['clam'] = 'not installed';
+    elseif ((int)@filesize($real) > 26214400) $r['clam'] = 'file too large';
+    else {
+        $o = []; $rc = 0; @exec('timeout 60 ' . escapeshellarg($clam) . ' --no-summary --stdout ' . escapeshellarg($real) . ' 2>/dev/null', $o, $rc);
+        $line = (string)end($o);
+        if ($rc === 1 && preg_match('/:\s*(.+?)\s+FOUND\s*$/', $line, $m)) { $r['clam'] = $m[1]; $r['signs'][] = 'ClamAV names it ' . $m[1]; }
+        elseif ($rc === 0) $r['clam'] = 'clean';
+        else $r['clam'] = 'did not finish';
+    }
+    if ($known && !$r['signs']) $r['soft'][] = 'you marked this exact file not malicious before';
+    $r['verdict'] = $r['signs'] ? 'malicious' : (($r['soft'] && !$known) ? 'suspicious' : 'clean');
+    return $r;
+}
+/** The cached verdict of one store row when it belongs to the bytes that are kept (same sha); null when unchecked. */
+function smpro_lr_verdict_of(array $q): ?array {
+    $v = $q['verdict'] ?? null;
+    return (is_array($v) && ($v['sha'] ?? '') !== '' && ($v['sha'] ?? '') === ($q['sha'] ?? '-')) ? $v : null;
+}
+/** Write a verdict into the store journal row of $kept (the row is the manifest; the verdict travels with it). */
+function smpro_lr_verdict_save(string $kept, array $v): void {
+    $f = smpro_lr_dir() . '/quarantine.jsonl'; $all = @file($f, FILE_IGNORE_NEW_LINES) ?: []; $out = []; $hit = false;
+    foreach ($all as $l) { $r = json_decode($l, true); if (is_array($r) && ($r['kept'] ?? '') === $kept) { $r['verdict'] = $v; $hit = true; } $out[] = is_array($r) ? json_encode($r, JSON_UNESCAPED_SLASHES) : $l; }
+    if ($hit) @file_put_contents($f, implode("\n", $out) . "\n", LOCK_EX);
+}
+/** Judge every unchecked row still in the store, oldest first, inside a time budget. Returns [checked, malicious]. */
+function smpro_lr_verdict_all(int $budget = 50): array {
+    $t0 = time(); $n = 0; $bad = 0;
+    foreach (array_reverse(smpro_lr_quarantined(1000)) as $q) {
+        if (!empty($q['restored']) || smpro_lr_verdict_of($q) !== null) continue;
+        if (time() - $t0 > $budget) break;
+        $v = smpro_lr_verdict((string)$q['kept']); smpro_lr_verdict_save((string)$q['kept'], $v); $n++; if ($v['verdict'] === 'malicious') $bad++;
+    }
+    return [$n, $bad];
+}
+/** The first lines of a kept copy, for the operator's eyes only (escaped by the page; never written anywhere). */
+function smpro_lr_peek(string $kept, int $lines = 60, int $bytes = 6144): string {
+    $store = realpath(smpro_lr_dir('quarantine')); $real = realpath($kept);
+    if ($store === false || $real === false || strpos($real, $store . DIRECTORY_SEPARATOR) !== 0 || !is_file($real)) return '';
+    $c = (string)@file_get_contents($real, false, null, 0, $bytes);
+    if ($c !== '' && !mb_check_encoding($c, 'UTF-8')) $c = preg_replace('/[^\x09\x0a\x0d\x20-\x7e]/', '.', $c);
+    $a = explode("\n", $c); if (count($a) > $lines) $a = array_slice($a, 0, $lines);
+    return implode("\n", $a) . ((strlen($c) >= $bytes || count(explode("\n", $c)) > $lines) ? "\n…" : '');
+}
+/**
+ * Put a quarantined file back. The kept copy is judged first (smpro_lr_verdict, cached in its journal row): a file
+ * that looks malicious is NOT put back unless the operator ticks that they understand ($force), and a forced restore
+ * is never remembered as "not malicious" - the next hunt reports it again. A clean restore records the file as a
+ * false positive (its exact file is never reported again).
+ */
+function smpro_lr_restore(string $kept, bool $force = false): array {
+    $all = @file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: []; $hit = null;
+    foreach ($all as $l) { $r = json_decode($l, true); if (is_array($r) && ($r['kept'] ?? '') === $kept && empty($r['restored'])) { $hit = $r; break; } }
     if ($hit === null || !is_file($kept)) return ['ok' => false, 'msg' => 'Nothing to restore.'];
+    $v = smpro_lr_verdict_of($hit); if ($v === null) { $v = smpro_lr_verdict($kept); smpro_lr_verdict_save($kept, $v); }
+    if ($v['verdict'] === 'malicious' && !$force) return ['ok' => false, 'msg' => 'NOT restored - this file looks malicious: ' . implode('; ', $v['signs']) . '. Putting it back re-infects the site. Restore it only if you are certain it is the customer\'s own file: tick "I understand the risk" on its row and press Restore again.'];
+    if ($v['verdict'] === 'unknown' && !$force) return ['ok' => false, 'msg' => 'NOT restored - the kept copy could not be checked (' . implode('; ', $v['soft']) . '). Tick "I understand the risk" to restore it unchecked.'];
     if (file_exists($hit['orig'])) return ['ok' => false, 'msg' => 'A file already exists at the original place; nothing was overwritten.'];
     if (!preg_match('#^/home[0-9]*/([^/]+)/#', $hit['orig'], $m) || !is_dir(dirname($hit['orig'])) || is_link(dirname($hit['orig']))) return ['ok' => false, 'msg' => 'The original folder is gone.'];
     // the folder may be locked (chattr +i by Safety Lock / WP Guard) exactly like it was when the file was taken out:
@@ -467,7 +554,12 @@ function smpro_lr_restore(string $kept): array {
     if ($flags !== '') @exec('chattr +' . $flags . ' ' . escapeshellarg($dir) . ' 2>/dev/null');
     if (!$wrote) return ['ok' => false, 'msg' => 'Could not write the file back' . ($flags !== '' ? ' - the folder ' . $dir . ' is locked (chattr +' . $flags . ') and could not be unlocked' : ' - the folder ' . $dir . ' is not writable by root') . '.'];
     @chown($hit['orig'], $hit['uid']); @chgrp($hit['orig'], $hit['gid']); @chmod($hit['orig'], $hit['mode'] ?: 0644); @touch($hit['orig'], $hit['mtime'] ?: time());
+    $against = $v['verdict'] !== 'clean';
+    $out = [];
+    foreach ($all as $l) { $r = json_decode($l, true); if (is_array($r) && ($r['kept'] ?? '') === $kept && empty($r['restored'])) { $r['restored'] = time(); $r['verdict'] = $v; if ($against) $r['restored_against'] = $v['verdict']; } $out[] = is_array($r) ? json_encode($r, JSON_UNESCAPED_SLASHES) : $l; }
     @file_put_contents(smpro_lr_dir() . '/quarantine.jsonl', implode("\n", $out) . "\n", LOCK_EX);
+    if (function_exists('smpro_audit')) smpro_audit('learn_restore', ['path' => $hit['orig'], 'sha256' => (string)($hit['sha'] ?? ''), 'verdict' => $v['verdict'], 'forced' => $against]);
+    if ($against) return ['ok' => true, 'msg' => 'Put back AGAINST the check (' . $v['verdict'] . '). It is NOT remembered as safe: the next hunt reports it again, and the kept copy stays in the store.' . ($flags !== '' ? ' The folder was locked; it was unlocked for the write and locked again.' : '')];
     smpro_lr_mark_fp($hit['sha']);
     return ['ok' => true, 'msg' => 'Put back, and remembered as not malicious.' . ($flags !== '' ? ' The folder was locked; it was unlocked for the write and locked again.' : '')];
 }

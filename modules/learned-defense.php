@@ -3,9 +3,11 @@
  * modules/learned-defense.php — Learned Defense: lessons the server took from confirmed incidents, the hunt they
  * drive, processes a file scan cannot see, and the root-only store of what was moved. Engine: includes/learn.php.
  *
- * The page is read top to bottom the way an operator decides: how bad is it now (the strip), what needs a decision
- * (findings, grouped by account, worst first, filterable), then what the server knows (lessons), what it holds
- * (the store), and how it is set. Every action is a plain form; nothing is touched until a button is pressed.
+ * The page is read top to bottom the way an operator decides: how bad is it now (the strip, every tile a door to its
+ * section), what needs a decision (findings, grouped by account, worst first, filterable), what is held and whether it
+ * may go back (the store: every kept file is CHECKED before Restore and the page says what was found), then what the
+ * server knows (lessons) and how it is set. Every action is a plain form; nothing is touched until a button is pressed.
+ * Sections are collapsible cards behind a sticky navigator (the shared fw-nav / fw-toggle pattern, engine at the end).
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 require_once SMPRO_INCLUDES . '/learn.php';
@@ -13,7 +15,7 @@ smpro_require_root();
 
 $reqMethod = (string)($_SERVER['REQUEST_METHOD'] ?? 'GET');
 $act = (string)($_POST['lr_action'] ?? '');
-$flash = ''; $flashOk = true;
+$flash = ''; $flashOk = true; $peek = null;
 
 if ($reqMethod === 'POST' && $act !== '') {
     smpro_require_valid_csrf('lr_act');
@@ -33,19 +35,23 @@ if ($reqMethod === 'POST' && $act !== '') {
             }
             $msg = $n . ' exact-file match(es) moved to the store' . ($bad ? ', ' . $bad . ' refused (see the audit)' : '') . '.'; $ok = $bad === 0; break;
         case 'quarantine_many':
-            $n = 0; $bad = []; foreach (array_slice((array)($_POST['paths'] ?? []), 0, 500) as $pth) { $r = smpro_lr_quarantine((string)$pth, 'operator: selection'); if (!empty($r['ok'])) $n++; else $bad[] = basename((string)$pth) . ': ' . (string)($r['msg'] ?? 'refused'); }
+            $n = 0; $bad = []; foreach (array_slice((array)($_POST['paths'] ?? []), 0, 500) as $pth) { $r = smpro_lr_quarantine((string)$pth, 'operator: selection'); if (!empty($r['ok'])) $n++; else $bad[] = basename((string)$pth) . ': ' . (string)($r['msg'] ?? ''); }
             $msg = $n . ' file(s) moved to the store' . ($bad ? '; refused: ' . implode(' · ', array_slice($bad, 0, 5)) . (count($bad) > 5 ? ' …' : '') : '') . '.'; $ok = !$bad; break;
         case 'notbad_many':
             $n = 0; foreach (array_slice((array)($_POST['shas'] ?? []), 0, 500) as $sh) { $sh = preg_replace('/[^a-f0-9]/', '', (string)$sh); if ($sh !== '') { smpro_lr_mark_fp($sh); $n++; } }
             $msg = $n . ' file(s) remembered as not malicious.'; break;
-        case 'restore':   $r = smpro_lr_restore((string)($_POST['kept'] ?? '')); $ok = $r['ok']; $msg = $r['msg']; break;
-        case 'notbad':    $sha = preg_replace('/[^a-f0-9]/', '', (string)($_POST['sha'] ?? '')); if ($sha !== '') { smpro_lr_mark_fp($sha); $msg = 'Remembered as not malicious: this exact file is never reported again, and the lesson that matched it counts one more wrong call.'; } else { $ok = false; $msg = 'No file given.'; } break;
+        case 'restore':   $r = smpro_lr_restore((string)($_POST['kept'] ?? ''), !empty($_POST['ack'])); $ok = $r['ok']; $msg = $r['msg']; break;
+        case 'verdict':   $k = (string)($_POST['kept'] ?? ''); $v = smpro_lr_verdict($k); smpro_lr_verdict_save($k, $v);
+                          $ok = $v['verdict'] !== 'unknown'; $msg = 'Checked: ' . ($v['verdict'] === 'malicious' ? 'LOOKS MALICIOUS - ' . implode('; ', $v['signs']) . '. Do not restore it.' : ($v['verdict'] === 'suspicious' ? 'no definite sign, but worth a look: ' . implode('; ', $v['soft']) . '.' : ($v['verdict'] === 'clean' ? 'no malicious sign found by the lessons, the code reader' . ($v['clam'] === 'clean' ? ' or ClamAV' : '') . '. Restore may be safe - it was taken for the reason shown on its row.' : 'could not be checked (' . implode('; ', $v['soft']) . ').'))); break;
+        case 'verdict_all': [$n, $bad] = smpro_lr_verdict_all(50); $msg = $n . ' kept file(s) checked' . ($bad ? ', ' . $bad . ' look malicious' : '') . '.' . ($n === 0 ? ' Nothing was waiting.' : ''); break;
+        case 'peek':      $k = (string)($_POST['kept'] ?? ''); $t = smpro_lr_peek($k); if ($t === '') { $ok = false; $msg = 'The kept copy could not be read.'; } else { $peek = ['kept' => $k, 'text' => $t]; $msg = 'Showing the first lines of the kept copy below its row (read-only).'; } break;
+        case 'notbad':    $sha = preg_replace('/[^a-f0-9]/', '', (string)($_POST['sha'] ?? '')); if ($sha !== '') { smpro_lr_mark_fp($sha); $msg = 'Remembered as not malicious: this exact file is never reported again, and the lesson that matched it counts one more wrong call.'; } else { $ok = false; $msg = 'No file hash.'; } break;
         case 'lesson':    $L = smpro_lr_lessons(); $id = preg_replace('/[^a-f0-9]/', '', (string)($_POST['id'] ?? '')); $st = (string)($_POST['state'] ?? '');
                           if (isset($L[$id]) && in_array($st, ['on', 'off'], true)) { $L[$id]['state'] = $st; smpro_lr_save('lessons', $L); $msg = 'Lesson ' . ($st === 'on' ? 'switched on' : 'switched off') . '.'; } else { $ok = false; $msg = 'Unknown lesson.'; } break;
         case 'forget':    $L = smpro_lr_lessons(); $id = preg_replace('/[^a-f0-9]/', '', (string)($_POST['id'] ?? '')); if (isset($L[$id])) { unset($L[$id]); smpro_lr_save('lessons', $L); $msg = 'Lesson forgotten.'; } else { $ok = false; $msg = 'Unknown lesson.'; } break;
         case 'kill':      $r = smpro_lr_kill((int)($_POST['pid'] ?? 0)); $ok = $r['ok']; $msg = $r['msg']; break;
         case 'cfg':       $c = smpro_lr_cfg(); $c['auto'] = ($_POST['auto'] ?? '') === 'quarantine_exact' ? 'quarantine_exact' : 'report'; $c['recent_days'] = max(1, min(365, (int)($_POST['recent_days'] ?? 30))); $c['share'] = !empty($_POST['share']) ? 'on' : 'off'; smpro_lr_save('cfg', $c); smpro_lr_cron_sync(); $msg = 'Saved.'; break;
-        case 'share':     $r = smpro_lr_share(); $ok = $r['ok']; $msg = $ok ? ('Exchanged: ' . (int)$r['sent'] . ' lesson(s) sent, ' . (int)$r['pool'] . ' in the shared pool from ' . (int)$r['servers'] . ' server(s), ' . (int)$r['new'] . ' new here.') : ('Not exchanged: ' . (string)($r['why'] ?? '')); break;
+        case 'share':     $r = smpro_lr_share(); $ok = $r['ok']; $msg = $ok ? ('Exchanged: ' . (int)$r['sent'] . ' lesson(s) sent, ' . (int)$r['pool'] . ' in the shared pool from ' . (int)$r['servers'] . ' server(s), ' . (int)$r['new'] . ' new here.') : ('Not exchanged: ' . $r['msg']); break;
         default:          $ok = false; $msg = 'Unknown action.';
     }
     smpro_audit('learned_defense_' . preg_replace('/[^a-z_]/', '', $act), ['ok' => $ok, 'actor' => smpro_current_actor()]);
@@ -53,7 +59,7 @@ if ($reqMethod === 'POST' && $act !== '') {
 }
 
 $cfg = smpro_lr_cfg(); $L = smpro_lr_lessons(); $F = smpro_lr_load('findings'); $P = smpro_lr_load('procs');
-$Q = smpro_lr_quarantined(100);
+$Q = smpro_lr_quarantined(200);
 $findings = (array)($F['findings'] ?? []); $procs = (array)($P['rows'] ?? []);
 // the cache is a photograph of the last hunt; a file that is gone since (quarantined here, deleted by Imunify360, cleaned
 // by hand) must not stay on the list - that is what read as "quarantine does nothing"
@@ -65,6 +71,18 @@ $shN = count(array_filter($L, fn($l) => ($l['source'] ?? '') === 'shared'));
 $sh = smpro_lr_load('share');
 $csrf = smpro_csrf_generate('lr_act');
 $typeLabel = ['hash' => 'exact file', 'relpath' => 'place in a site', 'dotdir' => 'hidden folder', 'behaviour' => 'behaviour', 'docblock' => 'file header', 'name' => 'file name'];
+
+/* the store, judged: each row carries its verdict (checked on demand, before Restore, or by "Check all") */
+$qHeld = array_values(array_filter($Q, fn($q) => empty($q['restored'])));
+$qStat = ['malicious' => 0, 'suspicious' => 0, 'clean' => 0, 'unknown' => 0, 'unchecked' => 0];
+foreach ($Q as $i => $q) { $v = smpro_lr_verdict_of($q); $Q[$i]['_v'] = $v; $Q[$i]['_k'] = $v ? $v['verdict'] : 'unchecked'; if (empty($q['restored'])) $qStat[$Q[$i]['_k']]++; }
+$sourceWhy = function (string $s): string {
+    if ($s === 'auto') return 'the hunt moved it by itself: the exact file of a confirmed incident (Settings: quarantine by itself)';
+    if ($s === 'operator') return 'you pressed Quarantine on its finding';
+    if (strpos($s, 'operator: selection') === 0) return 'you quarantined it with a selection';
+    if (strpos($s, 'operator: all exact') === 0) return 'you pressed "Quarantine all exact matches"';
+    return $s !== '' ? $s : 'not recorded';
+};
 
 /* How bad is one finding? From the strongest lesson that matched it, or the structural check that raised it. */
 $sevOf = function (array $f) use ($L): array {
@@ -112,23 +130,20 @@ $qs = function (array $over = []) use ($fSev, $fKind, $fUser, $fQ, $groupBy, $pe
 };
 $lastHunt = (int)($F['at'] ?? 0);
 $hunting = smpro_lr_hunt_running();
+$storeTone = $qStat['malicious'] ? 'dang' : ($qStat['unchecked'] || $qStat['suspicious'] || $qStat['unknown'] ? 'warn' : ($qHeld ? 'brand' : 'good'));
+$storeSub = !$qHeld ? 'empty' : implode(' · ', array_filter([$qStat['malicious'] ? $qStat['malicious'] . ' look malicious' : '', $qStat['unchecked'] ? $qStat['unchecked'] . ' not checked yet' : '', $qStat['clean'] ? $qStat['clean'] . ' no sign found' : '']));
 smpro_layout_header('Learned Defense');
 ?>
 <style>
-.ld-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:0 0 14px}
-.ld-t{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0;position:relative;overflow:hidden}
-.ld-t:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--line)}
-.ld-t.ok:before{background:var(--good)}.ld-t.warn:before{background:var(--warn)}.ld-t.bad:before{background:var(--dang)}.ld-t.brand:before{background:var(--brand)}
-.ld-t .l{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ld-t .v{font-size:26px;font-weight:800;margin-top:4px;line-height:1.1}.ld-t .s{font-size:11.5px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ld-card{padding:0;margin-bottom:14px;overflow:hidden}
+.ld-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ld-head b{font-size:14px}.ld-head .meta{margin-left:auto;color:var(--muted);font-size:12px}
+.card:not(.fw-open)>.ld-head{border-bottom:0}
+.ld-body{padding:12px 16px}
+.ld-empty{padding:18px 16px;font-size:13px;color:var(--muted)}
 .ld-sev{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
 .ld-sev.critical{background:var(--dang-bg);color:var(--dang)}.ld-sev.high{background:var(--warn-bg);color:var(--warn)}.ld-sev.medium{background:var(--brand-bg);color:var(--brand)}
 .ld-kind{display:inline-block;padding:1px 7px;border-radius:6px;font-size:10.5px;font-weight:600;color:var(--muted);background:var(--bg);border:1px solid var(--line);margin-left:4px}
-.ld-card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
-.ld-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ld-head b{font-size:14px}.ld-head .meta{margin-left:auto;color:var(--muted);font-size:12px}
-.ld-body{padding:12px 16px}
-.ld-empty{padding:18px 16px;font-size:13px;color:var(--muted)}
 .ld-acct{border-top:1px solid var(--line)}.ld-acct:first-child{border-top:0}
 .ld-acct summary{list-style:none;cursor:pointer;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
 .ld-acct summary::-webkit-details-marker{display:none}.ld-acct summary .arr{display:inline-block;transition:transform .15s;color:var(--muted)}.ld-acct[open] summary .arr{transform:rotate(90deg)}
@@ -137,38 +152,57 @@ smpro_layout_header('Learned Defense');
 .ld-row .p{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;word-break:break-all}
 .ld-row .w{color:var(--ink);margin-top:3px}.ld-row .w div:before{content:"\2022\00a0";color:var(--muted)}
 .ld-row .m{color:var(--muted);font-size:11px;margin-top:3px}
-.ld-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.ld-acts form{display:inline}
+.ld-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}.ld-acts form{display:inline}
 .ld-filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px}
 .ld-fb{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:3px 10px;cursor:pointer;font-size:12px;color:var(--ink)}
 .ld-fb.on{background:var(--brand);color:#fff;border-color:var(--brand)}.ld-fb.off{opacity:.4;pointer-events:none}a.ld-fb{text-decoration:none}
-.ld-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:14px}
-.ld-tool{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.ld-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;padding:12px 16px}
+.ld-tool{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .ld-tool h4{margin:0 0 4px;font-size:13px}.ld-tool p{margin:0 0 8px;font-size:12px;color:var(--muted);line-height:1.5}
 .ld-tool form{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.ld-tool input[type=text]{flex:1;min-width:160px}
-.ld-two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:1000px){.ld-two{grid-template-columns:1fr}}
 .ld-search{padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px;min-width:180px;background:var(--bg);color:var(--ink)}
 .ld-how{font-size:12.5px;line-height:1.6;color:var(--ink)}.ld-how b{color:var(--ink)}
 .meta{color:var(--muted);font-size:11px}.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
 .smpro-table td{vertical-align:top}
+/* the store */
+.ld-v{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.02em;white-space:nowrap;border:1px solid transparent}
+.ld-v.malicious{background:var(--dang-bg);color:var(--dang);border-color:var(--dang)}.ld-v.suspicious{background:var(--warn-bg);color:var(--warn)}
+.ld-v.clean{background:var(--good-bg);color:var(--good)}.ld-v.unknown,.ld-v.unchecked{background:var(--bg);color:var(--muted);border-color:var(--line)}
+.ld-signs{margin:4px 0 0;padding:0;list-style:none;font-size:11.5px;line-height:1.45}.ld-signs li:before{content:"\2022\00a0"}
+.ld-signs.bad li{color:var(--dang)}.ld-signs.soft li{color:var(--warn)}
+.ld-st tr.ld-restored{opacity:.55}.ld-st tr.ld-mal>td:first-child{box-shadow:inset 4px 0 0 var(--dang)}
+.ld-warnbox{margin:0 16px 10px;padding:10px 12px;border-radius:10px;background:var(--dang-bg);color:var(--dang);font-size:12.5px;line-height:1.5;border:1px solid var(--dang)}
+.ld-ack{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--dang);cursor:pointer;white-space:nowrap}
+.ld-peek{margin:6px 0 0;max-height:320px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace}
+.ld-tick{font-size:11px;color:var(--muted);margin-top:3px}
 </style>
 
 <h1 class="h">Learned Defense <?= smpro_beta_badge() ?></h1>
 <p class="sub">The server learns from every incident you confirm and hunts for the same thing everywhere - and it sees the processes a file scan cannot.
   <details style="display:inline"><summary style="display:inline;cursor:pointer;color:var(--brand)">How it works</summary>
-  <span class="ld-how"> Every file you confirm as malware (Delete or Clean in Imunify360 Reports, Quarantine here, or a folder you teach) becomes <b>lessons</b>: its exact file, its file name when rare, the place it sat, the hidden folder it hid in, the header it opens with, and what its code does. The <b>hunt</b> (every 10 minutes when something changed, daily otherwise) looks for those lessons in every site, and runs three checks that need no lesson: an <b>.htaccess</b> that turns an odd extension into a CGI program, a <b>native executable</b> inside a web folder, and what <b>MailGuard</b> attributed outgoing mail to. Lessons confirmed here are <b>shared</b> with other servers as patterns only - never a path, an account, a file's contents or an address - and lessons from other servers are reported here, never acted on by themselves. Nothing is deleted: a quarantined file goes to a root-only store and <b>Restore</b> puts it back exactly.</span></details></p>
-<?php if ($flash !== ''): ?><div class="ld-card" style="border-left:4px solid var(--<?= $flashOk ? 'good' : 'dang' ?>);padding:10px 14px"><?= smpro_h($flash) ?></div><?php endif; ?>
+  <span class="ld-how"> Every file you confirm as malware (Delete or Clean in Imunify360 Reports, Quarantine here, or a folder you teach) becomes <b>lessons</b>: its exact file, its file name when rare, the place it sat, the hidden folder it hid in, the header it opens with, and what its code does. A <b>hunt</b> then looks for every lesson in every site and reports what it finds - nothing is touched until you decide. <b>Quarantine</b> moves a file into a root-only store outside every site; <b>Restore</b> checks the kept copy first (the lessons, the code, ClamAV when present) and refuses a file that looks malicious unless you insist. Lessons can be switched off or marked wrong, and a file you mark not malicious is never reported again.</span></details></p>
+<?php if ($flash !== ''): ?><div class="card ld-card" style="border-left:4px solid var(--<?= $flashOk ? 'good' : 'dang' ?>);padding:10px 14px"><?= smpro_h($flash) ?></div><?php endif; ?>
 
-<div class="ld-strip">
-  <div class="ld-t <?= $worst === 'ok' ? 'ok' : ($worst === 'medium' ? 'brand' : 'bad') ?>"><div class="l">Findings</div><div class="v" style="color:<?= $worst === 'ok' ? 'var(--good)' : ($worst === 'critical' ? 'var(--dang)' : 'var(--warn)') ?>"><?= count($findings) ?></div><div class="s"><?= $findings ? $bySev['critical'] . ' critical · ' . $bySev['high'] . ' high · ' . $bySev['medium'] . ' medium' : 'nothing matches a lesson' ?></div></div>
-  <div class="ld-t <?= $byUser ? 'warn' : 'ok' ?>"><div class="l">Accounts</div><div class="v"><?= count($byUser) ?></div><div class="s"><?= $byUser ? smpro_h(implode(', ', array_slice(array_keys($byUser), 0, 4))) . (count($byUser) > 4 ? ' …' : '') : 'none affected' ?></div></div>
-  <div class="ld-t <?= $procs ? 'bad' : 'ok' ?>"><div class="l">Hidden processes</div><div class="v" style="color:<?= $procs ? 'var(--dang)' : 'var(--good)' ?>"><?= count($procs) ?></div><div class="s">running now · memory-only, deleted, false name, long web shell</div></div>
-  <div class="ld-t brand"><div class="l">Lessons</div><div class="v"><?= $onN ?></div><div class="s"><?= count($L) - $onN ?> off · <?= $shN ?> from other servers</div></div>
-  <div class="ld-t brand"><div class="l">In the store</div><div class="v"><?= count(array_filter($Q, fn($q) => empty($q['restored']))) ?></div><div class="s">root-only, restorable</div></div>
-  <div class="ld-t <?= $hunting ? 'ok' : ($lastHunt && time() - $lastHunt < 86400 * 2 ? 'ok' : 'warn') ?>" id="ldHuntTile"><div class="l">Last hunt<?= $hunting ? ' · <b style="color:var(--brand)">hunting now…</b>' : '' ?></div><div class="v" style="font-size:18px"><?= $lastHunt ? smpro_h(date('m-d H:i', $lastHunt)) : 'never' ?></div><div class="s"><?= $hunting ? 'walking every site in the background - this page refreshes itself until the findings land' : ($F ? (int)$F['sites'] . ' of ' . (int)$F['of'] . ' site(s) in ' . (int)$F['took'] . ' s' . (!empty($F['partial']) ? ' · partial, continues' : '') : 'press Hunt now') ?></div></div>
+<div class="fw-kpis">
+  <a class="fw-kpi <?= $worst === 'ok' ? 'good' : ($worst === 'medium' ? 'brand' : ($worst === 'critical' ? 'dang' : 'warn')) ?>" href="#findings" data-go="findings"><div class="l">Findings</div><div class="v"><?= count($findings) ?></div><div class="s"><?= $findings ? implode(' · ', array_filter([$bySev['critical'] ? $bySev['critical'] . ' critical' : '', $bySev['high'] ? $bySev['high'] . ' high' : '', $bySev['medium'] ? $bySev['medium'] . ' medium' : ''])) : 'nothing matches a lesson' ?></div></a>
+  <a class="fw-kpi <?= $byUser ? 'warn' : 'good' ?>" href="#findings" data-go="findings"><div class="l">Accounts</div><div class="v"><?= count($byUser) ?></div><div class="s"><?= $byUser ? smpro_h(implode(', ', array_slice(array_keys($byUser), 0, 4))) . (count($byUser) > 4 ? ' …' : '') : 'none affected' ?></div></a>
+  <a class="fw-kpi <?= $procs ? 'dang' : 'good' ?>" href="#ld-procs" data-go="ld-procs"><div class="l">Hidden processes</div><div class="v"><?= count($procs) ?></div><div class="s"><?= $procs ? 'running now - stop them' : 'none: memory-only, deleted, false name, long shell' ?></div></a>
+  <a class="fw-kpi <?= $storeTone ?>" href="#ld-store" data-go="ld-store"><div class="l">In the store</div><div class="v"><?= count($qHeld) ?></div><div class="s"><?= smpro_h($storeSub) ?></div></a>
+  <a class="fw-kpi brand" href="#ld-lessons" data-go="ld-lessons"><div class="l">Lessons</div><div class="v"><?= $onN ?></div><div class="s"><?= count($L) - $onN ?> off · <?= $shN ?> from other servers</div></a>
+  <a class="fw-kpi <?= $hunting ? 'brand' : ($lastHunt && time() - $lastHunt < 86400 * 2 ? 'good' : 'warn') ?>" href="#ld-tools" data-go="ld-tools" id="ldHuntTile"><div class="l">Last hunt<?= $hunting ? ' · <b style="color:var(--brand)">hunting now…</b>' : '' ?></div><div class="v" style="font-size:17px"><?= $lastHunt ? smpro_h(date('m-d H:i', $lastHunt)) : 'never' ?></div><div class="s"><?= $hunting ? 'results land here when it finishes' : ($lastHunt ? (int)($F['sites'] ?? 0) . ' of ' . (int)($F['of'] ?? 0) . ' site(s) read' . (!empty($F['partial']) ? ' · partial (time budget)' : '') : 'press Hunt now') ?></div></a>
 </div>
 
+<nav class="fw-nav" id="ldNav" data-keep-open="1">
+  <?php if ($procs): ?><a href="#ld-procs" data-go="ld-procs" style="color:var(--dang);border-color:var(--dang)">&#9888; Processes <?= count($procs) ?></a><?php endif; ?>
+  <a href="#findings" data-go="findings">&#128269; Findings <?= count($findings) ?></a>
+  <a href="#ld-store" data-go="ld-store">&#128230; The store <?= count($qHeld) ?></a>
+  <a href="#ld-lessons" data-go="ld-lessons">&#129504; Lessons <?= count($L) ?></a>
+  <a href="#ld-tools" data-go="ld-tools">&#9881; Hunt · Teach · Settings</a>
+  <span class="sp"></span><button type="button" class="fw-navx" id="ldOpenAll">expand all</button><button type="button" class="fw-navx" id="ldCloseAll">collapse all</button>
+</nav>
+
 <?php if ($procs): ?>
-<div class="ld-card" style="border-color:var(--dang)">
+<div class="card ld-card" id="ld-procs" style="border-color:var(--dang)">
   <div class="ld-head"><b>&#9888; Processes a file scan cannot see</b><span class="meta">a program running from memory, a deleted program, a false name, or a shell a web request started hours ago - stop it, and what it was is kept as evidence</span></div>
   <div style="overflow-x:auto"><table class="smpro-table" style="margin:0"><thead><tr><th>Account</th><th>PID</th><th>Running for</th><th>Why it is suspicious</th><th>Command</th><th></th></tr></thead><tbody>
   <?php foreach ($procs as $p): ?>
@@ -181,8 +215,8 @@ smpro_layout_header('Learned Defense');
 </div>
 <?php endif; ?>
 
-<div class="ld-card" id="findings">
-  <div class="ld-head"><b>Findings</b><span class="meta"><?= count($findings) ?> file(s) · <?= $total === count($findings) ? 'all shown' : $total . ' match the filter' ?> · nothing is touched until you decide</span>
+<div class="card ld-card" id="findings">
+  <div class="ld-head"><b>&#128269; Findings</b><span class="meta"><?= count($findings) ?> file(s) · <?= $total === count($findings) ? 'all shown' : $total . ' match the filter' ?> · nothing is touched until you decide</span>
     <?php if ($exactN): ?><form method="post" style="margin-left:8px" data-confirm="Move all <?= $exactN ?> exact-file match(es) of confirmed incidents to the store? Restore puts any one back exactly."><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="quarantine_exact_all"><button class="btn btn-xs btn-danger" type="submit">Quarantine all <?= $exactN ?> exact matches</button></form><?php endif; ?></div>
   <?php if (!$findings): ?><div class="ld-empty" style="color:var(--good)">&#10003; Nothing on this server matches a lesson<?= $L ? '' : ' - there are no lessons yet; confirm an incident or teach a folder' ?>.</div>
   <?php else: $kl = ['exact' => 'exact file', 'lesson' => 'lesson match', 'place' => 'same place', 'structural' => 'structural', 'mail' => 'sends mail', 'tmp' => 'in tmp', 'match' => 'match']; $kinds = []; foreach ($findings as $f) $kinds[$f['_kind']] = ($kinds[$f['_kind']] ?? 0) + 1; ?>
@@ -220,12 +254,12 @@ smpro_layout_header('Learned Defense');
           <?php if ($groupBy === 'account'): ?><span class="meta"><a href="index.cgi?page=user-investigation&amp;user=<?= smpro_h($g) ?>&amp;win=7" class="fa-lnk">investigate &#8250;</a></span><?php endif; ?></summary>
         <?php foreach ($rows as $f): ?>
         <div class="ld-row" data-sev="<?= $f['_sev'] ?>" data-kind="<?= $f['_kind'] ?>">
-          <div><label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" class="ldck" name="paths[]" value="<?= smpro_h($f['path']) ?>" data-sha="<?= smpro_h($f['sha']) ?>"<?= is_dir($f['path']) ? ' disabled title="a folder is reported, not quarantined"' : '' ?>><span class="ld-sev <?= $f['_sev'] ?>"><?= $f['_sev'] ?></span><span class="ld-kind"><?= smpro_h($kl[$f['_kind']] ?? $f['_kind']) ?></span><?php if ($groupBy !== 'account'): ?><span class="ld-kind"><?= smpro_h($f['user']) ?></span><?php endif; ?></label>
+          <div><label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" class="ldck" name="paths[]" value="<?= smpro_h($f['path']) ?>" data-sha="<?= smpro_h($f['sha']) ?>"<?= is_dir($f['path']) ? ' disabled title="a folder is reported, not quarantined"' : '' ?>><span class="ld-sev <?= $f['_sev'] ?>"><?= $f['_sev'] ?></span><span class="ld-kind"><?= smpro_h($kl[$f['_kind']] ?? $f['_kind']) ?></span><?php if ($groupBy !== 'account'): ?><span class="mono" style="font-size:11.5px;font-weight:700"><?= smpro_h($f['user']) ?></span><?php endif; ?></label>
             <div class="p"><?= smpro_h($f['path']) ?></div>
             <div class="w"><?php foreach ($f['why'] as $wl): ?><div><?= smpro_h($wl) ?></div><?php endforeach; ?></div>
             <div class="m">changed <?= smpro_h(date('Y-m-d H:i', (int)$f['mtime'])) ?> · <?= number_format((int)$f['size']) ?> bytes<?= $f['sha'] ? ' · sha256 ' . smpro_h(substr($f['sha'], 0, 12)) . '…' : '' ?></div></div>
           <div class="ld-acts">
-            <?php if (!is_dir($f['path'])): ?><button type="button" class="btn btn-xs btn-danger" data-one="quarantine" data-path="<?= smpro_h($f['path']) ?>" data-confirm="Move this file to the root-only store? Restore puts it back exactly.">Quarantine</button><?php else: ?><span class="meta">a folder: open it, quarantine the file that sends</span><?php endif; ?>
+            <?php if (!is_dir($f['path'])): ?><button type="button" class="btn btn-xs btn-danger" data-one="quarantine" data-path="<?= smpro_h($f['path']) ?>" data-confirm="Move this file to the root-only store? Restore puts it back exactly.">Quarantine</button><?php else: ?><span class="meta">a folder: open it and quarantine the file that acts</span><?php endif; ?>
             <?php if ($f['sha']): ?><button type="button" class="btn btn-xs btn-ghost" data-one="notbad" data-sha="<?= smpro_h($f['sha']) ?>">Not malicious</button><?php endif; ?>
           </div>
         </div>
@@ -237,51 +271,81 @@ smpro_layout_header('Learned Defense');
   <?php endif; ?>
 </div>
 
-<div class="ld-tools">
+<div class="card ld-card" id="ld-store">
+  <div class="ld-head"><b>&#128230; The store</b><span class="meta">files moved out of sites, kept root-only. Every kept file is CHECKED before it may go back: Restore refuses one that looks malicious unless you insist, and a clean restore marks it not malicious</span>
+    <?php if ($qStat['unchecked']): ?><form method="post" style="margin-left:8px"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="verdict_all"><button class="btn btn-xs btn-ghost" type="submit" title="the lessons, the code reader and ClamAV (when installed), about a minute at most">Check all <?= $qStat['unchecked'] ?> unchecked</button></form><?php endif; ?></div>
+  <?php if (!$Q): ?><div class="ld-empty">Nothing in the store. Quarantine moves a file here, out of every site; it stays until you restore it.</div><?php else: ?>
+  <?php if ($qStat['malicious']): ?><div class="ld-warnbox" style="margin-top:10px">&#9888; <b><?= $qStat['malicious'] ?> kept file(s) look malicious.</b> Do not restore them: putting one back re-infects the site. They stay here as evidence; a restore against the check is possible only after ticking "I understand the risk", and it is never remembered as safe.</div><?php endif; ?>
+  <div class="ld-filters"><span class="meta">show:</span>
+    <button type="button" class="ld-fb on" data-sf="">all <?= count($Q) ?></button>
+    <?php foreach (['malicious' => 'look malicious', 'suspicious' => 'worth a look', 'clean' => 'no sign found', 'unknown' => 'could not check', 'unchecked' => 'not checked yet'] as $k => $lab): if ($qStat[$k]): ?><button type="button" class="ld-fb" data-sf="<?= $k ?>"><?= $lab ?> <?= $qStat[$k] ?></button><?php endif; endforeach; ?>
+    <?php if (count($Q) > count($qHeld)): ?><button type="button" class="ld-fb" data-sf="restored">restored <?= count($Q) - count($qHeld) ?></button><?php endif; ?>
+    <input type="text" class="ld-search" id="lsq" placeholder="account or path…" style="margin-left:auto"></div>
+  <div style="overflow:auto;max-height:640px"><table class="smpro-table ld-st" style="margin:0" id="lstbl" data-nopage="1"><thead><tr><th>Check</th><th>File</th><th>Taken</th><th></th></tr></thead><tbody>
+  <?php foreach ($Q as $q): $v = $q['_v']; $k = $q['_k']; $done = !empty($q['restored']); $acct = preg_match('#^/home[0-9]*/([^/]+)/#', (string)$q['orig'], $mm) ? $mm[1] : ''; $vl = ['malicious' => 'LOOKS MALICIOUS', 'suspicious' => 'WORTH A LOOK', 'clean' => 'NO SIGN FOUND', 'unknown' => 'COULD NOT CHECK', 'unchecked' => 'NOT CHECKED']; ?>
+    <tr class="<?= $done ? 'ld-restored' : '' ?><?= $k === 'malicious' ? ' ld-mal' : '' ?>" data-k="<?= $done ? 'restored' : $k ?>" data-q="<?= smpro_h(strtolower($acct . ' ' . $q['orig'])) ?>">
+      <td style="min-width:200px"><span class="ld-v <?= $k ?>"><?= $k === 'malicious' ? '&#9888; ' : ($k === 'clean' ? '&#10003; ' : '') ?><?= $vl[$k] ?></span>
+        <?php if ($v): ?><?php if ($v['signs']): ?><ul class="ld-signs bad"><?php foreach ($v['signs'] as $sg): ?><li><?= smpro_h($sg) ?></li><?php endforeach; ?></ul><?php endif; ?>
+          <?php if ($v['soft']): ?><ul class="ld-signs soft"><?php foreach ($v['soft'] as $sg): ?><li><?= smpro_h($sg) ?></li><?php endforeach; ?></ul><?php endif; ?>
+          <div class="ld-tick">checked <?= smpro_h(date('m-d H:i', (int)$v['checked'])) ?> · ClamAV: <?= smpro_h($v['clam'] ?: '-') ?></div>
+        <?php else: ?><div class="ld-tick">press Check, or Restore checks it first</div><?php endif; ?></td>
+      <td class="mono" style="word-break:break-all;font-size:11.5px"><?= smpro_h($q['orig']) ?>
+        <div class="meta" style="font-family:inherit"><?= $acct !== '' ? '<b>' . smpro_h($acct) . '</b> · ' : '' ?><?= number_format((int)($q['size'] ?? 0)) ?> bytes · changed <?= smpro_h(date('Y-m-d H:i', (int)($q['mtime'] ?? 0))) ?> · sha256 <?= smpro_h(substr((string)($q['sha'] ?? ''), 0, 12)) ?>…</div>
+        <div class="meta" style="font-family:inherit">why it was taken: <?= smpro_h($sourceWhy((string)($q['source'] ?? ''))) ?></div>
+        <?php if ($done): ?><div class="meta" style="font-family:inherit">restored <?= smpro_h(date('Y-m-d H:i', (int)$q['restored'])) ?><?= !empty($q['restored_against']) ? ' <b style="color:var(--dang)">against the check (' . smpro_h($q['restored_against']) . ')</b>' : '' ?></div><?php endif; ?>
+        <?php if ($peek && $peek['kept'] === $q['kept']): ?><div class="meta" style="font-family:inherit;margin-top:6px">first lines of the kept copy (read-only, escaped):</div><pre class="ld-peek"><?= smpro_h($peek['text']) ?></pre><?php endif; ?></td>
+      <td style="white-space:nowrap"><?= smpro_h(date('m-d H:i', (int)$q['at'])) ?></td>
+      <td><div class="ld-acts" style="justify-content:flex-start">
+        <?php if (!$done): ?>
+        <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="verdict"><input type="hidden" name="kept" value="<?= smpro_h($q['kept']) ?>"><button class="btn btn-xs btn-ghost" type="submit"><?= $v ? 'Re-check' : 'Check' ?></button></form>
+        <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="peek"><input type="hidden" name="kept" value="<?= smpro_h($q['kept']) ?>"><button class="btn btn-xs btn-ghost" type="submit">View</button></form>
+        <?php $risky = in_array($k, ['malicious', 'unknown'], true); ?>
+        <form method="post" class="ld-restore" data-k="<?= $k ?>" data-confirm="<?= $k === 'malicious' ? 'This file LOOKS MALICIOUS: ' . smpro_h(implode('; ', $v['signs'])) . '. Putting it back re-infects the site and it will NOT be remembered as safe. Restore it anyway?' : ($k === 'clean' ? 'No malicious sign was found. Put this file back where it was, and remember it as not malicious?' : ($k === 'suspicious' ? 'No definite sign, but: ' . smpro_h(implode('; ', $v['soft'])) . '. Put it back and remember it as not malicious?' : ($k === 'unknown' ? 'The kept copy could not be checked. Put it back unchecked? It will NOT be remembered as safe.' : 'It has not been checked yet: Restore checks it first and refuses if it looks malicious. Continue?'))) ?>">
+          <input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="restore"><input type="hidden" name="kept" value="<?= smpro_h($q['kept']) ?>">
+          <?php if ($risky): ?><label class="ld-ack"><input type="checkbox" name="ack" value="1" class="ld-ackck"> I understand the risk</label><?php endif; ?>
+          <button class="btn btn-xs <?= $k === 'malicious' ? 'btn-danger' : 'btn-ghost' ?>" type="submit"<?= $risky ? ' disabled' : '' ?>><?= $k === 'malicious' ? 'Restore anyway' : 'Restore' ?></button></form>
+        <?php else: ?><span class="meta">kept copy stays here</span><?php endif; ?>
+      </div></td></tr>
+  <?php endforeach; ?>
+  </tbody></table></div><?php endif; ?>
+</div>
+
+<div class="card ld-card" id="ld-tools">
+  <div class="ld-head"><b>&#9881; Hunt · Teach · Settings</b><span class="meta">what the server does on its own, and what you can ask of it now</span></div>
+  <div class="ld-tools">
   <div class="ld-tool"><h4>&#128269; Hunt</h4><p>Look for every lesson in every site now (the worker does this by itself every 10 minutes when a lesson is new, and once a day otherwise).</p>
-    <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="hunt"><button class="btn btn-secondary" type="submit"<?= $hunting ? ' disabled title="a hunt is running"' : '' ?>><?= $hunting ? 'Hunting…' : 'Hunt now' ?></button></form></div>
-<?php if ($hunting): ?><script>/* a hunt is running: come back for the findings without the operator pressing anything */ setTimeout(function(){ if (!document.hidden) location.reload(); else document.addEventListener('visibilitychange', function(){ if (!document.hidden) location.reload(); }); }, 20000);</script><?php endif; ?>
+    <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="hunt"><button class="btn btn-secondary" type="submit"<?= $hunting ? ' disabled title="a hunt is running"' : '' ?>><?= $hunting ? 'Hunting…' : 'Hunt now' ?></button></form>
+<?php if ($hunting): ?><script>/* a hunt is running: come back for the findings without the operator pressing anything */ setTimeout(function(){ if (!document.hidden) location.reload(); else document.addEventListener('visibilitychange', function(){ if (!document.hidden) location.reload(); }); }, 20000);</script><?php endif; ?></div>
   <div class="ld-tool"><h4>&#127891; Teach</h4><p>A folder of kept malware whose layout mirrors where it was found (…/home/&lt;account&gt;/…) - an isolation folder, a quarantine. Every file in it becomes lessons, and a hunt follows.</p>
     <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="teach"><input type="text" name="folder" class="tp-in" placeholder="/root/isolated-…" required><button class="btn btn-xs btn-ghost" type="submit">Teach</button></form></div>
   <div class="ld-tool"><h4>&#9881; Settings</h4><p>What the hunt does on its own with an EXACT file of a confirmed incident, how far back it reads changed files, and whether lessons are exchanged with other servers (patterns only).</p>
     <form method="post"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="cfg">
       <select name="auto" class="tp-sel"><option value="report"<?= $cfg['auto'] === 'report' ? ' selected' : '' ?>>exact matches: report only</option><option value="quarantine_exact"<?= $cfg['auto'] === 'quarantine_exact' ? ' selected' : '' ?>>exact matches: quarantine by itself</option></select>
       <label style="font-size:12px">changed in last <input type="number" name="recent_days" min="1" max="365" value="<?= (int)$cfg['recent_days'] ?>" style="width:60px"> days</label>
-      <label style="font-size:12px" title="Only patterns leave this server: a file's hash and size, a hidden folder name and extension, a behaviour key, a header hash, a rare file name. Never a path, an account, a file's contents or an address."><input type="checkbox" name="share" value="1"<?= $cfg['share'] === 'on' ? ' checked' : '' ?>> share lessons</label>
+      <label style="font-size:12px" title="Only patterns leave this server: a file's hash and size, a hidden folder name and extension, a behaviour key, a header hash, a rare file name. Never a path, an account, a file's contents or an address."><input type="checkbox" name="share" value="1"<?= $cfg['share'] === 'on' ? ' checked' : '' ?>> exchange lessons with other servers</label>
       <button class="btn btn-xs btn-ghost" type="submit">Save</button></form>
-    <div class="meta" style="margin-top:6px"><?= $cfg['share'] === 'on' ? ($sh ? (int)($sh['sent'] ?? 0) . ' sent · ' . $shN . ' received from ' . (int)($sh['servers'] ?? 0) . ' server(s) · last ' . smpro_h(date('m-d H:i', (int)($sh['last'] ?? 0))) . (!empty($sh['err']) ? ' · last error: ' . smpro_h($sh['err']) : '') : 'no exchange yet') : 'sharing is off' ?>
+    <div class="meta" style="margin-top:6px"><?= $cfg['share'] === 'on' ? ($sh ? (int)($sh['sent'] ?? 0) . ' sent · ' . $shN . ' received from ' . (int)($sh['servers'] ?? 0) . ' server(s) · last ' . smpro_h(date('m-d H:i', (int)($sh['last'] ?? 0))) . (!empty($sh['err']) ? ' · last error: ' . smpro_h($sh['err']) : '') : 'not exchanged yet') : 'exchange is off' ?>
       <form method="post" style="display:inline;margin-left:6px"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="share"><button class="btn btn-xs btn-ghost" type="submit"<?= $cfg['share'] === 'on' ? '' : ' disabled' ?>>Exchange now</button></form></div></div>
+  </div>
 </div>
 
-<div class="ld-two">
-<div class="ld-card">
-  <div class="ld-head"><b>Lessons</b><span class="meta">what the server learned, and from which incident</span></div>
+<div class="card ld-card" id="ld-lessons">
+  <div class="ld-head"><b>&#129504; Lessons</b><span class="meta">what the server learned, and from which incident</span></div>
   <?php if (!$L): ?><div class="ld-empty">No lessons yet - confirm an incident or teach a folder.</div><?php else: ?>
   <div class="ld-filters"><span class="meta">kind:</span><button type="button" class="ld-fb on" data-lf="">all <?= count($L) ?></button>
     <?php $tc = []; foreach ($L as $l) $tc[$l['type']] = ($tc[$l['type']] ?? 0) + 1; foreach ($tc as $t => $n): ?><button type="button" class="ld-fb" data-lf="<?= smpro_h($t) ?>"><?= smpro_h($typeLabel[$t] ?? $t) ?> <?= $n ?></button><?php endforeach; ?>
     <?php if ($shN): ?><button type="button" class="ld-fb" data-lf="shared">shared <?= $shN ?></button><?php endif; ?>
     <input type="text" class="ld-search" id="llq" placeholder="search…" style="margin-left:auto"></div>
-  <div style="overflow:auto;max-height:560px"><table class="smpro-table" style="margin:0" id="lltbl"><thead><tr><th>Kind</th><th>Lesson</th><th>From</th><th class="num">Hits</th><th></th></tr></thead><tbody>
+  <div style="overflow:auto;max-height:560px"><table class="smpro-table" style="margin:0" id="lltbl" data-nopage="1"><thead><tr><th>Kind</th><th>Lesson</th><th>From</th><th class="num">Hits</th><th></th></tr></thead><tbody>
   <?php foreach ($L as $id => $l): $last = end($l['incidents']); $isSh = ($l['source'] ?? '') === 'shared'; ?>
-    <tr data-t="<?= smpro_h($l['type']) ?>" data-sh="<?= $isSh ? 1 : 0 ?>" data-q="<?= smpro_h(strtolower($l['label'] . ' ' . $l['key'])) ?>" style="<?= ($l['state'] ?? 'on') === 'on' ? '' : 'opacity:.5' ?>"><td><span class="pill <?= ($l['state'] ?? 'on') === 'on' ? 'warn' : '' ?>"><?= smpro_h($typeLabel[$l['type']] ?? $l['type']) ?></span><?= $isSh ? '<div class="meta">shared</div>' : '' ?></td>
+    <tr data-t="<?= smpro_h($l['type']) ?>" data-sh="<?= $isSh ? 1 : 0 ?>" data-q="<?= smpro_h(strtolower($l['label'] . ' ' . $l['key'])) ?>" style="<?= ($l['state'] ?? 'on') === 'on' ? '' : 'opacity:.5' ?>"><td><span class="pill <?= ($l['state'] ?? 'on') === 'on' ? 'warn' : '' ?>"><?= smpro_h($typeLabel[$l['type']] ?? $l['type']) ?></span></td>
       <td style="font-size:12px"><?= smpro_h($l['label']) ?><?= $l['type'] === 'hash' ? '<div class="meta mono">' . smpro_h(substr(explode(':', $l['key'])[0], 0, 16)) . '…</div>' : '' ?></td>
       <td style="font-size:11.5px"><?= $isSh ? 'shared by ' . (int)($l['shared']['servers'] ?? 0) . ' server(s)' : count($l['incidents']) . ' incident(s)' ?><div class="meta"><?= smpro_h(date('Y-m-d', (int)($last['at'] ?? $l['created'] ?? 0))) ?><?= !empty($last['source']) ? ' · ' . smpro_h($last['source']) : '' ?></div></td>
       <td class="num"><?= (int)$l['hits'] ?><?= !empty($l['fp']) ? '<div class="meta">' . (int)$l['fp'] . ' wrong</div>' : '' ?></td>
-      <td style="white-space:nowrap"><form method="post" style="display:inline"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="lesson"><input type="hidden" name="id" value="<?= smpro_h($id) ?>"><input type="hidden" name="state" value="<?= ($l['state'] ?? 'on') === 'on' ? 'off' : 'on' ?>"><button class="btn btn-xs btn-ghost" type="submit"><?= ($l['state'] ?? 'on') === 'on' ? 'Off' : 'On' ?></button></form>
+      <td style="white-space:nowrap"><form method="post" style="display:inline"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="lesson"><input type="hidden" name="id" value="<?= smpro_h($id) ?>"><input type="hidden" name="state" value="<?= ($l['state'] ?? 'on') === 'on' ? 'off' : 'on' ?>"><button class="btn btn-xs btn-ghost" type="submit"><?= ($l['state'] ?? 'on') === 'on' ? 'Switch off' : 'Switch on' ?></button></form>
         <form method="post" style="display:inline" data-confirm="Forget this lesson?"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="forget"><input type="hidden" name="id" value="<?= smpro_h($id) ?>"><button class="btn btn-xs btn-ghost" type="submit">Forget</button></form></td></tr>
   <?php endforeach; ?>
   </tbody></table></div><?php endif; ?>
-</div>
-<div class="ld-card">
-  <div class="ld-head"><b>The store</b><span class="meta">moved files, root-only; Restore puts one back exactly and marks it not malicious</span></div>
-  <?php if (!$Q): ?><div class="ld-empty">Nothing in the store.</div><?php else: ?>
-  <div style="overflow:auto;max-height:560px"><table class="smpro-table" style="margin:0"><thead><tr><th>When</th><th>File</th><th>Source</th><th></th></tr></thead><tbody>
-  <?php foreach ($Q as $q): ?>
-    <tr style="<?= empty($q['restored']) ? '' : 'opacity:.5' ?>"><td style="white-space:nowrap"><?= smpro_h(date('m-d H:i', (int)$q['at'])) ?></td><td class="mono" style="word-break:break-all;font-size:11.5px"><?= smpro_h($q['orig']) ?></td><td style="font-size:11.5px"><?= smpro_h((string)($q['source'] ?? '')) ?><?= empty($q['restored']) ? '' : '<div class="meta">restored</div>' ?></td>
-      <td><?php if (empty($q['restored'])): ?><form method="post" data-confirm="Put this file back where it was, and remember it as not malicious?"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value="restore"><input type="hidden" name="kept" value="<?= smpro_h($q['kept']) ?>"><button class="btn btn-xs btn-ghost" type="submit">Restore</button></form><?php endif; ?></td></tr>
-  <?php endforeach; ?>
-  </tbody></table></div><?php endif; ?>
-</div>
 </div>
 
 <form method="post" id="ldone" style="display:none"><input type="hidden" name="smpro_csrf" value="<?= smpro_h($csrf) ?>"><input type="hidden" name="lr_action" value=""><input type="hidden" name="path" value=""><input type="hidden" name="sha" value=""></form>
@@ -300,30 +364,68 @@ document.addEventListener('submit',function(e){var f=e.target;if(f&&f.getAttribu
     if(b.dataset.bulk==='notbad_many'){ chosen.forEach(function(c){var h=document.createElement('input');h.type='hidden';h.name='shas[]';h.value=c.dataset.sha;sel.appendChild(h);}); cks().forEach(function(c){c.disabled=true;}); }
     sel.submit();
   });});
-  var one=document.getElementById('ldone');
+})();
+(function(){
+  var one=document.getElementById('ldone'); if(!one) return;
   document.querySelectorAll('[data-one]').forEach(function(b){b.addEventListener('click',function(){
     if(b.dataset.confirm && !confirm(b.dataset.confirm)) return;
     one.querySelector('[name=lr_action]').value=b.dataset.one; one.querySelector('[name=path]').value=b.dataset.path||''; one.querySelector('[name=sha]').value=b.dataset.sha||''; one.submit();
   });});
 })();
 (function(){
-  var cur='', q='';
-  function apply(){
-    document.querySelectorAll('#ldlist .ld-row').forEach(function(r){
-      var ok=true;
-      if(cur.indexOf('sev:')===0) ok=r.dataset.sev===cur.slice(4);
-      else if(cur.indexOf('kind:')===0) ok=r.dataset.kind===cur.slice(5);
-      if(ok&&q) ok=r.dataset.p.indexOf(q)>=0;
-      r.style.display=ok?'':'none';
-    });
-    document.querySelectorAll('#ldlist .ld-acct').forEach(function(a){var vis=a.querySelectorAll('.ld-row:not([style*="display: none"])').length; a.style.display=vis?'':'none'; if(vis&&(cur||q)) a.open=true;});
-  }
-  
-  
+  /* the store: "I understand the risk" arms Restore on a malicious / unchecked-able row; filter chips + search */
+  document.querySelectorAll('.ld-restore .ld-ackck').forEach(function(c){ c.addEventListener('change',function(){ var b=c.closest('form').querySelector('button[type=submit]'); if(b) b.disabled=!c.checked; }); });
+  var sf='', sq='';
+  function sapply(){document.querySelectorAll('#lstbl tbody tr').forEach(function(r){var ok=true; if(sf) ok=r.dataset.k===sf; if(ok&&sq) ok=r.dataset.q.indexOf(sq)>=0; r.style.display=ok?'':'none';});}
+  document.querySelectorAll('.ld-fb[data-sf]').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('.ld-fb[data-sf]').forEach(function(x){x.classList.remove('on');});b.classList.add('on');sf=b.dataset.sf;sapply();});});
+  var ss=document.getElementById('lsq'); if(ss) ss.addEventListener('input',function(){sq=ss.value.trim().toLowerCase();sapply();});
   var lf='', lq='';
   function lapply(){document.querySelectorAll('#lltbl tbody tr').forEach(function(r){var ok=true; if(lf==='shared') ok=r.dataset.sh==='1'; else if(lf) ok=r.dataset.t===lf; if(ok&&lq) ok=r.dataset.q.indexOf(lq)>=0; r.style.display=ok?'':'none';});}
   document.querySelectorAll('.ld-fb[data-lf]').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('.ld-fb[data-lf]').forEach(function(x){x.classList.remove('on');});b.classList.add('on');lf=b.dataset.lf;lapply();});});
   var ls=document.getElementById('llq'); if(ls) ls.addEventListener('input',function(){lq=ls.value.trim().toLowerCase();lapply();});
+})();
+(function(){
+  /* collapsible section cards + sticky navigator (the shared pattern: modules/firewall-status.php, load-monitor).
+     The header of every card is a real toggle (role=button, keyboard); the open/closed choice is remembered per section. */
+  var KEY='smpro:learned-defense:open', HSEL='.smpro-main .card > .ld-head', PFX='ld', open={};
+  try{ open=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(err){ open={}; }
+  function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(open)); }catch(err){} }
+  function toggleOf(card){ for(var i=0;i<card.children.length;i++){ if(card.children[i].classList.contains('fw-toggle')) return card.children[i]; } return null; }
+  function setOpen(card,on){ var th=toggleOf(card); if(!th) return; card.classList.toggle('fw-open',on); th.setAttribute('aria-expanded',on?'true':'false'); open[th.getAttribute('data-fold')]=on; }
+  function openCard(id,scroll){ var card=document.getElementById(id); if(!card) return;
+    if(toggleOf(card)&&!card.classList.contains('fw-open')){ setOpen(card,true); remember(); }
+    if(scroll){ card.style.scrollMarginTop='120px'; card.scrollIntoView({behavior:'smooth',block:'start'}); } }
+  function init(){
+    if(!document.getElementById(PFX+'Nav')) return;
+    var heads=document.querySelectorAll(HSEL), i;
+    for(i=0;i<heads.length;i++){ (function(th,idx){
+      var card=th.parentElement; if(!card||!card.id||th.classList.contains('fw-toggle')) return;   /* the flash card has no id: never folded */
+      var body=document.createElement('div'); body.className='fw-collapse';
+      while(th.nextSibling){ body.appendChild(th.nextSibling); }
+      card.appendChild(body);
+      th.classList.add('fw-toggle');
+      if(!th.querySelector('.fw-chev')) th.insertAdjacentHTML('afterbegin','<span class="fw-chev">&#9656;</span> ');
+      var id=card.id;
+      th.setAttribute('data-fold',id);
+      var isOpen=Object.prototype.hasOwnProperty.call(open,id)?!!open[id]:true;
+      card.classList.toggle('fw-open',isOpen);
+      th.setAttribute('role','button'); th.setAttribute('tabindex','0'); th.style.cursor='pointer'; th.setAttribute('aria-expanded',isOpen?'true':'false');
+      function toggle(){ setOpen(card,!card.classList.contains('fw-open')); remember(); }
+      th.addEventListener('click',function(e){ if(e.target.closest('a,button,input,select,label,textarea,details,summary,form')) return; toggle(); });
+      th.addEventListener('keydown',function(e){ if(e.target!==th) return; if(e.key===' '||e.key==='Enter'||e.key==='Spacebar'){ e.preventDefault(); toggle(); } });
+    })(heads[i],i); }
+    var gos=document.querySelectorAll('.fw-nav [data-go], .fw-kpis [data-go]');
+    for(i=0;i<gos.length;i++){ (function(a){ a.addEventListener('click',function(e){ e.preventDefault(); var id=a.getAttribute('data-go'); openCard(id,true);
+      var ch=document.querySelectorAll('.fw-nav a'); for(var j=0;j<ch.length;j++) ch[j].classList.toggle('on', ch[j].getAttribute('data-go')===id);
+      try{ history.replaceState(null,'','#'+id); }catch(err){} }); })(gos[i]); }
+    function all(on){ var cs=document.querySelectorAll('.smpro-main .card'); for(var j=0;j<cs.length;j++){ if(toggleOf(cs[j])) setOpen(cs[j],on); } remember(); }
+    var oa=document.getElementById(PFX+'OpenAll'), ca=document.getElementById(PFX+'CloseAll');
+    if(oa) oa.addEventListener('click',function(){ all(true); });
+    if(ca) ca.addEventListener('click',function(){ all(false); });
+    if(location.hash && document.getElementById(location.hash.slice(1))) setTimeout(function(){ openCard(location.hash.slice(1), true); },150);
+  }
+  window[PFX+'OpenCard']=openCard;
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
 })();
 </script>
 <?php smpro_layout_footer();
