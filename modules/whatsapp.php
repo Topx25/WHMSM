@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/whatsapp.php — WhatsApp gateway integration.
+ * modules/whatsapp.php - WhatsApp gateway integration.
  * Connects to an OpenWA-style HTTP API (X-API-Key, multi-session). Manage the
  * connection, create/start/stop sessions, link a phone by scanning the QR code,
  * and send messages. The same connection feeds the WhatsApp notification channel

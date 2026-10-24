@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ###############################################################################
-# Safety Monitor Pro (smpro) — uninstaller
+# Safety Monitor Pro (smpro) - uninstaller
 # Removes the plugin + WHM registration. Keeps data (/var/lib/smpro) unless
 # you pass --purge. Never touches customer accounts or the legacy safety_monitor.
 #
@@ -27,7 +27,7 @@ say "Unregistering from WHM"
 say "Removing plugin files"
 rm -rf "$DEST" && ok "Removed ${DEST}"
 
-# crons this plugin may have installed (hub / update / login-guard / notify / tgbot / cooler / …)
+# crons this plugin may have installed (hub / update / login-guard / notify / tgbot / cooler / ...)
 rm -f /etc/cron.d/${PLUGIN}-* 2>/dev/null && ok "Removed crons" || true
 
 if [ "$PURGE" = "1" ]; then

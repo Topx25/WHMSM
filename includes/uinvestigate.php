@@ -1,13 +1,13 @@
 <?php
 /**
- * includes/uinvestigate.php — User Investigation engine (BETA, 1.1.x).
+ * includes/uinvestigate.php - User Investigation engine (BETA, 1.1.x).
  *
  * Builds a per-cPanel-ACCOUNT incident TIMELINE, assembled READ-ONLY from what the server actually
  * logs, with every event carrying a SOURCE and an honest CONFIDENCE label (confirmed | likely | possible).
  * v1 sources (all include-safe, per-account): web attacks (intrusion index), cPanel panel/API actions
  * (access_log), and logins (login_log). Forensic findings / mail / file-change are added in later phases.
  *
- * NO mutation, no restart — pure collectors. See SM-Pro-User-Investigation-Roadmap.md.
+ * NO mutation, no restart - pure collectors. See SM-Pro-User-Investigation-Roadmap.md.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
@@ -18,24 +18,24 @@ function smpro_ui_accounts() {
     sort($u); return $u;
 }
 
-/** Parse a cPanel access_log timestamp "MM/DD/YYYY:HH:MM:SS +0000" (US-ordered) → unix ts (0 on failure). */
+/** Parse a cPanel access_log timestamp "MM/DD/YYYY:HH:MM:SS +0000" (US-ordered) -> unix ts (0 on failure). */
 function smpro_ui_parse_apachetime($t) {
     if (preg_match('#^(\d{2})/(\d{2})/(\d{4}):(\d{2}):(\d{2}):(\d{2})\s*([+\-]\d{4})?#', (string)$t, $m))
         return strtotime($m[3] . '-' . $m[1] . '-' . $m[2] . ' ' . $m[4] . ':' . $m[5] . ':' . $m[6] . ' ' . ($m[7] ?: '+0000')) ?: 0;
     return @strtotime((string)$t) ?: 0;
 }
 
-/** Parse a login_log bracket timestamp → unix ts. Handles ISO "YYYY-MM-DD HH:MM:SS +0000" (whostmgrd/cpaneld)
- *  AND Apache-style "DD/Mon/YYYY:HH:MM:SS +0000" / "MM/DD/YYYY:HH:MM:SS +0000" (webmail) where a COLON — not a
- *  space — separates date from time (strtotime can't parse that until the first colon becomes a space).
+/** Parse a login_log bracket timestamp -> unix ts. Handles ISO "YYYY-MM-DD HH:MM:SS +0000" (whostmgrd/cpaneld)
+ *  AND Apache-style "DD/Mon/YYYY:HH:MM:SS +0000" / "MM/DD/YYYY:HH:MM:SS +0000" (webmail) where a COLON - not a
+ *  space - separates date from time (strtotime can't parse that until the first colon becomes a space).
  *  Mirrors the shipped login-monitor parser so all sources agree. */
 function smpro_ui_login_ts($t) {
     $t = trim((string)$t);
     if ($t === '') return 0;
-    // Apache-style "DD/Mon/YYYY:HH:MM:SS +zzzz" (webmail) — rebuild with SPACES; strtotime can't read slash+month-name.
+    // Apache-style "DD/Mon/YYYY:HH:MM:SS +zzzz" (webmail) - rebuild with SPACES; strtotime can't read slash+month-name.
     if (preg_match('#^(\d{1,2})/([A-Za-z]{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?\s*([+\-]\d{4})?#', $t, $m))
         return strtotime($m[1] . ' ' . $m[2] . ' ' . $m[3] . ' ' . $m[4] . ':' . $m[5] . ':' . $m[6] . ' ' . ($m[7] ?? '')) ?: 0;
-    // Numeric "MM/DD/YYYY:HH:MM:SS +zzzz" — swap the first colon (date/time separator) to a space.
+    // Numeric "MM/DD/YYYY:HH:MM:SS +zzzz" - swap the first colon (date/time separator) to a space.
     if (preg_match('#^\d{1,2}/\d{1,2}/\d{4}:#', $t)) $t = preg_replace('/:/', ' ', $t, 1);
     // ISO "YYYY-MM-DD HH:MM:SS +zzzz" parses directly.
     return @strtotime($t) ?: 0;
@@ -78,7 +78,7 @@ function smpro_ui_logins($account, $fromTs, $toTs, $maxLines = 0) {
     $account = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)$account);
     if ($account === '' || !is_readable($log)) return [];
     $raw = (string)@shell_exec('timeout 20 tail -n ' . (int)$maxLines . ' ' . escapeshellarg($log) . ' 2>/dev/null');
-    // Empty tail of a non-empty log is a FAILED read (timeout/permission), not "no activity" — surface it rather
+    // Empty tail of a non-empty log is a FAILED read (timeout/permission), not "no activity" - surface it rather
     // than let the timeline quietly show a blank where the evidence should be.
     if ($raw === '') {
         if ((int)@filesize($log) > 0 && function_exists('smpro_audit')) smpro_audit('uinv_read_failed', ['log' => basename($log), 'account' => $account]);
@@ -128,14 +128,14 @@ function smpro_ui_mail_events($account, $fromTs, $toTs, $maxLines = 15000) {
     $account = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)$account);
     if ($account === '' || !is_readable($log)) return [];
     // Exim writes the REAL working directory, so the needle must be the account's real home. Built as
-    // "cwd=/home/<acct>/" it matched nothing for any account on /home2 — and an empty grep result is
+    // "cwd=/home/<acct>/" it matched nothing for any account on /home2 - and an empty grep result is
     // indistinguishable from an account that simply sent no mail, so a compromised account reported clean.
     $home = smpro_user_home($account);
     if ($home === '') return [];                                                  // cannot look != nothing found
     $needle = 'cwd=' . $home . '/';
     // Read rotated generations across the investigation window: exim rotates weekly, so an account's outbound-mail
     // timeline (the strongest compromised-account-sending signal) would otherwise stop ~5 days back on a 14/30-day
-    // investigation and the burst would be invisible. Budgeted reader → busy servers fall back to the live file.
+    // investigation and the burst would be invisible. Budgeted reader -> busy servers fall back to the live file.
     $winDays = max(1, (int)ceil(($toTs - $fromTs) / 86400) + 1);
     $cat = function_exists('smpro_syslog_read_cmd') ? smpro_syslog_read_cmd($log, $winDays) : '';
     $inner = ($cat !== '' ? $cat : 'cat ' . escapeshellarg($log)) . ' 2>/dev/null | grep -F ' . escapeshellarg($needle) . ' | tail -n ' . (int)$maxLines;
@@ -157,7 +157,7 @@ function smpro_ui_mail_events($account, $fromTs, $toTs, $maxLines = 15000) {
             $out[] = ['ts'=>(int)$ts,'source'=>'outbound_mail','actor_ip'=>'','domain'=>'','action'=>'Outbound mail sent — ' . $vector,
                 'target'=>$cwd . ($sender !== '' ? ('  from ' . $sender) : ''),'severity'=>'medium','confidence'=>'confirmed'];
     }
-    if ($n >= 100 && $out) {                                                          // burst → single high-severity marker
+    if ($n >= 100 && $out) {                                                          // burst -> single high-severity marker
         arsort($byScript); $top = (string)array_key_first($byScript);
         $out[] = ['ts'=>(int)$out[0]['ts'],'source'=>'outbound_mail','actor_ip'=>'','domain'=>'',
             'action'=>'Outbound mail BURST — ' . $n . ' script sends in window (possible compromise)',
@@ -166,8 +166,8 @@ function smpro_ui_mail_events($account, $fromTs, $toTs, $maxLines = 15000) {
     return $out;
 }
 
-/** Suspected web shells from the account's Apache domlogs: a .php URL that was SERVED (2xx), hit by only 1–2
- *  client IPs, and POST-heavy and/or referer-less — the classic web-shell access fingerprint (NSA/CISA "Detect
+/** Suspected web shells from the account's Apache domlogs: a .php URL that was SERVED (2xx), hit by only 1-2
+ *  client IPs, and POST-heavy and/or referer-less - the classic web-shell access fingerprint (NSA/CISA "Detect
  *  and Prevent Web Shell Malware"). Catches shells the WAF never saw. READ-ONLY, bounded (domains, lines, time). */
 function smpro_ui_webshell_suspects($account, $fromTs, $toTs, $maxDomains = 30, $maxLines = 20000) {
     $account = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)$account);
@@ -265,11 +265,11 @@ function smpro_ui_collect($account, $fromTs, $toTs) {
 }
 
 /* =========================================================================================
- *  Forensic enrichment (READ-ONLY). Outcome-classify web attacks from their HTTP status, and — ONLY when
- *  an exploit-class request actually reached the app (2xx/3xx) — run a bounded webroot change-scan
+ *  Forensic enrichment (READ-ONLY). Outcome-classify web attacks from their HTTP status, and - ONLY when
+ *  an exploit-class request actually reached the app (2xx/3xx) - run a bounded webroot change-scan
  *  (mirroring smpro_im_breaches) + deep verdict (smpro_fx_deepfile) + whitelist (smpro_fe_wl_match) to
  *  decide whether a malicious file was actually written. Every heavy step is gated, capped, deadline-
- *  bounded and disk-cached. The ONLY write is a cache JSON under SMPRO_CACHE — never an account file.
+ *  bounded and disk-cached. The ONLY write is a cache JSON under SMPRO_CACHE - never an account file.
  * ======================================================================================= */
 
 /** OUTCOME of a web-attack event from its HTTP status (zero I/O). blocked = WAF/client refusal;
@@ -283,18 +283,18 @@ function smpro_ui_outcome($code) {
 }
 
 /** Is $uri a legitimate authenticated WP-admin endpoint (owner installing a plugin/theme/media), NOT a
- *  drive-by upload? A 200 on wp-admin/update.php?action=upload-plugin is the site owner, not an exploit —
+ *  drive-by upload? A 200 on wp-admin/update.php?action=upload-plugin is the site owner, not an exploit -
  *  it must not read as "Malicious Upload / confirmed" nor arm the file scan. Display-time reclassification
  *  only (no disk whitelist). */
 function smpro_ui_is_wpadmin_legit($uri) {
     $p = (string)parse_url((string)$uri, PHP_URL_PATH); if ($p === '') $p = (string)$uri;
     // ONLY endpoints WordPress core gates behind a logged-in admin session + nonce. admin-ajax.php and
-    // async-upload.php are deliberately EXCLUDED — both are reachable by unauthenticated (nopriv) handlers
+    // async-upload.php are deliberately EXCLUDED - both are reachable by unauthenticated (nopriv) handlers
     // and are primary drive-by upload/RCE vectors, so they must NOT be auto-cleared or excused from the scan.
     return (bool)preg_match('#/wp-admin/(?:update|update-core|plugin-install|theme-install|plugin-editor|theme-editor|media-new|import|press-this)\.php$#i', $p);
 }
 
-/** Banner headline + color class for an account verdict. Copy is truthful — green states say "no evidence",
+/** Banner headline + color class for an account verdict. Copy is truthful - green states say "no evidence",
  *  never "safe". $nBlocked used only for the blocked-count phrasing. */
 function smpro_ui_verdict_copy($verdict, $nBlocked = 0, $scanned = true) {
     switch ($verdict) {
@@ -314,7 +314,7 @@ function smpro_ui_verdict_copy($verdict, $nBlocked = 0, $scanned = true) {
 function smpro_ui_fx_gc($cacheDir) {
     $now = time();
     foreach (array_slice((array)@glob($cacheDir . '/*') ?: [], 0, 500) as $f) {
-        if (($now - (int)@filemtime($f)) > 900) @unlink($f);   // > 15 min old → gone (TTL is 5 min)
+        if (($now - (int)@filemtime($f)) > 900) @unlink($f);   // > 15 min old -> gone (TTL is 5 min)
     }
 }
 
@@ -330,7 +330,7 @@ function smpro_ui_fx_write_cache($cf, $cacheDir, array $out) {
 function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
     $t0 = microtime(true);
     $account = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)$account);
-    // STEP 0 — degrade guard
+    // STEP 0 - degrade guard
     if ($account === '' || !function_exists('smpro_in_by_account') || !function_exists('smpro_im_exploit_kind') || !function_exists('smpro_fx_scope'))
         return ['ok' => false];
 
@@ -340,28 +340,28 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
 
     $cacheDir = SMPRO_CACHE . '/uinvest';
     // Bucket the window bounds to 5-min granularity in the KEY so a per-second $toTs (=time()) does not mint a
-    // brand-new key every second — that made the cache never hit and grow unbounded. Freshness is still exact:
+    // brand-new key every second - that made the cache never hit and grow unbounded. Freshness is still exact:
     // $maxAttackTs + $attackCount change the key the instant a new attack is indexed.
     $bucket = 300; $kFrom = intdiv((int)$fromTs, $bucket) * $bucket; $kTo = intdiv((int)$toTs, $bucket) * $bucket;
     $key = sha1($account . '|' . $kFrom . '|' . $kTo . '|' . SMPRO_VERSION . '|' . $maxAttackTs . '|' . $attackCount);
     $cf  = $cacheDir . '/' . $key . '.json';
     $dbm = defined('SMPRO_IN_DB') ? (int)@filemtime(SMPRO_IN_DB) : 0;   // stat the ACTUAL attacks DB (not smpro.db)
-    // STEP 2 — cache read (fresh TTL, and no older than the attacks DB when we can stat it)
+    // STEP 2 - cache read (fresh TTL, and no older than the attacks DB when we can stat it)
     if (is_file($cf) && (time() - (int)@filemtime($cf) < $bucket) && (int)@filemtime($cf) >= $dbm) {
         $cached = json_decode((string)@file_get_contents($cf), true);
         if (is_array($cached) && !empty($cached['ok'])) return $cached;
     }
-    // concurrent-render lock — never launch a parallel find storm for the same key
+    // concurrent-render lock - never launch a parallel find storm for the same key
     @is_dir($cacheDir) || @mkdir($cacheDir, 0700, true);
     smpro_ui_fx_gc($cacheDir);   // prune stale cache/lock files so the dir cannot grow without bound
     $lockFp = @fopen($cf . '.lock', 'c');
     $locked = $lockFp ? @flock($lockFp, LOCK_EX | LOCK_NB) : false;
     if ($lockFp && !$locked) {
-        // a concurrent render is already computing this key — block briefly for it, then serve its cache
+        // a concurrent render is already computing this key - block briefly for it, then serve its cache
         // rather than launching a parallel find/deepfile storm (the anti-stampede guarantee).
         if (@flock($lockFp, LOCK_EX)) { @flock($lockFp, LOCK_UN); }
         if (is_file($cf)) { $c2 = json_decode((string)@file_get_contents($cf), true); if (is_array($c2) && !empty($c2['ok'])) { @fclose($lockFp); return $c2; } }
-        @fclose($lockFp); $lockFp = false;   // still nothing cached → compute inline (unlocked) as a last resort
+        @fclose($lockFp); $lockFp = false;   // still nothing cached -> compute inline (unlocked) as a last resort
     }
 
     $DEADLINE = $t0 + 20.0;
@@ -369,7 +369,7 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
     $decor = []; $blockedN = 0; $reachedN = 0; $reconN = 0;
     $reachedExploit = [];   // build-order index => [domain,ts,kind,ip,uri]
 
-    // STEP 3/4/5 — cheap outcome pass (zero I/O)
+    // STEP 3/4/5 - cheap outcome pass (zero I/O)
     foreach ($events as $i => $e) {
         if (($e['source'] ?? '') !== 'web_attack') continue;
         $kind = (string)($e['_kind'] ?? ''); $code = (string)($e['_code'] ?? ''); $uri = (string)($e['target'] ?? '');
@@ -383,7 +383,7 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
             $isExploit = smpro_im_exploit_kind($kind); $legit = smpro_ui_is_wpadmin_legit($uri);
             if ($isExploit && $legit)       { $fx['label'] = 'Admin action (authenticated WP-admin)'; $conf = 'possible'; }
             elseif ($isExploit)             { $fx['label'] = 'Reached app — exploit-class request, no impact evidence'; $conf = 'reached — no file impact';
-                                              // arm the file scan for EVERY reached exploit-class request — the scan is account-scoped
+                                              // arm the file scan for EVERY reached exploit-class request - the scan is account-scoped
                                               // (docroots), so a missing Host header must not silently skip it.
                                               $reachedExploit[$i] = ['domain'=>(string)($e['domain'] ?? ''),'ts'=>(int)$e['ts'],'kind'=>$kind,'ip'=>(string)($e['actor_ip'] ?? ''),'uri'=>$uri]; }
             else                            { $fx['label'] = 'Reached app (2xx)'; $conf = 'reached'; }
@@ -406,13 +406,13 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
     };
     $kpi0 = ['blocked'=>$blockedN, 'reached'=>$reachedN, 'confirmed_impact'=>0, 'suspicious_files'=>0];
 
-    // STEP 6 — performance gate: no reached-app exploit ⇒ ZERO filesystem I/O
+    // STEP 6 - performance gate: no reached-app exploit ⇒ ZERO filesystem I/O
     if (!$reachedExploit) {
         $verdict = $blockedN > 0 ? 'attacks_blocked' : ($reconN > 0 ? 'reconnaissance' : 'clean');
         return $done($verdict, false, [], $kpi0, false, false, 0);
     }
 
-    // STEP 7 — scope + null guard (never pass null to the array-typed $scope)
+    // STEP 7 - scope + null guard (never pass null to the array-typed $scope)
     $scope = smpro_fx_scope($account);
     if (!is_array($scope) || !function_exists('smpro_fx_deepfile')) return $done('attacks_reached', false, [], $kpi0, false, true, 0);
     $home  = rtrim((string)($scope['home'] ?? (smpro_user_home($account))), '/');
@@ -420,7 +420,7 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
     if (!$roots && function_exists('smpro_im_docroots')) $roots = smpro_im_docroots($account);
     if (!$roots && is_dir($home . '/public_html'))       $roots = [$home . '/public_html'];
 
-    // STEP 8/9 — bounded webroot find (mirror smpro_im_breaches) + reuse the FP filter chain verbatim.
+    // STEP 8/9 - bounded webroot find (mirror smpro_im_breaches) + reuse the FP filter chain verbatim.
     // Every expensive step is deadline-bounded: each find's own timeout is clamped to the time left, and the
     // inner per-file filter chain (sha256 + per-file grep) checks the deadline AND a cumulative-file cap so a
     // docroot with dozens of recently-changed .php files can never push the render past the 20s budget.
@@ -429,7 +429,7 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
     foreach (array_slice($roots, 0, 6) as $root) {
         if (count($candidates) >= 8 || $examined >= 50) break;
         $left = (int)($DEADLINE - microtime(true)); if ($left < 3) { $truncated = true; break; }   // out of budget
-        // Resolve symlinked docroots (public_html is frequently a symlink) and scan the REAL target — find
+        // Resolve symlinked docroots (public_html is frequently a symlink) and scan the REAL target - find
         // won't descend an un-resolved symlink. The realpath-must-stay-under-home check IS the blast-radius
         // guard: a symlink escaping the account's home tree resolves outside $home and is skipped.
         $rp = @realpath((string)$root);
@@ -449,14 +449,14 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
         }
     }
 
-    // STEP 10 — deep verdict (≤5 executed, deadline-guarded). Only medium+ non-trusted files become impacts.
+    // STEP 10 - deep verdict (≤5 executed, deadline-guarded). Only medium+ non-trusted files become impacts.
     $impacts = []; $deepRun = 0; $selfCache = [];
     foreach ($candidates as $path) {
         if ($deepRun >= 5 || microtime(true) > $DEADLINE) { if (count($candidates) > $deepRun) $truncated = true; break; }
         $st = @lstat($path); $ck = $path . '|' . (int)($st['mtime'] ?? 0) . '|' . (int)($st['size'] ?? 0);
         $deep = $selfCache[$ck] ?? ($selfCache[$ck] = smpro_fx_deepfile($path, $scope));
         $deepRun++;
-        if (empty($deep['exists']) || !empty($deep['wp_guard_trusted'])) continue;   // trusted files are capped at info — not an impact
+        if (empty($deep['exists']) || !empty($deep['wp_guard_trusted'])) continue;   // trusted files are capped at info - not an impact
         $band = (string)($deep['band'] ?? 'clean');
         if (!in_array($band, ['medium', 'high', 'critical'], true)) continue;
         $note = '';
@@ -466,16 +466,16 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
                       'note'=>$note, 'proof'=>'mtime_only', 'corr_i'=>null];
     }
 
-    // STEP 11 — Tier-1 correlation (free): nearest reached-exploit event within ±30 min
+    // STEP 11 - Tier-1 correlation (free): nearest reached-exploit event within ±30 min
     foreach ($impacts as &$imp) {
         $best = null; $bestD = PHP_INT_MAX;
         if ($imp['mtime'] > 0) foreach ($reachedExploit as $i => $re) { $d = abs($imp['mtime'] - $re['ts']); if ($d <= 1800 && $d < $bestD) { $bestD = $d; $best = $i; } }
         $imp['corr_i'] = $best;
     } unset($imp);
 
-    // STEP 12 — Tier-2 correlation (bounded, ≤3 calls, each deadline-capped): only for high/critical + Tier-1 hit.
+    // STEP 12 - Tier-2 correlation (bounded, ≤3 calls, each deadline-capped): only for high/critical + Tier-1 hit.
     // proof precedence: only 'write_at_request' (a dir-scoped WRITE_CANDIDATE at the file's write time) PROVES a
-    // write. 'attack_in_window' is domain-wide traffic near the time — corroborating, NOT proof of THIS file.
+    // write. 'attack_in_window' is domain-wide traffic near the time - corroborating, NOT proof of THIS file.
     $corrRun = 0;
     foreach ($impacts as &$imp) {
         if ($imp['corr_i'] === null || !in_array($imp['band'], ['high', 'critical'], true)) continue;
@@ -487,7 +487,7 @@ function smpro_ui_forensics($account, array $events, $fromTs, $toTs) {
         elseif (!empty($c['attack_hit']))  $imp['proof'] = 'attack_in_window';
     } unset($imp);
 
-    // STEP 13/14 — classify impacts, decorate correlated events, account verdict.
+    // STEP 13/14 - classify impacts, decorate correlated events, account verdict.
     //   confirmed  = write PROVEN at the request time (possible_drop) on a high/critical file
     //   correlated = a medium+ file whose mtime is within ±30min of a reached exploit (proximity, not proof)
     //   loose      = a medium+ suspicious file with NO time correlation (may be an unrelated/legit edit)

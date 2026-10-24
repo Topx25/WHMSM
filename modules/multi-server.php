@@ -1,7 +1,7 @@
 <?php
 /**
- * modules/multi-server.php — Multi-Server "Hub" console (Ultra / multi_server feature).
- * A server is EITHER a Master (manages others) OR a Slave/Member (managed by one hub) — never both.
+ * modules/multi-server.php - Multi-Server "Hub" console (Ultra / multi_server feature).
+ * A server is EITHER a Master (manages others) OR a Slave/Member (managed by one hub) - never both.
  * The Hub can be turned off on this server, and pairings can always be removed (which frees the
  * server to become a Master again).
  */
@@ -393,7 +393,7 @@ var HUB_CPASS_SET = <?= $cpassSet?'true':'false' ?>, HUB_CPASS_UNLOCKED = <?= $c
 function hubPostRaw(data){
   var b=new URLSearchParams(); b.set('smpro_csrf',HUB_CSRF);
   // A nested object (the per-command `args`) must be expanded into args[key]=value pairs. It used to be
-  // passed straight to URLSearchParams.set(), which stringifies an object to "[object Object]" — so EVERY
+  // passed straight to URLSearchParams.set(), which stringifies an object to "[object Object]" - so EVERY
   // argument (ip, profile, service, dry) silently arrived empty at the member.
   for(var k in data){
     if(Array.isArray(data[k])) data[k].forEach(function(v){b.append(k+'[]',v);});
@@ -402,7 +402,7 @@ function hubPostRaw(data){
   }
   return fetch('index.cgi?hub_ajax=1',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b.toString()}).then(function(r){return r.json();});
 }
-// step-up: if the server asks to re-verify (a security rule fired — the rule itself is never disclosed),
+// step-up: if the server asks to re-verify (a security rule fired - the rule itself is never disclosed),
 // ask once for the MANAGED server's control password, prove it, then transparently retry the original call.
 function hbVerifyOverlay(on){
   var id='hbVover',e=document.getElementById(id);
@@ -578,7 +578,7 @@ function hubBulk(action){
   if(action==='status'){ ids.forEach(function(id){hubStat(id);}); return; }
   if(HUB_CPASS_SET&&!HUB_CPASS_UNLOCKED){hubEnsureUnlock(function(){hubBulk(action);});return;}
   var args={};
-  // A prompt() only COLLECTS a value — it is not a confirmation. Every one of these changes live production
+  // A prompt() only COLLECTS a value - it is not a confirmation. Every one of these changes live production
   // servers, so after collecting the value we always confirm the action AND name the servers it will hit.
   var what='';
   if(action==='block_ip'){var ip=prompt('Block this IP on '+ids.length+' server(s):');if(!ip)return;args.ip=ip.trim();what='Permanently block '+args.ip+' in the firewall';}
@@ -590,7 +590,7 @@ function hubBulk(action){
   var dry=document.getElementById('hbDry'), isDry=!!(dry&&dry.checked);
   if(isDry)args.dry=1;
   // NEVER skip the confirmation on the strength of the dry-run box alone. If the flag failed to reach the
-  // member for any reason the command would execute for real — and 'update' carries no other argument, so a
+  // member for any reason the command would execute for real - and 'update' carries no other argument, so a
   // dropped flag there meant a real fleet-wide update with no prompt at all. Confirm regardless; the dry-run
   // prompt simply says that nothing will be changed.
   if(what){
@@ -617,7 +617,7 @@ function hubBulk(action){
     }
   }); });
 }
-/* Collect what each member SAID it would do and show it as plain lines — not raw data. */
+/* Collect what each member SAID it would do and show it as plain lines - not raw data. */
 function hbDryResults(ids){
   var msg=document.getElementById('hbBulkMsg');
   msg.innerHTML='&#128064; Reading the replies…';
@@ -693,7 +693,7 @@ function hbDryResults(ids){
     return '<div class="hbp-load"><div class="hbp-spin"></div><div class="hbp-lt">'+title+'</div><div class="hbp-ls">'+sub+'</div>'+bar+'</div>';
   }
   // injected into the remote page. The iframe is a SANDBOXED unique origin (no allow-same-origin), so it
-  // can NEVER touch the hub's page/cookies — it talks to the parent ONLY via postMessage, both ways.
+  // can NEVER touch the hub's page/cookies - it talks to the parent ONLY via postMessage, both ways.
   var HB_SHIM = '\n<script>(function(){var P=parent;var cb={};'+
     'window.addEventListener("message",function(e){if(e.source!==P)return;var d=e.data||{};if(d.hbresp&&cb[d.id]){cb[d.id](d.html||"");delete cb[d.id];}});'+
     'function send(q,fn){var id="r"+Math.random().toString(36).slice(2);cb[id]=fn;P.postMessage({hbproxy:1,id:id,q:q},"*");}'+
@@ -704,7 +704,7 @@ function hbDryResults(ids){
     'document.addEventListener("submit",function(e){var f=e.target;var m=((f.method||"GET")+"").toUpperCase();e.preventDefault();if(m==="GET"){var p=[];[].forEach.call(f.elements,function(el){if(el.name&&!el.disabled&&el.type!=="submit"){if((el.type==="checkbox"||el.type==="radio")&&!el.checked)return;p.push(encodeURIComponent(el.name)+"="+encodeURIComponent(el.value));}});P.postMessage({hbnav:1,q:p.join("&")},"*");}else{alert("Actions inside the remote view are disabled here — use the toolbar at the top.");}},true);'+
     '})();<\/script>';
   function hbpApply(html){var fr=document.getElementById("hbpFrame");fr.srcdoc=html+HB_SHIM;fr.style.visibility="visible";document.getElementById("hbpMsg").style.display="none";var st=document.getElementById("hbpState");st.textContent="● Live";st.className="hb-pstate live";}
-  // parent: serve the sandboxed iframe's routed GET requests — verify the message really came from OUR iframe,
+  // parent: serve the sandboxed iframe's routed GET requests - verify the message really came from OUR iframe,
   // then reply via postMessage (we never touch the iframe's internals, it never touches ours).
   window.addEventListener("message",function(e){
     var fr=document.getElementById("hbpFrame"); if(!fr||e.source!==fr.contentWindow) return;   // only our panel iframe
@@ -719,7 +719,7 @@ function hbDryResults(ids){
     document.getElementById('hbpName').textContent=curName;
     var nav=document.getElementById('hbpNav'); nav.innerHTML='';
     PAGES.forEach(function(p){var b=document.createElement('button');b.textContent=p[1];b.setAttribute('data-pg',p[0]);b.onclick=function(){hubPanelLoad(p[0]);};nav.appendChild(b);});
-    // action toolbar — only the permissions this member granted (monitor links = none)
+    // action toolbar - only the permissions this member granted (monitor links = none)
     var act=document.getElementById('hbpAct'); act.innerHTML=''; perms=perms?(''+perms).split(','):[];
     var amap=[['firewall','&#9940; Block IP','block_ip'],['firewall','&#9989; Unblock','unblock_ip'],['profiles','&#128737; Profile','apply_profile'],['services','&#9881; Restart','restart_service'],['updates','&#8635; Update','update']];
     amap.forEach(function(a){ if(perms.indexOf(a[0])>=0){ var b=document.createElement('button'); b.innerHTML=a[1]; b.onclick=function(){hubAct(curLid,a[2]);}; act.appendChild(b); } });

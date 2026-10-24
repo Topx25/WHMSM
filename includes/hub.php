@@ -1,11 +1,11 @@
 <?php
 /**
- * hub.php — Multi-Server "Hub" client (plugin side) for Safety Monitor Pro.
+ * hub.php - Multi-Server "Hub" client (plugin side) for Safety Monitor Pro.
  *
  * Gated behind the `multi_server` feature (Ultra plan). A server can act as:
  *   - HUB    (controller): pairs with the customer's OTHER servers and manages their PLUGIN
  *            resources (block IP, apply profile, restart a service via the plugin, push update,
- *            view metrics/incidents) — never anything outside the plugin.
+ *            view metrics/incidents) - never anything outside the plugin.
  *   - MEMBER (managed): approves a pairing, GRANTS a granular permission set, then pulls the
  *            hub's commands and executes them LOCALLY under exactly those permissions.
  *
@@ -40,7 +40,7 @@ function smpro_hub_action_perm($action) {
 
 /** Is multi-server in this license? (Ultra plan feature) */
 function smpro_hub_enabled() {
-    // Read from the SIGNED verdict, not the mutable unsigned state.json — else a lower-tier license could unlock
+    // Read from the SIGNED verdict, not the mutable unsigned state.json - else a lower-tier license could unlock
     // the Ultra Hub by appending 'multi_server' to state.json (signature untouched). This gates ALL Hub paths.
     $f = smpro_lic_signed_field(smpro_lic_state(), 'features', []);
     return is_array($f) && in_array('multi_server', $f, true);
@@ -54,7 +54,7 @@ function smpro_hub_set_disabled($off) {
 /** Hub is usable here = licensed (Ultra) AND not locally turned off. */
 function smpro_hub_active() { return smpro_hub_enabled() && !smpro_hub_locally_disabled(); }
 
-/* ---- Independent control password (separate from root) — gates actions on remote servers ---- */
+/* ---- Independent control password (separate from root) - gates actions on remote servers ---- */
 function smpro_hub_cpass_file()   { return SMPRO_VARLIB . '/hub/control_pass'; }
 function smpro_hub_cpass_isset()  { return is_file(smpro_hub_cpass_file()); }
 function smpro_hub_cpass_set($pw) {
@@ -67,7 +67,7 @@ function smpro_hub_cpass_set($pw) {
     $ok = (bool)@file_put_contents(smpro_hub_cpass_file(), password_hash((string)$pw, PASSWORD_DEFAULT));
     @chmod(smpro_hub_cpass_file(), 0600);
     // The control password ALSO derives the end-to-end channel key (the same value on two paired servers seals
-    // all traffic with a secret the relay never sees). Stored as a deterministic hash — never the raw password.
+    // all traffic with a secret the relay never sees). Stored as a deterministic hash - never the raw password.
     @file_put_contents(smpro_hub_e2e_pass_file(), hash('sha256', 'smpro-e2e|' . (string)$pw));
     @chmod(smpro_hub_e2e_pass_file(), 0600);
     return $ok;
@@ -77,7 +77,7 @@ function smpro_hub_cpass_verify($pw) {
     return password_verify((string)$pw, (string)@file_get_contents(smpro_hub_cpass_file()));
 }
 function smpro_hub_cpass_unlock()   { @file_put_contents(SMPRO_VARLIB . '/hub/.cpass_unlock', (string)time()); }
-/** Unlocked = no password set, OR active within the last 60s (sliding idle window — refreshed on each action). */
+/** Unlocked = no password set, OR active within the last 60s (sliding idle window - refreshed on each action). */
 function smpro_hub_cpass_unlocked() {
     if (!smpro_hub_cpass_isset()) return true;
     $f = SMPRO_VARLIB . '/hub/.cpass_unlock';
@@ -93,7 +93,7 @@ function smpro_hub_lock_state() {
     $f = smpro_hub_lock_file();
     $d = is_file($f) ? (json_decode((string)@file_get_contents($f), true) ?: []) : [];
     if (!empty($d['until']) && time() < (int)$d['until']) return $d;
-    if ($d) @unlink($f);                                                            // expired → clear
+    if ($d) @unlink($f);                                                            // expired -> clear
     return [];
 }
 function smpro_hub_is_locked() { return !empty(smpro_hub_lock_state()['until']); }
@@ -104,7 +104,7 @@ function smpro_hub_breach_advice() {
 /** MEMBER (cron): report a failed/locked verify to the local admin AND to the license server. Never throws. */
 function smpro_hub_report_fail($lid, $n, $locked = false) {
     if (function_exists('smpro_audit')) smpro_audit($locked ? 'hub_bruteforce_lock' : 'hub_verify_fail', ['link' => (int)$lid, 'n' => (int)$n]);
-    // notify the local admin — FORCE only the early warning (first attempt) and the lock, so a burst of wrong
+    // notify the local admin - FORCE only the early warning (first attempt) and the lock, so a burst of wrong
     // tries can't spam alerts; the middle attempts go through the normal (batched/toggle-respecting) path.
     if (function_exists('smpro_notify')) {
         $sub  = $locked ? 'Remote control LOCKED (brute force)' : 'Failed remote-control attempt';
@@ -113,7 +113,7 @@ function smpro_hub_report_fail($lid, $n, $locked = false) {
     }
     if (function_exists('smpro_hub_api')) @smpro_hub_api('event', ['link_id' => (int)$lid, 'kind' => $locked ? 'verify_lock' : 'verify_fail', 'n' => (int)$n], 8);
 }
-/** MEMBER/HUB: reset the lock — allowed ONCE per 24h (shared gate covers both the local and the hub-master path). */
+/** MEMBER/HUB: reset the lock - allowed ONCE per 24h (shared gate covers both the local and the hub-master path). */
 function smpro_hub_lock_reset($by = 'local') {
     if (!smpro_hub_is_locked()) { @unlink(smpro_hub_fails_file()); return ['ok' => true, 'was_locked' => false, 'msg' => 'No active lock.']; }
     $rf = smpro_hub_reset_file();
@@ -128,9 +128,9 @@ function smpro_hub_lock_reset($by = 'local') {
 }
 
 /** MEMBER: verify a control-password attempt sent (E2E) by a hub. Hard 24h lock after repeated failures;
- *  while locked, a correct password does NOT bypass — only a once/24h reset or expiry clears it. */
+ *  while locked, a correct password does NOT bypass - only a once/24h reset or expiry clears it. */
 function smpro_hub_member_verify_pass($pw, $lid = 0) {
-    if (!smpro_hub_cpass_isset()) return ['ok' => true, 'nopass' => true, 'locked' => false];   // no password set here → nothing to prove
+    if (!smpro_hub_cpass_isset()) return ['ok' => true, 'nopass' => true, 'locked' => false];   // no password set here -> nothing to prove
     $ls = smpro_hub_lock_state();
     if (!empty($ls['until'])) return ['ok' => false, 'nopass' => false, 'locked' => true, 'until' => (int)$ls['until']];   // hard lock
     $lf = smpro_hub_fails_file(); $now = time();
@@ -140,7 +140,7 @@ function smpro_hub_member_verify_pass($pw, $lid = 0) {
     $all[] = $now; @file_put_contents($lf, json_encode($all)); @chmod($lf, 0600);
     $burst = count(array_filter($all, fn($t) => $now - $t < 1800));                  // last 30 min (fast brute-force)
     $day   = count($all);                                                            // last 24 h (low-and-slow brute-force)
-    if ($burst >= 5 || $day >= 15) {                                                 // EITHER pattern → 24h lock
+    if ($burst >= 5 || $day >= 15) {                                                 // EITHER pattern -> 24h lock
         $until = $now + 86400;
         @file_put_contents(smpro_hub_lock_file(), json_encode(['locked_at' => $now, 'until' => $until])); @chmod(smpro_hub_lock_file(), 0600);
         smpro_hub_report_fail($lid, max($burst, $day), true);
@@ -162,7 +162,7 @@ function smpro_hub_verify_link($lid, $pw, $mip = '') {
     $lid = (int)$lid; $rid = bin2hex(random_bytes(6));
     // The control password may ONLY be sent over an E2E-sealed channel. If the ECDH secret isn't derived yet
     // (the window right after pairing), force derivation from any freshly-arrived member_pub; if still not ready,
-    // bail — NEVER let smpro_hub_seal drop it as '' or (pre-fix) leak it as plaintext through the relay.
+    // bail - NEVER let smpro_hub_seal drop it as '' or (pre-fix) leak it as plaintext through the relay.
     if (smpro_hub_enckey($lid) === '') { smpro_hub_ensure_secrets(smpro_hub_links('hub')); }
     if (smpro_hub_enckey($lid) === '') return ['ok' => false, 'notready' => true];
     smpro_hub_api('live', ['link_id' => $lid]);
@@ -206,7 +206,7 @@ function smpro_hub_reset_lock_request($lid) {
     return ['ok' => false, 'timeout' => true, 'msg' => 'The managed server did not answer yet (it comes online within ~60s). Try again.'];
 }
 
-/** HUB: UNDISCLOSED step-up rules — returns a (non-UI) reason to (re)ask for the member's password, or '' if fine. */
+/** HUB: UNDISCLOSED step-up rules - returns a (non-UI) reason to (re)ask for the member's password, or '' if fine. */
 function smpro_hub_needs_verify($lid, $action = '', $snap = null) {
     $st = smpro_hub_vstate($lid); $now = time();
     if (!$st || empty($st['ts']))                                            return 'first';            // R7 never verified
@@ -225,7 +225,7 @@ function smpro_hub_needs_verify($lid, $action = '', $snap = null) {
  * Each pairing exchanges ECDH public keys (relay carries them but, being passive, never learns the
  * derived secret). Every message then carries a per-request token: nonce + timestamp + HMAC over the
  * body, signed with the shared secret. The receiver verifies signature + freshness + nonce (anti-replay)
- * and audits every check — so a compromised relay can neither forge nor replay commands. */
+ * and audits every check - so a compromised relay can neither forge nor replay commands. */
 function smpro_hub_dh_keypair() {
     $k = @openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
     if (!$k) return ['', ''];
@@ -249,7 +249,7 @@ function smpro_hub_set_secret($lid, $s, array $ctx = []) {
 }
 function smpro_hub_priv_path($code) { $d = SMPRO_VARLIB . '/hub/dh'; @mkdir($d, 0700, true); return $d . '/' . preg_replace('/[^A-F0-9-]/', '', strtoupper((string)$code)) . '.pem'; }
 
-/** Optional SHARED end-to-end passphrase — set the SAME value on both servers to "seal" the channel with
+/** Optional SHARED end-to-end passphrase - set the SAME value on both servers to "seal" the channel with
  *  a secret the relay never sees. Stored as a deterministic hash so both sides derive the identical key. */
 function smpro_hub_e2e_pass_file() { return SMPRO_VARLIB . '/hub/e2e_pass'; }
 function smpro_hub_e2e_pass_isset() { return is_file(smpro_hub_e2e_pass_file()); }
@@ -273,13 +273,13 @@ function smpro_hub_enckey($lid) {
 function smpro_hub_seal($lid, array $payload) {
     $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     $key = smpro_hub_enckey($lid);
-    if ($key === '') {                                              // no shared E2E key yet → NEVER ship plaintext through the
+    if ($key === '') {                                              // no shared E2E key yet -> NEVER ship plaintext through the
         if (function_exists('smpro_audit')) smpro_audit('hub_seal_nokey', ['link' => (int)$lid]);   // (untrusted) relay. The
         return '';                                                 // receiver rejects keyless links anyway; sealing would only
     }                                                              // risk leaking the control password before ECDH is derived.
     $n = bin2hex(random_bytes(8)); $t = time(); $iv = random_bytes(12); $tag = '';
     $ct = openssl_encrypt($body, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, (int)$lid . '|' . $n . '|' . $t);
-    if ($ct === false) {                                            // a key EXISTS but encryption failed — NEVER fall back to
+    if ($ct === false) {                                            // a key EXISTS but encryption failed - NEVER fall back to
         if (function_exists('smpro_audit')) smpro_audit('hub_seal_fail', ['link' => (int)$lid]);   // plaintext (would expose the
         return '';                                                  // control password to the relay). Drop the message instead.
     }
@@ -298,7 +298,7 @@ function smpro_hub_open($lid, $raw) {
         if (!smpro_hub_nonce_ok($lid, (string)$e['n'])) { if (function_exists('smpro_audit')) smpro_audit('hub_auth_reject', ['link' => (int)$lid, 'why' => 'replay']); return null; }
         $p = json_decode((string)$body, true); return is_array($p) ? $p : null;
     }
-    // raw legacy payload — accepted ONLY when no key exists on this link; with a key set, a raw message is a
+    // raw legacy payload - accepted ONLY when no key exists on this link; with a key set, a raw message is a
     // downgrade/forgery attempt and is rejected.
     if ($key !== '') { if (function_exists('smpro_audit')) smpro_audit('hub_auth_reject', ['link' => (int)$lid, 'why' => 'downgrade']); return null; }
     return $e;
@@ -306,7 +306,7 @@ function smpro_hub_open($lid, $raw) {
 function smpro_hub_nonce_ok($lid, $n) {
     $f = SMPRO_VARLIB . '/hub/nonce/' . (int)$lid . '.json'; @mkdir(dirname($f), 0700, true);
     // hold an exclusive lock across the whole read-check-write so two concurrent deliveries (cron tick +
-    // live-loop) of the SAME nonce can't both pass — that would be a replay window.
+    // live-loop) of the SAME nonce can't both pass - that would be a replay window.
     $fh = @fopen($f, 'c+'); if (!$fh) return false;
     if (!@flock($fh, LOCK_EX)) { fclose($fh); return false; }
     $raw = stream_get_contents($fh); $seen = $raw !== '' ? (json_decode($raw, true) ?: []) : [];
@@ -344,7 +344,7 @@ function smpro_hub_install_cron() {
     $php = smpro_php_cli_bin();   // canonical: cron's PATH may not resolve a bare `php`
     $lockDir = defined('SMPRO_LOCKS') ? SMPRO_LOCKS : (SMPRO_VARLIB . '/locks'); @is_dir($lockDir) || @mkdir($lockDir, 0700, true); $flock = is_executable('/usr/bin/flock') ? '/usr/bin/flock' : 'flock';
     $want = "# Safety Monitor Pro — multi-server member worker\n* * * * * root " . $flock . " -n " . $lockDir . "/hub.lock timeout 55 " . $php . ' ' . $worker . " >/dev/null 2>&1\n";
-    // Was a bare write with NO chmod at all — cron ignores a cron.d file that is not 0644, so the member
+    // Was a bare write with NO chmod at all - cron ignores a cron.d file that is not 0644, so the member
     // worker could be "installed" and never run. The shared installer sets the mode and verifies the write.
     smpro_cron_install($cron, $want);
 }
@@ -391,7 +391,7 @@ function smpro_hub_init($label, array $perms, $targetKey = '', $mode = 'control'
     if ($ok && function_exists('smpro_audit')) smpro_audit('hub_pair_init', ['code' => true, 'mode' => $mode, 'perms' => $perms, 'target' => substr((string)$targetKey, -4)]);   // never log the raw pairing token
     return [$ok, $d];
 }
-/** HUB: fleet overview — latest vital snapshot for every active member (cached so it's never blank). */
+/** HUB: fleet overview - latest vital snapshot for every active member (cached so it's never blank). */
 function smpro_hub_fleet() {
     $cf = SMPRO_VARLIB . '/hub/fleet.json'; @mkdir(dirname($cf), 0700, true);
     $prev = is_file($cf) ? (json_decode((string)@file_get_contents($cf), true) ?: []) : [];
@@ -417,14 +417,14 @@ function smpro_hub_fleet() {
     return $out;
 }
 
-/** HUB: fleet from the local cache only (ZERO relay calls) — fast, for the Dashboard. Cron keeps it fresh. */
+/** HUB: fleet from the local cache only (ZERO relay calls) - fast, for the Dashboard. Cron keeps it fresh. */
 function smpro_hub_fleet_cached() {
     $cf = SMPRO_VARLIB . '/hub/fleet.json';
     $d = is_file($cf) ? (json_decode((string)@file_get_contents($cf), true) ?: []) : [];
     return is_array($d['fleet'] ?? null) ? $d['fleet'] : [];
 }
 
-/** Classify a member's snapshot → list of human problem strings (empty = healthy). For hub alerts. */
+/** Classify a member's snapshot -> list of human problem strings (empty = healthy). For hub alerts. */
 function smpro_hub_snap_issues($s) {
     if (!is_array($s) || empty($s)) return ['not reporting yet'];
     $i = [];
@@ -493,14 +493,14 @@ function smpro_hub_link_forget($linkId) {
     @unlink(SMPRO_VARLIB . '/hub/nonce/' . $lid . '.json');
     if (function_exists('smpro_hub_vstate_file')) @unlink(smpro_hub_vstate_file($lid));
 }
-/** HUB → queue a plugin-scoped command for a member link. */
+/** HUB -> queue a plugin-scoped command for a member link. */
 function smpro_hub_push_cmd($linkId, $action, array $args = []) {
     $payload = smpro_hub_seal((int)$linkId, ['action' => (string)$action, 'args' => $args, 'ts' => time()]);
     [$ok, $d] = smpro_hub_api('send', ['link_id' => (int)$linkId, 'dir' => 'cmd', 'body' => $payload]);
     if ($ok && function_exists('smpro_audit')) smpro_audit('hub_push_cmd', ['link' => (int)$linkId, 'action' => $action]);
     return [$ok, $d];
 }
-/** HUB → pull the latest status/results a member posted. Returns decoded items (newest last). */
+/** HUB -> pull the latest status/results a member posted. Returns decoded items (newest last). */
 function smpro_hub_pull($linkId, $dir = 'status') {
     // Refuse links with no established E2E secret: smpro_hub_open() would otherwise return the RAW, unauthenticated
     // relay-supplied JSON, letting a compromised relay inject hostile status fields. A legit member seals nothing
@@ -589,8 +589,8 @@ function smpro_hub_exec($action, array $args, array $granted) {
     // Honor the local master switch / dry-run, same as every other automated action.
     if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) return [false, 'plugin disabled on this server'];
     // A hub may ALSO request a dry run per command (the "Preview" button), so an operator can see what a
-    // fan-out would do on every server before actually doing it. This can only ever make a command do LESS —
-    // it short-circuits before any state change — so honouring it from the request is safe.
+    // fan-out would do on every server before actually doing it. This can only ever make a command do LESS -
+    // it short-circuits before any state change - so honouring it from the request is safe.
     $dry = (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) || !empty($args['dry']);
 
     switch ($action) {
@@ -604,7 +604,7 @@ function smpro_hub_exec($action, array $args, array $granted) {
             if (function_exists('smpro_admin_ip') && $ip === smpro_admin_ip()) return [false, 'refusing the admin IP'];
             if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) return [false, 'refused: Cloudflare edge IP — blocking it would cut ALL inbound site traffic'];
             if ($dry) return [true, "[dry-run] would block $ip"];
-            // Use whichever firewall actually enforces on THIS member, and report the truth back to the hub —
+            // Use whichever firewall actually enforces on THIS member, and report the truth back to the hub -
             // "block requested" was returned unconditionally, so a member with a disabled CSF reported success
             // while blocking nothing.
             if (function_exists('smpro_fw_block_ip')) {
@@ -661,14 +661,14 @@ function smpro_hub_render($page) {
 }
 
 /** MEMBER: proxy a READ-ONLY (GET) request to this server's plugin and return the output (HTML or JSON).
- *  GET-only by design (the plugin's convention: GET = read-only), so it can never change state — that
+ *  GET-only by design (the plugin's convention: GET = read-only), so it can never change state - that
  *  keeps the remote panel's live views/reports working without granting action power beyond the toolbar. */
 function smpro_hub_proxy($query) {
     $query = ltrim((string)$query, '?');
     if ($query === '' || strlen($query) > 4000) $query = 'page=dashboard';
     parse_str($query, $q);
     // STRICT PARAMETER ALLOWLIST (replaces the old deny-list): every key must be a known READ-ONLY view/filter
-    // param. Anything else — incl. any future state-changing GET trigger we forget to deny — blocks the whole
+    // param. Anything else - incl. any future state-changing GET trigger we forget to deny - blocks the whole
     // request. This is in addition to GET-forcing below (REQUEST_METHOD=GET = the structural read-only guarantee).
     static $proxy_allow = [
         'page','format','metric','limit','mins','win','days','range','from','to','o_date','o_from','o_to',
@@ -676,8 +676,8 @@ function smpro_hub_proxy($query) {
         'loglines','weblines','showlocal','show_hidden','saved','report','im_export','im_live','im_attack',
         'rc_export','rc_live','hub_render',
     ];
-    foreach ($q as $k => $v) if (!in_array(strtolower((string)$k), $proxy_allow, true)) return '';   // unknown/action key → refuse
-    // ALLOWLIST: must target a real menu page, OR be a pure live-metric poll (format=json&metric=…)
+    foreach ($q as $k => $v) if (!in_array(strtolower((string)$k), $proxy_allow, true)) return '';   // unknown/action key -> refuse
+    // ALLOWLIST: must target a real menu page, OR be a pure live-metric poll (format=json&metric=...)
     $page = preg_replace('/[^a-z0-9_\-]/', '', strtolower((string)($q['page'] ?? '')));
     $isMetric = isset($q['metric']) || (($q['format'] ?? '') === 'json');
     if ($page !== '' && function_exists('smpro_menu_resolve') && !smpro_menu_resolve($page)) return '';
@@ -702,8 +702,8 @@ function smpro_hub_process_link($lid, array $granted) {
     [$ok, $d] = smpro_hub_api('fetch', ['link_id' => $lid, 'dir' => 'cmd', 'max' => 20], 8);
     if (!$ok) return [0, 0];
     foreach ((array)($d['items'] ?? []) as $it) {
-        $cmd = smpro_hub_open($lid, (string)($it['body'] ?? ''));    // decode + verify per-request token (E2E enforced — see guard above)
-        if (!is_array($cmd)) { $errs++; continue; }                  // unverified/forged/replayed → dropped (audited)
+        $cmd = smpro_hub_open($lid, (string)($it['body'] ?? ''));    // decode + verify per-request token (E2E enforced - see guard above)
+        if (!is_array($cmd)) { $errs++; continue; }                  // unverified/forged/replayed -> dropped (audited)
         $action = (string)($cmd['action'] ?? '');
         if ($action === 'verify_pass') {                            // hub proves it knows THIS server's control password
             $res = smpro_hub_member_verify_pass((string)($cmd['pw'] ?? ''), $lid);
@@ -762,7 +762,7 @@ function smpro_hub_live_loop() {
     if (!smpro_hub_active()) return;
     $lock = SMPRO_VARLIB . '/hub/.live_lock';
     // atomic single-flight: a non-blocking exclusive lock prevents two cron ticks arriving in the same second
-    // from both entering the loop (the old is_file()+mtime check was TOCTOU-racy → duplicate relay traffic).
+    // from both entering the loop (the old is_file()+mtime check was TOCTOU-racy -> duplicate relay traffic).
     $fh = @fopen($lock, 'c'); if (!$fh) return;
     if (!@flock($fh, LOCK_EX | LOCK_NB)) { fclose($fh); return; }   // a loop is already running
     @chmod($lock, 0600);
@@ -775,7 +775,7 @@ function smpro_hub_live_loop() {
             $live = true;
             smpro_hub_process_link((int)$L['link_id'], (array)($L['perms_grant'] ?? []));
         }
-        if (!$live) break;                 // no hub viewing → stop early
+        if (!$live) break;                 // no hub viewing -> stop early
         usleep(1800000);                   // ~1.8s
     }
     @flock($fh, LOCK_UN); @fclose($fh);   // the lock file stays: unlinking it hands the next two workers two different inodes to lock

@@ -1,7 +1,7 @@
 <?php
 /**
- * modules/database-health.php — MySQL / MariaDB slowness & health (LIVE page).
- * Everything on this page refreshes in place from index.cgi?...&metric=dbhealth&full=1 —
+ * modules/database-health.php - MySQL / MariaDB slowness & health (LIVE page).
+ * Everything on this page refreshes in place from index.cgi?...&metric=dbhealth&full=1 -
  * the markup is rendered by the shared smpro_dbh_*_html() helpers in includes/dbhealth.php,
  * so the first paint and every live refresh come from exactly the same code.
  */
@@ -71,7 +71,7 @@ smpro_audit('dbhealth_view', ['score' => $R['score'], 'findings' => count($R['fi
 <?php endif; ?>
 
 <?php
-/* Undersized buffer-pool callout — shown only while the 'bp_undersized' finding (includes/dbhealth.php)
+/* Undersized buffer-pool callout - shown only while the 'bp_undersized' finding (includes/dbhealth.php)
    is present: the pool is at/near the shipped default or a fraction of this machine's RAM. */
 $bpUndersized = false;
 foreach ($R['findings'] as $f) { if (($f['id'] ?? '') === 'bp_undersized') { $bpUndersized = true; break; } }
@@ -101,7 +101,7 @@ if ($bpUndersized): ?>
 </div>
 
 <?php
-/* MyISAM hot-table list — only when the "myisam_locks" finding above is present and the (cached ~1h) list is non-empty.
+/* MyISAM hot-table list - only when the "myisam_locks" finding above is present and the (cached ~1h) list is non-empty.
    Names the exact tables that finding recommends converting, each with a copy-ready ALTER TABLE hint. */
 $myisamPresent = false;
 foreach ($R['findings'] as $f) { if (($f['id'] ?? '') === 'myisam_locks') { $myisamPresent = true; break; } }
@@ -140,7 +140,7 @@ if ($myisamPresent && $myisamRows): ?>
 </div>
 
 <style>
-/* Base primitives — the shared layout only adds sort/border enhancements to .smpro-table, so each
+/* Base primitives - the shared layout only adds sort/border enhancements to .smpro-table, so each
    page declares the base look itself (otherwise tables render as bare, cramped browser defaults). */
 .smpro-tablewrap{overflow-x:auto}
 .smpro-table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -238,7 +238,7 @@ html[data-theme=dark] .dbh-note{color:#fdba74}
   }
   function renderFull(d){
     if(!d.html)return;
-    if(Date.now()<holdUntil)return;                 // an action is showing its result — don't clobber it
+    if(Date.now()<holdUntil)return;                 // an action is showing its result - don't clobber it
     $('dbhKpis').innerHTML=d.html.kpis;
     $('dbhCfg').innerHTML=d.html.config;
     $('dbhFindings').innerHTML=d.html.findings;

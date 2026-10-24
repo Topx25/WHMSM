@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/cpanel-services.php — Service Manager: live Running/Down summary, one-click Fix/Start on stopped
+ * modules/cpanel-services.php - Service Manager: live Running/Down summary, one-click Fix/Start on stopped
  * services, and the Service Monitor (auto-restart + notifications). The catalog, status, controls and the
  * monitor all live in includes/svcmon.php (shared with the cron worker bin/svcmon.php and the Dashboard cards).
  * Controls and the monitor config are POST + CSRF + root + confirmation + audit.
@@ -9,7 +9,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
 
-/* ---------- POST: uninstall an installed add-on (CSF / Imunify / …) ---------- */
+/* ---------- POST: uninstall an installed add-on (CSF / Imunify / ...) ---------- */
 if ($reqMethod === 'POST' && ($_POST['svc_action'] ?? '') === 'uninstall') {
     smpro_require_valid_csrf('svc_ctl'); smpro_require_root();
     header('Content-Type: application/json');
@@ -84,7 +84,7 @@ if ($reqMethod === 'POST' && ($_POST['reboot_action'] ?? '') !== '') {
 
 /* ---------- gather ---------- */
 // Render reads the CRON-refreshed cached scan (45s) instead of a fresh ~40-shell-call probe on every load.
-// smpro_svc_scan_cached() returns a TUPLE [rows, ts, wasCached] — it must be destructured, not wrapped in
+// smpro_svc_scan_cached() returns a TUPLE [rows, ts, wasCached] - it must be destructured, not wrapped in
 // array_values(). Wrapping it produced a 3-element array (rows-array, int, bool) whose members have no
 // 'installed'/'active' keys, so every count came out 0 and the whole page rendered empty. Dashboard and
 // insight.php always destructured it correctly; this page was the only one that did not.
@@ -96,13 +96,13 @@ $instN = count(array_filter($rows, fn($r)=>$r['installed']));
 $actN  = count(array_filter($rows, fn($r)=>$r['active']));
 $downRows = array_values(array_filter($rows, fn($r)=>$r['down']));           // controllable + installed + not running (muted excluded)
 $downN = count($downRows);
-// Muted = admin ignored a service that is genuinely stopped — listed separately so it can be un-muted.
+// Muted = admin ignored a service that is genuinely stopped - listed separately so it can be un-muted.
 $mutedRows = array_values(array_filter($rows, fn($r)=>!empty($r['ignored']) && $r['runtime'] && $r['installed'] && !$r['active']));
 $attnN = count(array_filter($rows, fn($r)=>$r['cls']==='danger'));
 $cfg = smpro_svcmon_cfg();
 $monSet = array_fill_keys($cfg['monitor'], true);
 $monerable = smpro_svc_monitorable();
-// The silent failure: a service is DOWN and nothing is set to bring it back — Service Monitor is either off
+// The silent failure: a service is DOWN and nothing is set to bring it back - Service Monitor is either off
 // entirely, or this service is not on its watch list. WHM shows "stopped" and "monitored" as two unrelated
 // columns, so it is easy to miss that a stopped service is ALSO unwatched: it just stays down and nobody is
 // told. Security services in that state are the worst case, so they are called out first.
@@ -115,7 +115,7 @@ foreach ($rows as $r) {
 usort($unwatched, fn($a, $b) => (int)!empty($b['critical']) <=> (int)!empty($a['critical']));
 $unwatchedCrit = array_values(array_filter($unwatched, fn($r) => !empty($r['critical'])));
 $notifyLink = 'index.cgi?page=notifications';
-$rbReady = function_exists('smpro_reboot_readiness') ? smpro_cache_through('svc_rbready', 120, fn() => smpro_reboot_readiness()) : null;   // pre-reboot safety check (cached — grubby/modinfo/df probes)
+$rbReady = function_exists('smpro_reboot_readiness') ? smpro_cache_through('svc_rbready', 120, fn() => smpro_reboot_readiness()) : null;   // pre-reboot safety check (cached - grubby/modinfo/df probes)
 $rbSched = function_exists('smpro_reboot_sched') ? smpro_reboot_sched() : ['enabled'=>false,'at'=>0,'target'=>'next'];
 
 smpro_audit('cpanel_services_view', ['installed'=>$instN,'active'=>$actN,'down'=>$downN]);
@@ -381,7 +381,7 @@ smpro_layout_header('Service Manager');
 <div class="svc-grid">
   <?php foreach ($rows as $r): $key=$r['key']; $s=smpro_svc_registry()[$key] ?? []; $cls=$r['cls']; $reg=$s;
     $runtime = $r['runtime']; $u = !empty($s['units']);
-    // A service switched off through cPanel/CSF cannot be started from here — the daemon refuses and systemd
+    // A service switched off through cPanel/CSF cannot be started from here - the daemon refuses and systemd
     // reports a confusing protocol failure. Do not offer the action at all; the card says where to re-enable it.
     $offReason = (string)($r['off_reason'] ?? '');
     $showStart = $runtime && $r['installed'] && !$r['active'] && $u && $offReason === '';
@@ -556,7 +556,7 @@ button.svc-big:disabled{cursor:default}
 (function(){
   function esc(s){var e=document.createElement('div');e.textContent=(s==null?'':String(s));return e.innerHTML;}
   function monMsg(t,ok){var m=document.getElementById('svcmMsg');if(m){m.innerHTML=esc(t);m.style.color=ok?'var(--good)':'var(--dang)';}}
-  /* ---- uninstall an installed add-on — the PLUGIN runs the removal (multi-strategy + trace purge) ---- */
+  /* ---- uninstall an installed add-on - the PLUGIN runs the removal (multi-strategy + trace purge) ---- */
   document.addEventListener('click',function(e){
     var b=e.target.closest('.svc-unbtn');if(!b||b.disabled)return;
     var host=b.closest('[data-svc]');if(!host)return;
@@ -574,7 +574,7 @@ button.svc-big:disabled{cursor:default}
         if(j&&j.ok&&j.gone){setTimeout(function(){location.reload();},1600);}else{b.disabled=false;b.innerHTML=o;}
       }).catch(function(){b.disabled=false;b.innerHTML=o;alert('Request failed (it may still be running in the background).');});
   });
-  /* ---- service control (start/restart/stop) — catalog cards AND the down-list; NO page reload ---- */
+  /* ---- service control (start/restart/stop) - catalog cards AND the down-list; NO page reload ---- */
   document.addEventListener('click',function(e){
     var b=e.target.closest('.svc-btn');if(!b||b.disabled)return;
     var host=b.closest('[data-svc]');if(!host)return;
@@ -591,7 +591,7 @@ button.svc-big:disabled{cursor:default}
           setTimeout(function(){if(host.parentNode)host.parentNode.removeChild(host);dropDown(label,true);},420);return;
         }
         host.querySelectorAll('.svc-btn').forEach(function(x){x.disabled=false;});b.textContent=o;
-        // A refusal is not a failed action — the server never tried, because the service is switched off on
+        // A refusal is not a failed action - the server never tried, because the service is switched off on
         // purpose. Say that, instead of "<action> did not confirm", which reads as a malfunction.
         if(j&&j.refused){alert((j.msg||'This service is disabled on this server.').trim());}
         else if(!(j&&j.ok))alert((action+' did not confirm. '+((j&&j.msg)||'')).trim());
@@ -606,7 +606,7 @@ button.svc-big:disabled{cursor:default}
       if(n===0){var d=document.getElementById('svcDown');if(d)d.hidden=true;var l=card.querySelector('.svc-big-l');if(l)l.textContent='None down';var ic=card.querySelector('.svc-big-ic');if(ic)ic.innerHTML='&#10003;';card.classList.remove('bad');card.classList.add('good');card.disabled=true;}}
     monMsg(started?('✓ '+label+' started.'):('🔕 '+label+' muted — it will no longer be flagged.'),true);
   }
-  /* ---- ignore / un-ignore (mute) — down-list rows, muted-list rows, and catalog cards ---- */
+  /* ---- ignore / un-ignore (mute) - down-list rows, muted-list rows, and catalog cards ---- */
   document.addEventListener('click',function(e){
     var b=e.target.closest('.svc-igbtn');if(!b||b.disabled)return;
     var host=b.closest('[data-svc]');if(!host)return;
@@ -625,16 +625,16 @@ button.svc-big:disabled{cursor:default}
         b.disabled=false;b.innerHTML=o;alert((j&&j.msg)||'Failed.');
       }).catch(function(){b.disabled=false;b.innerHTML=o;alert('Failed (network).');});
   });
-  /* ---- Down card → reveal + scroll to the stopped-services list ---- */
+  /* ---- Down card -> reveal + scroll to the stopped-services list ---- */
   var dc=document.getElementById('svcDownCard');
   if(dc)dc.addEventListener('click',function(){var d=document.getElementById('svcDown');if(d){d.hidden=false;d.scrollIntoView({behavior:'smooth',block:'start'});}});
-  /* ---- Service Monitor: AUTOSAVE on any change — no Save button, no page reload ---- */
+  /* ---- Service Monitor: AUTOSAVE on any change - no Save button, no page reload ---- */
   var chks=function(){return Array.prototype.slice.call(document.querySelectorAll('.svcmChk'));};
   var elAll=document.getElementById('svcmAll'),elNone=document.getElementById('svcmNone'),elCrit=document.getElementById('svcmCrit');
   if(elAll)elAll.addEventListener('click',function(){chks().forEach(function(c){c.checked=true;});saveMon();});
   if(elNone)elNone.addEventListener('click',function(){chks().forEach(function(c){c.checked=false;});saveMon();});
   if(elCrit)elCrit.addEventListener('click',function(){chks().forEach(function(c){c.checked=!!c.parentNode.querySelector('.svcm-star');});saveMon();});
-  /* "Start them and watch from now on" — close the gap in one press: start each stopped-and-unwatched
+  /* "Start them and watch from now on" - close the gap in one press: start each stopped-and-unwatched
      service, tick it on the Service Monitor list, make sure the monitor itself is on, then save. */
   var gapFix=document.getElementById('svcGapFix');
   if(gapFix)gapFix.addEventListener('click',function(){

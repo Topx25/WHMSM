@@ -1,13 +1,13 @@
 <?php
 /**
- * Safety Monitor Pro — DirectAdmin → cpmove, the bulk half.
+ * Safety Monitor Pro - DirectAdmin -> cpmove, the bulk half.
  *
  * Stage three: move the account's actual content into the cpmove tree that migrate_da_convert.php described.
  * There is no format question in moving bytes, but there are two layout facts that were read off a real backup
  * and are not guessable:
  *
- *   1. backup/home.tar.gz and domains/ do NOT overlap. The nested archive holds only the home root — dotfiles,
- *      .htpasswds, .php logs — while the served content lives in the OUTER domains/<domain>/public_html. Copying
+ *   1. backup/home.tar.gz and domains/ do NOT overlap. The nested archive holds only the home root - dotfiles,
+ *      .htpasswds, .php logs - while the served content lives in the OUTER domains/<domain>/public_html. Copying
  *      one and assuming it covered the other loses either the site or its settings.
  *   2. Mail sits at imap/<domain>/<mailbox>/Maildir/{cur,new,tmp}; cPanel expects ~/mail/<domain>/<mailbox>/
  *      {cur,new,tmp}. The Maildir/ level has to come out, or every mailbox restores empty with its messages
@@ -20,7 +20,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
  *
  * Running out of disk halfway does not simply fail: it leaves a half-built account AND a full filesystem, and a
  * full filesystem on a hosting server takes every site down, not just this migration. The check is deliberately
- * pessimistic — the archive is decompressed once and then repacked, so the peak is well above its own size, and
+ * pessimistic - the archive is decompressed once and then repacked, so the peak is well above its own size, and
  * gzip cannot be asked for a reliable uncompressed size above 4 GB.
  */
 function smpro_mig_da_space_check(string $archive, string $workRoot, float $factor = 2.5): array {
@@ -62,7 +62,7 @@ function smpro_mig_da_build_home(string $archive, string $cpmoveRoot, string $us
         $warn[] = 'The home files did not unpack, so the account comes across without its shell settings, .htaccess rules and saved passwords.';
     } else { $steps++; }
 
-    // 2. The served content and the mailboxes, from the outer archive in one pass — tar is sequential, so asking
+    // 2. The served content and the mailboxes, from the outer archive in one pass - tar is sequential, so asking
     //    for both together costs one read of a multi-GB file instead of two.
     $say('Unpacking websites and mailboxes (the largest part)');
     $stage = rtrim($cpmoveRoot, '/') . '/.da_stage';
@@ -80,7 +80,7 @@ function smpro_mig_da_build_home(string $archive, string $cpmoveRoot, string $us
         if (!is_dir($dDir . '/public_html')) $warn[] = 'Domain ' . $dom . ' has no public_html in the backup, so it comes across with nothing to serve.';
 
         // EVERY directory beside public_html travels, not just public_html. A DirectAdmin account routinely
-        // carries a second docroot — the reference backup had a 5.1 GB public_html-new-project running its own
+        // carries a second docroot - the reference backup had a 5.1 GB public_html-new-project running its own
         // WordPress against its own database, exactly the same size as the live site. Moving only public_html
         // would have dropped half the account while reporting the migration complete.
         foreach (glob($dDir . '/*', GLOB_ONLYDIR) ?: [] as $sub) {

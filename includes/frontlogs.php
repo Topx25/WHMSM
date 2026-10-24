@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/frontlogs.php — what stands in front of cPanel and the sites, and where it writes, DISCOVERED on the
+ * includes/frontlogs.php - what stands in front of cPanel and the sites, and where it writes, DISCOVERED on the
  * server it runs on. Nothing here names a path or a vendor layout as a fact: every location is read from the
  * running configuration of the program that writes it, so a server laid out differently is read correctly, and a
  * program that is not installed contributes nothing.

@@ -1,11 +1,11 @@
 <?php
 /**
- * bin/geologin_tick.php — Country Login Lock worker.
+ * bin/geologin_tick.php - Country Login Lock worker.
  *
  * WHY THIS FILE EXISTS.
  *
  * The lock could be armed, saved and shown as ARMED, and it could never act. smpro_gl_run() was reachable from
- * exactly one place — the "Check the last hour" button — and that button sends dryrun=1, because a check must
+ * exactly one place - the "Check the last hour" button - and that button sends dryrun=1, because a check must
  * never write. Nothing installed a cron. So there was no path, anywhere, by which a rule could be written: an
  * operator armed the lock, signed in from a country not on their list, and nothing happened, while the panel
  * said ARMED. csf.deny held zero of its rules and always would have.

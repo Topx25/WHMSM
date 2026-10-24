@@ -5,7 +5,7 @@
 #
 # This script used to write BOTH channel pointers on every run: one command, and every licensee on the stable
 # channel was moved onto whatever had just been built. the release rules say in two places that stable moves only on the
-# owner's explicit word and that an agent never moves it alone — and the script made obeying that impossible,
+# owner's explicit word and that an agent never moves it alone - and the script made obeying that impossible,
 # because there was no way to publish a beta WITHOUT also moving stable. Nine beta builds went to stable that way
 # before anybody noticed, and the only reason nobody was hurt is that the channels already pointed at the same
 # build.
@@ -15,7 +15,7 @@
 #
 # This replaced four near-identical PUBLISH-<version>.sh scripts. They were the hazard: every one of them still
 # ran, and the tarball each referred to was still on disk, so running an old one by mistake would have quietly
-# REPLACED stable with an older release — a downgrade for every licensee, reported as a successful publish.
+# REPLACED stable with an older release - a downgrade for every licensee, reported as a successful publish.
 # One script, one argument, and the version can no longer be stale by accident.
 #
 # Before publishing, check the release really is newer than what stable serves. That check is enforced below:
@@ -60,7 +60,7 @@ for f in "$TGZ" "$SIG" "$NOTES" "$RECEIPT"; do
 done
 
 # The gate must have passed for THIS artifact. A build made with the gate overridden records lab=overridden and
-# is refused here — stable is not the place to find out the suite was skipped.
+# is refused here - stable is not the place to find out the suite was skipped.
 LAB="$(php -r 'echo json_decode(file_get_contents($argv[1]),true)["lab"] ?? "";' "$RECEIPT")"
 SHA="$(php -r 'echo json_decode(file_get_contents($argv[1]),true)["sha256"] ?? "";' "$RECEIPT")"
 [[ "$LAB" == "green" ]] || { echo "receipt says lab=$LAB — refusing to publish."; exit 1; }
@@ -126,7 +126,7 @@ PUBLISH_STABLE='$PUBLISH_STABLE'
 
 # Keep what stable is serving today, so a rollback is a copy rather than a rebuild.
 # Only when it is a DIFFERENT release. Re-publishing the version already on stable (to repair a partial upload,
-# or to re-push a rebuilt package) used to copy it over smpro-prev — which threw away the one release you would
+# or to re-push a rebuilt package) used to copy it over smpro-prev - which threw away the one release you would
 # roll back TO and replaced it with the one you are rolling back FROM. The rollback target then pointed at the
 # same build as stable, and nobody would find that out until the rollback was needed.
 if [ \"\$PUBLISH_STABLE\" = '1' ]; then
@@ -152,7 +152,7 @@ cp -f '$TGZ' smpro-beta.tar.gz
 cp -f '$SIG'  smpro-beta.tar.gz.sig
 echo '$VER' > VERSION_BETA
 # The notes follow the channel they belong to. This wrote only NOTES_STABLE.txt, and the licence server serves
-# NOTES_BETA.txt to the beta channel — so the beta notes were last written on 9 September for beta190 and sat
+# NOTES_BETA.txt to the beta channel - so the beta notes were last written on 9 September for beta190 and sat
 # there unchanged through thirty-nine releases, while NOTES_STABLE.txt filled up with notes whose own first line
 # said it was for the beta channel. Both channels described a release nobody was running.
 cp -f '$NOTES' NOTES_BETA.txt

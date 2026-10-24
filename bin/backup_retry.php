@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/backup_retry.php — auto-retry failed JetBackup jobs until they complete.
+ * bin/backup_retry.php - auto-retry failed JetBackup jobs until they complete.
  *
  * Run by cron (installed/removed from the Backup Monitor page). For each backup
  * job that is NOT running and whose last run did not complete
@@ -18,7 +18,7 @@ if (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) exit;   // glob
 if (function_exists('smpro_lic_grace_phase') && smpro_lic_grace_phase() >= 2) exit;
 
 define('SMPRO_BM_MAX', 5);                                   // give up after this many retries per rolling window
-define('SMPRO_BM_WINDOW', 6 * 3600);                        // …within this window; a genuinely new failure later gets a fresh budget
+define('SMPRO_BM_WINDOW', 6 * 3600);                        // ...within this window; a genuinely new failure later gets a fresh budget
 $statePath = '/var/lib/smpro/state/backup_retry.json';
 $logPath   = '/var/log/smpro/backup_retry.log';
 $bin = '/usr/bin/jetbackup5api';
@@ -30,7 +30,7 @@ function jb($func, $data = '') {
     $j = json_decode($out, true);
     if (!is_array($j)) { $GLOBALS['jbErr'] = 'no readable response for "' . $func . '"'; return []; }
     // success=0 replies (expired licence, disabled API) carry error text in 'data'. Reading 'data' unconditionally
-    // turned a hard API failure into an empty job list, i.e. "nothing to retry" — silently, forever.
+    // turned a hard API failure into an empty job list, i.e. "nothing to retry" - silently, forever.
     if (array_key_exists('success', $j) && (int)$j['success'] !== 1) {
         $m = trim((string)($j['message'] ?? $j['error'] ?? ''));
         if ($m === '' && isset($j['data']) && is_string($j['data'])) $m = trim($j['data']);
@@ -46,7 +46,7 @@ if (!is_array($state)) $state = [];
 
 $GLOBALS['jbErr'] = '';
 $list = jb('listBackupJobs');
-// An API error must be logged, not treated as "no jobs to retry" — a silent exit(0) every 20 min is exactly how
+// An API error must be logged, not treated as "no jobs to retry" - a silent exit(0) every 20 min is exactly how
 // a broken JetBackup licence stayed invisible while auto-retry appeared to be running.
 if ($GLOBALS['jbErr'] !== '') { bm_log('ERROR JetBackup API unavailable: ' . $GLOBALS['jbErr'] . ' — no jobs could be read, nothing retried'); exit(0); }
 $jobs = $list['data']['jobs'] ?? $list['data'] ?? [];
@@ -58,28 +58,28 @@ foreach ($jobs as $j) {
     if (time() - $bmT0 > 420) { bm_log('deadline reached - remaining jobs wait for the next tick'); break; }   // inside the cron's timeout, so the counter below is always written
     $id = (string)($j['_id'] ?? ''); if ($id === '') continue;
     $full = jb('getBackupJob', '_id=' . $id)['data'] ?? $j;
-    if (!empty($full['running'])) continue;                  // currently running — leave it
-    // JetBackup's 'state' is NOT the enabled flag — a live, enabled job reports state:0 alongside a separate
+    if (!empty($full['running'])) continue;                  // currently running - leave it
+    // JetBackup's 'state' is NOT the enabled flag - a live, enabled job reports state:0 alongside a separate
     // 'disabled' field. Keying off state made the retry worker skip EVERY job, so auto-retry silently never ran.
-    if (!empty($full['disabled'])) continue;   // job is disabled — never auto-retry or it re-runs forever
+    if (!empty($full['disabled'])) continue;   // job is disabled - never auto-retry or it re-runs forever
     $lr = (is_numeric($full['last_run'] ?? '') ? (int)($full['last_run'] ?? 0) : (strtotime((string)($full['last_run'] ?? '')) ?: 0));
     $lc = (is_numeric($full['last_completed'] ?? '') ? (int)($full['last_completed'] ?? 0) : (strtotime((string)($full['last_completed'] ?? '')) ?: 0));
     $name = (string)($full['name'] ?? $id);
 
     $failed = $lr > 0 && $lc < $lr;                          // last run started but never completed
-    if (!$failed) {                                          // success → clear any retry state
+    if (!$failed) {                                          // success -> clear any retry state
         if (isset($state[$id])) { bm_log("OK '$name' completed — clearing retry state"); unset($state[$id]); }
         continue;
     }
     // Cap retries per ROLLING WINDOW, not per run-timestamp. Each retry launches a NEW run with a
-    // new last_run, so keying the counter on $lr reset it every tick → a permanently-failing job was
+    // new last_run, so keying the counter on $lr reset it every tick -> a permanently-failing job was
     // re-run every cron interval forever. Now: at most SMPRO_BM_MAX retries per SMPRO_BM_WINDOW; a
     // genuinely new failure after the window elapses gets a fresh budget.
     $rec = $state[$id] ?? ['attempts' => 0, 'window' => 0];
     if ((int)($rec['window'] ?? 0) === 0 || ($now - (int)$rec['window']) > SMPRO_BM_WINDOW) {
         $rec = ['attempts' => 0, 'window' => $now];         // start a fresh retry window
     }
-    if ((int)$rec['attempts'] >= SMPRO_BM_MAX) {            // exhausted for this window — stop hammering
+    if ((int)$rec['attempts'] >= SMPRO_BM_MAX) {            // exhausted for this window - stop hammering
         // Tell the admin once per window that auto-retry gave up (previously it just went quiet).
         if (empty($rec['exhausted_notified']) && function_exists('smpro_notify')) {
             smpro_notify('backup_failed', 'Auto-retry exhausted: backup job "' . $name . '"',

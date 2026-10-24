@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/disk-storage.php — Disk / Storage Details.
+ * modules/disk-storage.php - Disk / Storage Details.
  * Read-only: filesystem usage (df), per-account disk usage (whmapi1 listaccts),
  * and inode usage. Flags mounts and accounts that are near their limit.
  */
@@ -15,7 +15,7 @@ function smpro_ds_mem() {
     return ['mem_total'=>$mt,'mem_avail'=>$ma,'mem_avail_pct'=>$mt?round($ma/$mt*100,1):100,
             'swap_total'=>$st,'swap_used'=>$su,'swap_used_pct'=>$st?round($su/$st*100,1):0,'cached'=>$mi['Cached'] ?? 0];
 }
-/** Plan old-kernel removal SAFELY (read-only — makes NO changes).
+/** Plan old-kernel removal SAFELY (read-only - makes NO changes).
  *  Keeps the running kernel + the 2 newest; never includes the running kernel; refuses edge cases.
  *  Returns ['mgr','running','remove'=>[...],'count','safe'=>bool,'reason']. */
 function smpro_ds_boot_plan() {
@@ -40,14 +40,14 @@ function smpro_ds_boot_plan() {
     return ['mgr'=>'','running'=>$running,'remove'=>[],'count'=>0,'safe'=>false,'reason'=>'No supported package manager (dnf/apt).'];
 }
 
-/** Health checks across partitions / swap / memory / /tmp → each may carry a Fix action. */
+/** Health checks across partitions / swap / memory / /tmp -> each may carry a Fix action. */
 function smpro_ds_checks($fs, $mem) {
     $c = [];
     $tmp = null; foreach ($fs as $r) if ($r['mount'] === '/tmp') $tmp = $r;
     $tmpNoexec = strpos((string)@shell_exec('findmnt -no OPTIONS /tmp 2>/dev/null'), 'noexec') !== false;
     if ($tmp && $tmp['pct'] >= 85) $c[] = ['label'=>'/tmp is ' . $tmp['pct'] . '% full', 'sev'=>$tmp['pct']>=95?'danger':'warn', 'fix'=>'fix_tmp_cache', 'fixlabel'=>'Clear old /tmp cache', 'why'=>'A full /tmp breaks uploads, sessions, package builds and backups.'];
-    // Offer to DOUBLE /tmp only when its backing is actually resizable (tmpfs or a cPanel loopback) — a plain /tmp dir is refused.
-    // Only probe the backing (~15 findmnt/losetup/df/cagefsctl spawns) when /tmp is actually near-full — it's unused otherwise.
+    // Offer to DOUBLE /tmp only when its backing is actually resizable (tmpfs or a cPanel loopback) - a plain /tmp dir is refused.
+    // Only probe the backing (~15 findmnt/losetup/df/cagefsctl spawns) when /tmp is actually near-full - it's unused otherwise.
     $tmpBack = ($tmp && $tmp['pct'] >= 85 && function_exists('smpro_ds_tmp_detect')) ? (smpro_ds_tmp_detect()['backing'] ?? 'unknown') : 'unknown';
     if ($tmp && $tmp['pct'] >= 85 && in_array($tmpBack, ['loop','tmpfs'], true)) $c[] = ['label'=>'/tmp is ' . $tmp['pct'] . '% full — its capacity can be doubled', 'sev'=>$tmp['pct']>=95?'danger':'warn', 'fix'=>'tmp_expand', 'fixlabel'=>'Expand /tmp (double capacity)', 'why'=>'Doubles the /tmp backing: a tmpfs is resized instantly; a cPanel loopback is rebuilt at 2× with contents preserved and automatic rollback (/tmp is guaranteed to stay mounted).'];
     if ($tmp && !$tmpNoexec) $c[] = ['label'=>'/tmp is NOT mounted noexec', 'sev'=>'warn', 'fix'=>'fix_securetmp', 'fixlabel'=>'Secure /tmp (noexec)', 'why'=>'A world-writable executable /tmp lets attackers run dropped binaries.'];
@@ -58,12 +58,12 @@ function smpro_ds_checks($fs, $mem) {
         if ($r['pct'] < 90 || $r['mount'] === '/tmp') continue;
         $mnt = $r['mount']; $sev = $r['pct'] >= 95 ? 'danger' : 'warn';
         if ($mnt === '/boot' || $mnt === '/boot/efi') {
-            // critical system path → safe one-click fix: remove OLD kernels (keep running + newest)
+            // critical system path -> safe one-click fix: remove OLD kernels (keep running + newest)
             $c[] = ['label'=>$mnt . ' is ' . $r['pct'] . '% full', 'sev'=>$sev, 'fix'=>'fix_boot_kernels', 'fixlabel'=>'Remove old kernels (keep running + newest)', 'why'=>'/boot fills up with old kernel packages. Removing them — never the running or newest — frees space so future kernel/security updates can install.'];
         } elseif ($mnt === '/var' || $mnt === '/var/log') {
             $c[] = ['label'=>$mnt . ' is ' . $r['pct'] . '% full', 'sev'=>$sev, 'fix'=>'fix_var_logs', 'fixlabel'=>'Vacuum journald + trim old logs', 'why'=>'System logs (journald + rotated/compressed logs) are the usual cause. This keeps the last 7 days and removes the rest — active logs are never touched.'];
         } else {
-            // /, /home and data mounts → no blind auto-delete; point to the scans below
+            // /, /home and data mounts -> no blind auto-delete; point to the scans below
             $c[] = ['label'=>$mnt . ' is ' . $r['pct'] . '% full', 'sev'=>$sev, 'fix'=>'', 'fixlabel'=>'', 'why'=>'Holds user/system data — no safe blanket auto-clean. Use the large-files / old-backups / junk scans below to free space on ' . $mnt . '.'];
         }
     }
@@ -118,7 +118,7 @@ $dsCsrf0 = function_exists('smpro_csrf_generate') ? smpro_csrf_generate('ds') : 
 /* AJAX: render the cleanup scan fragment for one account */
 if (($_GET['ajax'] ?? '') === 'cleanscan') {
     // Renders the report from the SAVED background-job result. The scan itself runs in bin/cleanscan.php so it
-    // finishes even if this page is closed — this endpoint never scans inline.
+    // finishes even if this page is closed - this endpoint never scans inline.
     $acct = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_GET['user'] ?? ''));
     $job  = smpro_ds_scan_read($acct);
     if (!$job)                     { echo '<div class="fa-empty">No scan has been run for this account yet.</div>'; exit; }
@@ -162,10 +162,10 @@ if (($_GET['ajax'] ?? '') === 'cleanscan') {
     if ($total === 0) echo '<div class="fa-empty" style="color:var(--good);padding:16px">&#10003; Nothing obviously reclaimable found for this account.</div>';
     exit;
 }
-/* AJAX: SERVER-WIDE scans (large files / old backups / junk-cache) — bounded + mail/backup excluded */
+/* AJAX: SERVER-WIDE scans (large files / old backups / junk-cache) - bounded + mail/backup excluded */
 if (($_GET['ajax'] ?? '') === 'svscan') {
     $type = preg_replace('/[^a-z]/', '', (string)($_GET['type'] ?? ''));
-    // INODE-HOG scan (read-only): which /home directories consume the most inodes. Visibility only —
+    // INODE-HOG scan (read-only): which /home directories consume the most inodes. Visibility only -
     // NO checkboxes / delete buttons / bulk bar. Bounded + nice'd via smpro_ds_wrap, like the file scans.
     if ($type === 'inodes') {
         $cmd = smpro_ds_wrap("du --inodes -x /home --max-depth=4 2>/dev/null | sort -rn | head -40", 200);
@@ -293,7 +293,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
         $out = (string)@shell_exec("timeout 90 nice -n 19 find /tmp -maxdepth 3 -type f -atime +3 -not -name 'sess_*' -not -name 'cpsess*' -not -name '*.sock' -not -name '.s.*' -not -name '*.lock' -not -ipath '*cpanel*' -not -ipath '*mysql*' -delete 2>&1");
         $r = ['ok'=>true,'msg'=>'Cleared regular /tmp files older than 3 days (sessions, sockets and locks were preserved).'];
     } elseif ($act === 'preview_boot_kernels') {
-        // READ-ONLY dry run — shows exactly what would be removed, changes nothing.
+        // READ-ONLY dry run - shows exactly what would be removed, changes nothing.
         $p = smpro_ds_boot_plan();
         $r = ['ok'=>true, 'preview'=>1, 'mgr'=>$p['mgr'], 'running'=>$p['running'], 'remove'=>$p['remove'],
               'count'=>$p['count'], 'safe'=>$p['safe'], 'reason'=>$p['reason'],
@@ -309,7 +309,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
                 $out = (string)@shell_exec('timeout 300 dnf -y remove ' . implode(' ', array_map('escapeshellarg', $p['remove'])) . ' 2>&1');
                 @shell_exec('timeout 60 dnf -y clean packages 2>&1');
             } else {
-                // Purge EXACTLY the kernel packages the preview listed (parse each "Remv <pkg> …" line) —
+                // Purge EXACTLY the kernel packages the preview listed (parse each "Remv <pkg> ..." line) -
                 // a blanket `apt-get autoremove` would remove every autoremovable package, not just the
                 // kernels the admin saw and confirmed.
                 $pkgs = [];
@@ -318,7 +318,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
                     ? (string)@shell_exec('timeout 300 apt-get -y --purge remove ' . implode(' ', array_map('escapeshellarg', $pkgs)) . ' 2>&1')
                     : 'Nothing matched the confirmed kernel list.';
             }
-            // POST-VERIFY boot integrity — the running kernel MUST still be present & bootable.
+            // POST-VERIFY boot integrity - the running kernel MUST still be present & bootable.
             $vmRun = trim((string)@shell_exec('ls /boot/vmlinuz-' . escapeshellarg($running) . ' 2>/dev/null')) !== '';
             $vmAny = (int)trim((string)@shell_exec('ls /boot/vmlinuz-* 2>/dev/null | wc -l'));
             $grubOk = trim((string)@shell_exec('ls /boot/grub2/grub.cfg /boot/grub/grub.cfg /boot/loader/entries/*.conf 2>/dev/null | head -1')) !== '';
@@ -338,7 +338,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
             @shell_exec('timeout 120 journalctl --vacuum-time=7d 2>&1');
             @shell_exec('timeout 120 journalctl --vacuum-size=200M 2>&1');
         }
-        // remove only ROTATED/compressed logs older than 14 days — never active logs
+        // remove only ROTATED/compressed logs older than 14 days - never active logs
         @shell_exec("timeout 90 nice -n 19 find /var/log -type f \\( -name '*.gz' -o -name '*.xz' -o -name '*.old' -o -name '*.1' -o -name '*.2' -o -name '*.3' -o -name '*.4' -o -name '*.5' -o -name '*.6' -o -name '*.7' \\) -mtime +14 -delete 2>/dev/null");
         $after = $pct($mnt);
         $r = ['ok'=>true,'msg'=>'Journald vacuumed (kept 7 days / 200M) and rotated logs older than 14 days removed. ' . $mnt . ' now ' . $after . '% (was ' . $before . '%).'];
@@ -352,7 +352,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
             $f = $safe;
             $bdir = '/home/backup/detections/' . $acct; @is_dir($bdir) || @mkdir($bdir, 0700, true);
             $bak = $bdir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($f));
-            // Prefer rename (same filesystem → instant, needs NO extra space) — copy-then-unlink doubles the
+            // Prefer rename (same filesystem -> instant, needs NO extra space) - copy-then-unlink doubles the
             // file's footprint first and fails on the ≥95%-full disk this tool exists to rescue. Fall back to
             // copy for a cross-filesystem backup dir.
             $moved = @rename($f, $bak) || (@copy($f, $bak) && @unlink($f));
@@ -387,7 +387,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
               'resize'=>!empty($p['resize']),'old_size_h'=>($p['old_size_h'] ?? ''),
               'ram_h'=>$p['ram_h'],'cur_swap_h'=>$p['cur_swap_h'],'add_h'=>$p['add_h'],'new_total_h'=>$p['new_total_h'],
               'fstype'=>$p['fstype'],'avail_h'=>$p['avail_h'],
-              // recommendation + limits so the modal can show them (were missing → modal showed "min · max · Auto" blank)
+              // recommendation + limits so the modal can show them (were missing -> modal showed "min · max · Auto" blank)
               'min_rec_h'=>($p['min_rec_h'] ?? ''),'max_rec_h'=>($p['max_rec_h'] ?? ''),'auto_h'=>($p['auto_h'] ?? ''),
               'auto_mib'=>($p['auto_mib'] ?? 0),'room_h'=>($p['room_h'] ?? ''),'room_mib'=>($p['room_mib'] ?? 0),
               'cap_h'=>($p['cap_h'] ?? ''),'clamped'=>!empty($p['clamped']),'requested_mib'=>($p['requested_mib'] ?? 0),
@@ -422,7 +422,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
     } elseif ($act === 'cleanscan_start' && function_exists('smpro_ds_scan_launch')) {
         $r = smpro_ds_scan_launch((string)($_POST['acct'] ?? ''));
     } elseif ($act === 'cleanscan_cancel' && function_exists('smpro_ds_scan_cancel')) {
-        $r = smpro_ds_scan_cancel((string)($_POST['acct'] ?? ''));   // explicit admin cancel — the ONLY thing that stops a started scan
+        $r = smpro_ds_scan_cancel((string)($_POST['acct'] ?? ''));   // explicit admin cancel - the ONLY thing that stops a started scan
     } elseif ($act === 'cleanscan_forget' && function_exists('smpro_ds_scan_forget')) {
         $r = smpro_ds_scan_forget((string)($_POST['acct'] ?? ''));
     } elseif ($act === 'cleanscan_status' && function_exists('smpro_ds_scan_read')) {
@@ -470,13 +470,13 @@ function smpro_ds_inodes() {
     return $rows;
 }
 /* live disk I/O + temperature helpers now live in includes/diskio.php (boot-loaded) so the index.php
- * `format=json&metric=diskio` live endpoint — the same mechanism the dashboard uses — can call them. */
+ * `format=json&metric=diskio` live endpoint - the same mechanism the dashboard uses - can call them. */
 
-/** Render the Disk I/O performance card — LIVE (polls itself, no page refresh) + read/write speed + busy% + temperature. */
+/** Render the Disk I/O performance card - LIVE (polls itself, no page refresh) + read/write speed + busy% + temperature. */
 function smpro_ds_diskio_card_html(array $io): string {
     $h = fn($s) => function_exists('smpro_h') ? smpro_h($s) : htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
     $mb = fn($k) => $k >= 1024 ? number_format($k / 1024, 1) . ' MB/s' : number_format($k, 0) . ' KB/s';
-    $pl = smpro_ds_diskio_payload($io, false);   // cache-only temps → page render never blocks on smartctl; live poll refreshes
+    $pl = smpro_ds_diskio_payload($io, false);   // cache-only temps -> page render never blocks on smartctl; live poll refreshes
     $devs = $pl['devices']; $worst = $pl['worst']; $hasTemp = true;   // always show the Temp column (values fill in on the first live poll)
     $accent = $worst === 'danger' ? 'var(--dang)' : ($worst === 'warn' ? '#c2710c' : 'var(--good)');
     $verdict = $worst === 'danger'
@@ -564,7 +564,7 @@ if (function_exists('smpro_swap_reconcile')) { try { smpro_swap_reconcile(); } c
 $fs = smpro_ds_filesystems();
 $inodes = smpro_ds_inodes();
 // Keep the two heaviest probes OFF the render path: the disk-I/O card has a 0.8s sample and the per-account
-// table runs `whmapi1 listaccts` (grows to seconds/tens-of-seconds with account count — the forbidden render
+// table runs `whmapi1 listaccts` (grows to seconds/tens-of-seconds with account count - the forbidden render
 // probe). Both are cached; the disk-I/O card self-polls its live endpoint, and a "Refresh" reloads the page.
 $diskio = smpro_cache_through('ds_diskio', 30, fn() => smpro_ds_diskio());   // live read/write speed + busy% per disk (short sample)
 $accts = smpro_cache_through('ds_accounts', 120, fn() => smpro_ds_accounts());
@@ -588,7 +588,7 @@ $pcls = fn($p)=>$p>=90?'red':($p>=75?'orange':'good');
 <p class="sub">Live filesystem, inode and per-account disk usage. Mounts or accounts at/over 85% are flagged — act before a backup or upload fails.</p>
 
 <?php
-  // Health tier for a percentage → drives the stat-card accent + number colour.
+  // Health tier for a percentage -> drives the stat-card accent + number colour.
   $tier = function($p){ if ($p===null) return 'ok'; if ($p>=90) return 'danger'; if ($p>=85) return 'warn'; if ($p>=60) return 'info'; return 'ok'; };
   $rootPct = $root['pct'] ?? null; $homePct = $home['pct'] ?? null; $nearN = count($fullMounts)+count($nearLimit);
   $overall = ($fullMounts) ? 'danger' : (($nearLimit || ($homePct!==null && $homePct>=85) || ($rootPct!==null && $rootPct>=85)) ? 'warn' : 'ok');
@@ -629,7 +629,7 @@ $pcls = fn($p)=>$p>=90?'red':($p>=75?'orange':'good');
 </div>
 
 <?php
-// ---- page-level overview (the RAM / swap / tmp tiles used to live inside the Admin Disk Tools card) — every tile jumps to its section
+// ---- page-level overview (the RAM / swap / tmp tiles used to live inside the Admin Disk Tools card) - every tile jumps to its section
 $tmpfs=null; foreach($fs as $r) if($r['mount']==='/tmp')$tmpfs=$r;
 $dsOvFull = null; foreach ($fs as $r) if ($dsOvFull === null || $r['pct'] > $dsOvFull['pct']) $dsOvFull = $r;
 $dsOvIo = function_exists('smpro_ds_diskio_payload') ? (string)(smpro_ds_diskio_payload($diskio, false)['worst'] ?? '') : '';   // same cache-only read the I/O card does
@@ -761,7 +761,7 @@ $dsOvNav = [['ds-tools', '&#128295; Disk tools'], ['dsIoCard', '&#9889; Disk I/O
 
 <!-- Move account home directory to another partition -->
 <?php
-// The mover is an occasional, deliberate operation — keep it FOLDED AWAY by default so the page stays about
+// The mover is an occasional, deliberate operation - keep it FOLDED AWAY by default so the page stays about
 // day-to-day disk work. It auto-opens only when there is something to act on: a move in progress, or a
 // completed move still waiting for "delete old copy" / "undo".
 $hmOpen = ($hmPending && ($hmPending['status'] ?? '') === 'moved');
@@ -931,7 +931,7 @@ if (!empty($hmJob['phase']) && $hmJob['phase'] !== 'idle' && empty($hmJob['done'
 .hm-pick-n{font-family:ui-monospace,Consolas,monospace;font-weight:700;min-width:130px}
 .hm-pick-d{color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hm-pick-s{font-variant-numeric:tabular-nums;color:var(--muted)}
-/* readable activity timeline — plain rows in the card, never a console */
+/* readable activity timeline - plain rows in the card, never a console */
 .hm-steps{margin-top:10px;border:1px solid var(--line);border-radius:9px;background:var(--card);max-height:210px;overflow:auto}
 .hm-steps-h{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;padding:7px 11px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
 .hm-step{display:flex;gap:9px;align-items:baseline;padding:5px 11px;font-size:12px;border-bottom:1px solid var(--line)}
@@ -1057,7 +1057,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
 .ds-io-legend{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6}
 .ds-io-legend .b{margin-right:4px}
 .ds-io-live{font-size:11px;font-weight:700;color:var(--good);margin-left:10px;transition:opacity .3s;white-space:nowrap}
-/* ===== Automation & Schedulers — two schedulers grouped in one place ===== */
+/* ===== Automation & Schedulers - two schedulers grouped in one place ===== */
 .ds-autowrap{margin:16px 0}
 .ds-autohd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-weight:800;font-size:15px;margin:0 0 4px}
 .ds-autohd .meta{margin-left:auto;font-weight:400;font-size:12px;color:var(--muted)}
@@ -1088,7 +1088,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
   document.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('.dsFix'); if(!b||!M)return;
     var act=b.getAttribute('data-act'),lbl=b.getAttribute('data-label')||'Fix',why=b.getAttribute('data-why')||'',orig=b.innerHTML;
-    // /boot kernels = sensitive → DRY-RUN preview, show the exact list in a card, then Execute/Cancel.
+    // /boot kernels = sensitive -> DRY-RUN preview, show the exact list in a card, then Execute/Cancel.
     if(act==='fix_boot_kernels'){
       b.disabled=true;b.textContent='Checking…';
       dsPost('preview_boot_kernels').then(function(j){
@@ -1113,7 +1113,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
       }).catch(function(){b.disabled=false;b.innerHTML=orig;alert('Could not load the plan.');});
       return;
     }
-    // swap_expand → dry-run preview card (with optional custom size), then create
+    // swap_expand -> dry-run preview card (with optional custom size), then create
     if(act==='swap_expand'){
       b.disabled=true;b.textContent='Checking…';
       dsPost('preview_swap_expand',{}).then(function(j){
@@ -1139,7 +1139,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
       }).catch(function(){b.disabled=false;b.innerHTML=orig;alert('Could not load the plan.');});
       return;
     }
-    // swap_remove → plain confirm
+    // swap_remove -> plain confirm
     if(act==='swap_remove'){
       var pth=b.getAttribute('data-path')||'';mTitle.textContent=lbl;
       mBody.innerHTML='<div class="dsm-row"><b>Action</b><span>Remove managed swapfile</span></div><div class="dsm-row"><b>Path</b><span class="mono">'+esc(pth)+'</span></div><div class="dsm-note">'+esc(why)+'</div>';
@@ -1147,7 +1147,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
       mGo.onclick=function(){mGo.disabled=true;mGo.textContent='Working…';mCancel.disabled=true;dsPost('swap_remove',{path:pth}).then(mResult).catch(function(){mGo.disabled=false;mGo.textContent='Remove swap';mCancel.disabled=false;alert('Request failed.');});};
       M.hidden=false;return;
     }
-    // tmp_expand → dry-run preview; loop backing needs a typed confirm + background job with progress polling
+    // tmp_expand -> dry-run preview; loop backing needs a typed confirm + background job with progress polling
     if(act==='tmp_expand'){
       b.disabled=true;b.textContent='Checking…';
       dsPost('preview_tmp_expand',{}).then(function(j){
@@ -1180,7 +1180,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
       }).catch(function(){b.disabled=false;b.innerHTML=orig;alert('Could not load the plan.');});
       return;
     }
-    // other fixes → respectable confirm card → Execute / Cancel
+    // other fixes -> respectable confirm card -> Execute / Cancel
     mTitle.textContent=lbl;
     mBody.innerHTML='<div class="dsm-row"><b>Action</b><span>'+esc(lbl)+'</span></div>'
       +(why?'<div class="dsm-note">'+esc(why)+'</div>':'')
@@ -1206,7 +1206,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
     }
   });
   function esc(s){return String(s==null?'':s).replace(/[<>&]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
-  // server-wide scans (large files / old backups / junk) — AJAX into the shared results panel
+  // server-wide scans (large files / old backups / junk) - AJAX into the shared results panel
   document.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('.dsSv'); if(!b)return;
     var type=b.getAttribute('data-type'),lbl=b.textContent.trim(); var box=document.getElementById('dcResult'); if(!box)return;
@@ -1369,7 +1369,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
       if(e.target&&e.target.id==='hmBatchCancel'){ if(!confirm('Cancel the remaining accounts?\n\nAccounts already copying will finish (stopping mid-copy would leave them half-copied). Nothing new will start.'))return;
         dsPost('home_batch_cancel',{}).then(function(){}); }
       if(e.target&&e.target.id==='hmBatchClear'){ dsPost('home_batch_clear',{}).then(function(){var b=document.getElementById('hmBatch');if(b){b.style.display='none';b.innerHTML='';}}); }
-      // per-account "details" → the SAME readable timeline, inline in the row. No JSON, no console.
+      // per-account "details" -> the SAME readable timeline, inline in the row. No JSON, no console.
       var d=e.target.closest&&e.target.closest('.hmDet');
       if(d){ var u=d.getAttribute('data-u'), box=document.getElementById('hmDet_'+u);
         if(!box)return;
@@ -1423,7 +1423,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
         }).catch(function(){out.push('<div style="font-size:12px"><span class="b red">✗</span> '+esc(u)+' — request failed</div>');next();});
       })();
     });
-    /* Readable activity timeline — plain sentences in the card. Never raw job data, never a console. */
+    /* Readable activity timeline - plain sentences in the card. Never raw job data, never a console. */
     var STEP_LABEL={queued:'Queued',starting:'Starting',rsync:'Copying files',delta:'Final sync',
                     flip:'Switching over',rebuild:'Rebuilding config',catchup:'Catching up changes',
                     verify:'Verifying',cleanup:'Cleaning up',done:'Finished',error:'Problem'};
@@ -1445,7 +1445,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
       box.scrollTop=box.scrollHeight;
     }
     /* Full per-account detail: where it is going, how much has moved, how long is left, how many files are
-       done, which file is copying right now, and the last few that finished — then the step timeline. */
+       done, which file is copying right now, and the last few that finished - then the step timeline. */
     function renderDetail(box,user,st){
       var pct=Math.max(0,Math.min(100,st.pct||0));
       var facts=[
@@ -1579,7 +1579,7 @@ tr.fw-pghide{display:none !important}
 </style>
 <script>
 (function(){
-  // make every section card collapsible — click its header to open/close; the choice is remembered per section
+  // make every section card collapsible - click its header to open/close; the choice is remembered per section
   var KEY='smpro:disk-storage:open', SEL='.card > .ds-head', EXTRA='';
   var open={};
   try{ open=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(err){ open={}; }

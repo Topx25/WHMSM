@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/evidence_tick.php — write down what happened, before the log it happened in rotates away.
+ * bin/evidence_tick.php - write down what happened, before the log it happened in rotates away.
  *
  * Installed as /etc/cron.d/smpro-evidence and run every five minutes. It reads the same sources the pages read
  * and appends what it finds to the local evidence journal, hash-chained.
@@ -10,7 +10,7 @@
  * the thing it is watching is turned off is not an evidence store.
  *
  * It changes nothing. It blocks nothing, resets nothing, deletes nothing except journals older than the
- * retention window — and never a seal.
+ * retention window - and never a seal.
  */
 define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);

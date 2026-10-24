@@ -1,6 +1,6 @@
 <?php
 /**
- * fileaudit.php — WHO changed a file, through WHICH door, from WHICH address, WHEN.
+ * fileaudit.php - WHO changed a file, through WHICH door, from WHICH address, WHEN.
  *
  * THE QUESTION THIS ANSWERS, AND WHY NOTHING ELSE ON THE SERVER COULD.
  *

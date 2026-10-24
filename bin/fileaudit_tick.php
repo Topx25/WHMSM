@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/fileaudit_tick.php — every minute: make the file-change evidence exist (auditd rules), collect it from the
+ * bin/fileaudit_tick.php - every minute: make the file-change evidence exist (auditd rules), collect it from the
  * kernel's log into the plugin's own store with the address joined, and prune what is older than the retention.
  *
  * NOT gated on smpro_ctl_disabled(): the history of a server whose plugin was switched off is exactly the

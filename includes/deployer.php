@@ -1,10 +1,10 @@
 <?php
 /**
- * deployer.php — is this address a CI / deployment pipeline (GitHub Actions, Bitbucket Pipelines, GitLab CI)?
+ * deployer.php - is this address a CI / deployment pipeline (GitHub Actions, Bitbucket Pipelines, GitLab CI)?
  *
  * THE FALSE ALARM. A customer deploys from GitHub Actions. Every push runs on a fresh runner in Microsoft's
  * cloud, connects over SSH with the deploy KEY, and the foreign-login alert fired "[HIGH] 10 foreign successful
- * login(s): devuser @ <runner> (US) ×1, @ <runner> (US) ×1 ..." - nine addresses, one each, all of them
+ * login(s): devuser @ <runner> (US) x1, @ <runner> (US) x1 ..." - nine addresses, one each, all of them
  * in GitHub's published runner ranges. Nothing was compromised; the operator was told to rotate keys.
  *
  * A pipeline looks exactly like what it is, when you look: a KEY (never a password), from a range the provider

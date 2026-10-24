@@ -1,8 +1,8 @@
 <?php
 /**
- * bin/devtest.php — single-device benchmark worker. Spawned detached by smpro_bd_devtest_start()
+ * bin/devtest.php - single-device benchmark worker. Spawned detached by smpro_bd_devtest_start()
  * so testing one disk (or CPU / RAM / PHP / MySQL) survives the page being closed.
- * Physical-disk tests are strictly READ-ONLY — never writes to a raw device.
+ * Physical-disk tests are strictly READ-ONLY - never writes to a raw device.
  * Usage: php devtest.php <kind> [target]
  */
 define('SMPRO_BOOT', 1);

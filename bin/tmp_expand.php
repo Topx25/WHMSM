@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/tmp_expand.php — detached worker for the "Double /tmp capacity" loopback path.
+ * bin/tmp_expand.php - detached worker for the "Double /tmp capacity" loopback path.
  * Spawned by smpro_ds_tmp_launch_worker() (setsid, </dev/null). Acquires the single-flight flock,
  * ignore_user_abort + no time limit (each shell op is externally timeout-bounded), writes an immediate
  * heartbeat so the handler can confirm launch, re-detects UNDER LOCK (TOCTOU), runs the swap, and

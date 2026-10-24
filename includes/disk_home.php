@@ -1,16 +1,16 @@
 <?php
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 /**
- * disk_home.php — move a cPanel account's home directory to another partition root
+ * disk_home.php - move a cPanel account's home directory to another partition root
  * (e.g. /home -> /home2) with ZERO downtime (live rsync + delta), full reference rewrite,
  * generated-config rebuild, and reversibility (rollback / finalize).
  *
  * cPanel 11.x removed the old `rearrangeacct` script, so this reproduces its effect safely:
- *   1. rsync the homedir to the new root (live, then a --delete delta) — site stays up.
+ *   1. rsync the homedir to the new root (live, then a --delete delta) - site stays up.
  *   2. usermod -d <newhome>  (the /etc/passwd homedir is cPanel's source of truth).
  *   3. rewrite the absolute paths in /var/cpanel/userdata/<user>/*  (documentroot/homedir/scriptalias).
  *   4. rebuild the GENERATED world (updateuserdomains, rebuildhttpdconf, php_fpm_config, cagefs, quotas)
- *      — this regenerates /etc/userdatadomains, httpd.conf and the php-fpm pools from the userdata above.
+ *      - this regenerates /etc/userdatadomains, httpd.conf and the php-fpm pools from the userdata above.
  * The old homedir is left ORPHANED (nothing references it) so the move is instantly reversible:
  *   - Finalize  = delete the orphaned old copy (reclaims the space on the old partition).
  *   - Rollback  = point everything back at the old copy and delete the new one.
@@ -38,7 +38,7 @@ function smpro_ds_home_state_path(string $acct = ''): string {
     $acct = preg_replace('/[^a-zA-Z0-9._-]/', '', $acct);
     return smpro_ds_home_dir() . ($acct === '' ? '/state.json' : '/state_' . $acct . '.json');
 }
-/** Every account with a completed-but-not-finalised move — these are the ones still holding old copies. */
+/** Every account with a completed-but-not-finalised move - these are the ones still holding old copies. */
 function smpro_ds_home_pending_all(): array {
     $out = [];
     foreach (glob(smpro_ds_home_dir() . '/state*.json') ?: [] as $f) {
@@ -71,7 +71,7 @@ function smpro_ds_home_history_add(array $e): void {
     smpro_mnt_jwrite(smpro_ds_home_history_path(), $h);
 }
 /** Interpreter for the detached move worker. cPanel's bundled PHP first, then whatever EA-PHP the server
- *  actually has — NEWEST first, discovered by glob. A hardcoded ea-php82 path used to sit in this list, which
+ *  actually has - NEWEST first, discovered by glob. A hardcoded ea-php82 path used to sit in this list, which
  *  simply did not exist on a server built on any other branch; the move worker then fell through to a bare
  *  'php' that root's PATH may not resolve, and the job died with "worker did not start". */
 function smpro_ds_home_php_bin(): string { return smpro_php_cli_bin(); }
@@ -99,7 +99,7 @@ function smpro_ds_home_roots(): array {
 
 /**
  * How many accounts may be copied AT THE SAME TIME without choking the server.
- * rsync on a big account is dominated by disk I/O and metadata work, not CPU — so the ceiling is deliberately
+ * rsync on a big account is dominated by disk I/O and metadata work, not CPU - so the ceiling is deliberately
  * low and derived from what this machine can actually take: core count, whether the target disk is spinning
  * or solid-state, and how loaded the box already is. Running more parallel copies than this does NOT finish
  * sooner (the disk is the bottleneck) and it WILL slow customer sites, so the UI never offers more.
@@ -114,12 +114,12 @@ function smpro_ds_home_capacity(string $troot = '/home'): array {
     $dev = trim((string)@shell_exec('df -P ' . escapeshellarg($troot) . ' 2>/dev/null | tail -1 | awk \'{print $1}\''));
     if ($dev !== '') {
         // Try the WHOLE device name first: md3 / dm-0 / nvme0n1 are real /sys/block entries and must not be
-        // stripped (stripping md3 → md finds nothing, so RAID boxes silently reported "unknown"). Only if the
-        // full name misses do we peel a partition suffix: nvme0n1p1 → nvme0n1, sda1 → sda.
+        // stripped (stripping md3 -> md finds nothing, so RAID boxes silently reported "unknown"). Only if the
+        // full name misses do we peel a partition suffix: nvme0n1p1 -> nvme0n1, sda1 -> sda.
         $base = preg_replace('#^/dev/#', '', $dev);
         $cands = [$base];
-        if (preg_match('#^(.+?)p\d+$#', $base, $mm)) $cands[] = $mm[1];  // nvme0n1p1 → nvme0n1
-        $cands[] = preg_replace('#\d+$#', '', $base);                     // sda1 → sda
+        if (preg_match('#^(.+?)p\d+$#', $base, $mm)) $cands[] = $mm[1];  // nvme0n1p1 -> nvme0n1
+        $cands[] = preg_replace('#\d+$#', '', $base);                     // sda1 -> sda
         foreach ($cands as $cand) {
             if ($cand === '') continue;
             $f = '/sys/block/' . $cand . '/queue/rotational';
@@ -134,13 +134,13 @@ function smpro_ds_home_capacity(string $troot = '/home'): array {
             }
         }
     }
-    // Baseline from cores, then a modest bump for solid-state, hard-capped — the disk is the real limit.
+    // Baseline from cores, then a modest bump for solid-state, hard-capped - the disk is the real limit.
     $max = 2;
     if ($cores >= 8)  $max = 3;
     if ($cores >= 16) $max = 4;
     if ($rot === true) $max = min($max, 2);                             // spinning disk: seeking kills throughput
     elseif ($rot === false) $max = min(6, $max + 1);
-    // Respect load the server is ALREADY carrying — customers come first.
+    // Respect load the server is ALREADY carrying - customers come first.
     $busy = '';
     if ($load1 >= $cores * 0.75)      { $max = 1; $busy = 'the server is already busy (load ' . round($load1, 2) . ' on ' . $cores . ' cores), so only one at a time is offered'; }
     elseif ($load1 >= $cores * 0.40)  { $max = max(1, (int)floor($max / 2)); $busy = 'the server is moderately loaded (load ' . round($load1, 2) . '), so the limit was reduced'; }
@@ -206,7 +206,7 @@ function smpro_ds_home_launch(string $mode, string $user, string $troot): array 
     $lf = @fopen($lockDir . '/home_move.lock', 'c');
     if ($lf) {
         if (!@flock($lf, LOCK_EX | LOCK_NB)) { @fclose($lf); return ['ok' => false, 'msg' => 'Another home-move is already running.']; }
-        @flock($lf, LOCK_UN); @fclose($lf);          // release BEFORE spawning — the worker takes it from here
+        @flock($lf, LOCK_UN); @fclose($lf);          // release BEFORE spawning - the worker takes it from here
     }
 
     $worker = defined('SMPRO_ROOT') ? SMPRO_ROOT . '/bin/home_move.php' : (dirname(__DIR__) . '/bin/home_move.php');
@@ -224,7 +224,7 @@ function smpro_ds_home_launch(string $mode, string $user, string $troot): array 
     $cmd  = ($hasSetsid ? 'setsid ' : 'nohup ') . escapeshellarg($php) . ' ' . escapeshellarg($worker) . $args . ' >/dev/null 2>&1 </dev/null &';
     @shell_exec('PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ' . $cmd);
 
-    // confirm the worker actually came up (heartbeat). 20s — a loaded box can be slow to schedule the spawn.
+    // confirm the worker actually came up (heartbeat). 20s - a loaded box can be slow to schedule the spawn.
     for ($i = 0; $i < 40; $i++) {
         usleep(500000);
         $j = smpro_ds_home_job_read();
@@ -238,7 +238,7 @@ function smpro_ds_home_launch(string $mode, string $user, string $troot): array 
 }
 
 /**
- * Watchdog cron — present ONLY while a move is unfinished, removed as soon as it completes. Runs every
+ * Watchdog cron - present ONLY while a move is unfinished, removed as soon as it completes. Runs every
  * minute; the worker's --watchdog decides whether anything actually needs restarting (it is a no-op unless
  * the job is stale AND no worker holds the lock). This is what makes an interrupted move resume by itself
  * even with the browser closed. Self-heals from the boot block in index.php.
@@ -376,7 +376,7 @@ function smpro_ds_home_dispatch(string $act) {
                 'site_code' => $code, 'site_ok' => $siteOk, 'domain' => $dom, 'user' => $u, 'dst' => $dst];
     }
     if ($act === 'home_move_finalize' || $act === 'home_move_rollback') {
-        // Which account — a batch leaves several pending at once.
+        // Which account - a batch leaves several pending at once.
         $st = smpro_ds_home_state_read(preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_POST['acct'] ?? '')));
         if (empty($st['user'])) { $all = smpro_ds_home_pending_all(); $st = count($all) === 1 ? $all[0] : []; }
         if (empty($st['user'])) return ['ok' => false, 'msg' => 'No completed move is pending finalize/rollback (say which account).'];

@@ -1,7 +1,7 @@
 <?php
 /**
- * includes/lvelimits.php — "Resource Limit Is Reached" (HTTP 508 on CloudLinux): which accounts hit their LVE limits,
- * what is hitting them right now, and the ways out — end the hung PHP processes, lift the limits for a while (put
+ * includes/lvelimits.php - "Resource Limit Is Reached" (HTTP 508 on CloudLinux): which accounts hit their LVE limits,
+ * what is hitting them right now, and the ways out - end the hung PHP processes, lift the limits for a while (put
  * back automatically), or reset the account to its package limits. Every change backs /etc/container/ve.cfg up first,
  * is journalled, and is audited. Nothing here deletes a file of the account.
  *

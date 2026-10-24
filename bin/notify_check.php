@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/notify_check.php — cron worker for the Notifications checker.
+ * bin/notify_check.php - cron worker for the Notifications checker.
  * Runs the deduped live event checks and dispatches any new alerts.
  * Installed via /etc/cron.d/smpro-notify (every 15 min) from the UI.
  */
@@ -16,7 +16,7 @@ require $base . '/includes/notify.php';
 require $base . '/includes/update.php';
 require $base . '/includes/reports.php';
 require $base . '/includes/digest.php';
-require $base . '/includes/ai.php';   // pulls in ai_catalog.php (require_once) → smpro_ai_autoprune()
+require $base . '/includes/ai.php';   // pulls in ai_catalog.php (require_once) -> smpro_ai_autoprune()
 require $base . '/includes/integrity.php';
 foreach (['fwallow', 'breakin'] as $m) { $f = $base . '/includes/' . $m . '.php'; if (is_file($f)) require_once $f; }   // the brute-force alert groups failed logins by network like the Break-in report
 require $base . '/includes/analytics.php';   // smpro_ar_prewarm: keeps the Analytics counts warm across the day roll
@@ -32,8 +32,8 @@ if (function_exists('smpro_upd_retire_legacy_crons')) { $lcf = SMPRO_VARLIB . '/
 if (function_exists('smpro_lic_heartbeat')) { @smpro_lic_heartbeat(); }
 // telemetry sync (~3h throttle) + kill clock. Runs BEFORE the disabled-gate so a flagged box keeps counting down.
 if (function_exists('smpro_lic_tlm_sync'))  { try { smpro_lic_tlm_sync(); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }
-// connection-loss ladder (opted-in licenses only): accumulate dark time, notify the customer at 6h, and — for a
-// signed suspected-pirate license only — purge at 48h. BEFORE the gate so it advances even while soft-stopped.
+// connection-loss ladder (opted-in licenses only): accumulate dark time, notify the customer at 6h, and - for a
+// signed suspected-pirate license only - purge at 48h. BEFORE the gate so it advances even while soft-stopped.
 if (function_exists('smpro_lic_sync_tick')) { try { smpro_lic_sync_tick(); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }
 if (function_exists('smpro_lic_kill_tick')) { try { smpro_lic_kill_tick(); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }
 // MASTER SWITCH: if the plugin is Disabled, do nothing else (smpro_ctl_get() also auto-re-enables when its time arrives).
@@ -44,7 +44,7 @@ if (function_exists('smpro_upd_auto')) { try { smpro_upd_auto(); } catch (\Throw
 if (function_exists('smpro_rep_run')) { try { smpro_rep_run(false); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }
 // AI providers/models hourly health: re-probe saved models, drop only the genuinely-dead ones (self-gated to 1/hour)
 if (function_exists('smpro_ai_autoprune')) { try { smpro_ai_autoprune(false); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }
-// full file-integrity sweep: critical-file tamper → Protected Mode; non-critical drift → alert
+// full file-integrity sweep: critical-file tamper -> Protected Mode; non-critical drift -> alert
 if (function_exists('smpro_integrity_full')) { try { smpro_integrity_full(); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }
 // ensure GeoIP tooling + a fresh offline DB so the scan below can resolve country (Arab-exclusion + non-Arab auto-block)
 if (function_exists('smpro_deps_ensure'))      { try { smpro_deps_ensure(); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }

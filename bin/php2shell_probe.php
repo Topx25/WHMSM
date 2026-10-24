@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/php2shell_probe.php — reads the standing of every PHP build against the PHP core release of 2026-10-21 and
+ * bin/php2shell_probe.php - reads the standing of every PHP build against the PHP core release of 2026-10-21 and
  * writes it to the cache the Security Health card reads. Run detached by the card on a cache miss and by the
  * System updates worker after every check, so a page never waits on rpm, dnf or whmapi1.
  */

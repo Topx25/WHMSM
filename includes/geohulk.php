@@ -1,6 +1,6 @@
 <?php
 /**
- * geohulk.php — the door wall. A sign-in from a country that is not on the allowed list is refused before the
+ * geohulk.php - the door wall. A sign-in from a country that is not on the allowed list is refused before the
  * password is checked, using cPHulk's own country blacklist.
  *
  * WHY THIS AND NOT THE FIREWALL WALL. Country Login Lock is reactive: it reads the log after a sign-in and then

@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/site-doctor.php — Site Doctor: diagnose WHY a site is failing (500/blank/down) and
+ * modules/site-doctor.php - Site Doctor: diagnose WHY a site is failing (500/blank/down) and
  * apply a SAFE, REVERSIBLE fix (incl. AI-driven). Engine: includes/investigate.php.
  * Every fix is backup-first (rename, never delete), path-whitelisted to the account docroot,
  * hardening-aware (clears chattr +i, re-locks after), and one-click undoable.
@@ -9,7 +9,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
 
-/* ---- all JSON endpoints below run privileged engines on arbitrary targets — root only ---- */
+/* ---- all JSON endpoints below run privileged engines on arbitrary targets - root only ---- */
 if (isset($_GET['sd_investigate']) || isset($_GET['sd_speed']) || isset($_GET['sd_optimize']) || isset($_GET['sd_clearcache_preview'])) {
     smpro_require_root();
 }
@@ -285,7 +285,7 @@ smpro_layout_header('Site Doctor');
       h+=evp('APP_ENV','App env')+evp('APP_DEBUG','Debug')+evp('DB_CONNECTION','DB driver')+evp('APP_KEY','App key')+evp('vendor','vendor/')+evp('(.env)','.env');
     }
     h+='<div class="sd-fact"><span class="k">Logs read</span><b>'+(logsrc.length?esc(logsrc.join(' · ')):'—')+'</b></div>';
-    // STEP 0 — domain / DNS validity (shown first: is the domain even pointed at this server?)
+    // STEP 0 - domain / DNS validity (shown first: is the domain even pointed at this server?)
     var dns=j.dns||null;
     if(dns){var dc=(dns.state==='ok')?'var(--good)':(dns.state==='proxied'?'#d97706':'var(--dang)');
       var dlabel=(dns.state==='ok'?'✓ points here':(dns.state==='proxied'?'via Cloudflare/CDN':(dns.state==='nxdomain'?'✗ does not resolve':'✗ points elsewhere')));
@@ -297,7 +297,7 @@ smpro_layout_header('Site Doctor');
     h+=(dt.sites&&dt.sites.length?'<div class="sd-fact wide"><span class="k">Related domains ('+dt.sites.length+')</span><b style="font-weight:400;font-size:12.5px">'+dt.sites.map(esc).join(' · ')+'</b></div>':'')
       +(j.selfhealers&&Object.keys(j.selfhealers).length?'<div class="sd-fact wide"><span class="k">⚠ Self-healer detected</span><b style="color:var(--dang)">'+Object.keys(j.selfhealers).map(function(p){return esc(p.split("/").pop());}).join(', ')+' — reverts fixes; disabled first</b></div>':'')
       +'</div>';
-    // Maintenance: platform-aware "Clear application cache" — shown for cacheable platforms even when the site is UP.
+    // Maintenance: platform-aware "Clear application cache" - shown for cacheable platforms even when the site is UP.
     if(dt.platform&&['WordPress','Laravel','Magento','Drupal','Joomla'].indexOf(dt.platform)>=0){
       h+='<div class="sd-fixrow" style="margin:8px 2px 0"><button type="button" class="sd-fixbtn" style="background:#0891b2" data-clearcache data-target="'+esc(t)+'" data-plat="'+esc(dt.platform)+'">&#129529; Clear '+esc(dt.platform)+' cache</button></div>';
     }
@@ -571,7 +571,7 @@ smpro_layout_header('Site Doctor');
     h+='</div>';
     out.innerHTML=h;
   }
-  // ---- Clear application cache (platform-aware): dry-run preview → confirm card → drop-to-user clear ----
+  // ---- Clear application cache (platform-aware): dry-run preview -> confirm card -> drop-to-user clear ----
   function ccConfirm(t,plat,p,prev){
     window.__ccPrev=prev;
     if(!p||!p.ok){out.innerHTML='<div class="sd-card"><div class="sd-empty"><b style="color:var(--dang)">'+esc((p&&p.msg)||'Cannot plan cache clear.')+'</b></div><div class="sd-fixrow"><button type="button" class="sd-fixbtn" style="background:var(--muted)" data-cccancel>Back</button></div></div>';return;}

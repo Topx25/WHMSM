@@ -1,18 +1,18 @@
 <?php
 /**
- * forensics-webattack.php — §3.3 web-attack correlation + §3.4 access/auth forensics.
+ * forensics-webattack.php - §3.3 web-attack correlation + §3.4 access/auth forensics.
  * Prefix smpro_fw_*. Loaded after forensics-engine.php (smpro_fx_* + smpro_im_* + smpro_ip_* available).
  * READ-ONLY: bounded grep/tail of logs only; never re-stats the account file (mtime/ctime passed in).
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
-/** Apache domlogs base (self-contained — reports-center's copy lives in a module that isn't boot-loaded). */
+/** Apache domlogs base (self-contained - reports-center's copy lives in a module that isn't boot-loaded). */
 function smpro_fw_domlogs_base() { foreach (['/etc/apache2/logs/domlogs', '/usr/local/apache/domlogs', '/var/log/apache2/domlogs'] as $p) if (is_dir($p)) return $p; return ''; }
-/** Parse an Apache combined-log date "[10/Jul/2026:17:45:03 +0000]" → UTC epoch. */
+/** Parse an Apache combined-log date "[10/Jul/2026:17:45:03 +0000]" -> UTC epoch. */
 function smpro_fw_alog_ts($s) { $s = trim((string)$s, '[] '); $s = preg_replace('#^(\d+/\w+/\d+):#', '$1 ', $s, 1); return strtotime($s) ?: 0; }
 
 /**
- * §3.3 — did an HTTP request plausibly WRITE the flagged file? mtime/ctime are PASSED IN (no re-stat).
+ * §3.3 - did an HTTP request plausibly WRITE the flagged file? mtime/ctime are PASSED IN (no re-stat).
  * Window = [mtime-win, mtime+win], widened to ±6h ONCE if zero write-candidate hits. Returns
  * {findings[],timeline[],verdict_hint,possible_drop,attack_hit,banner,requests[]}.
  */
@@ -26,7 +26,7 @@ function smpro_fw_correlate($user, $flaggedFile, $mtime, $ctime, $alertTs, $win 
     $fileBase = basename((string)$flaggedFile);
 
     // When a $deadline (epoch float) is set by the caller, BOUND the work: cap the number of domains scanned and
-    // clamp each log's timeout to the time left — so a reseller/addon-heavy account can't run for minutes here.
+    // clamp each log's timeout to the time left - so a reseller/addon-heavy account can't run for minutes here.
     $scanDomains = ($deadline > 0) ? array_slice($domains, 0, 8) : $domains;
     $scan = function ($lo, $hi) use ($base, $scanDomains, $mtime, $fileDir, $fileBase, $deadline) {
         $rows = [];
@@ -96,7 +96,7 @@ function smpro_fw_classify_req($r, $fileDir, $fileBase) {
     if (preg_match('/union\s+select|\'\s+or\s+1=1|information_schema|\.\.\/|php:\/\/|data:\/\/|\/etc\/passwd|xmlrpc\.php/i', $uri)) return 'PRECURSOR';
     return 'CONTEXT';
 }
-/** Request → write confidence 0-100 (§3.3 weights). */
+/** Request -> write confidence 0-100 (§3.3 weights). */
 function smpro_fw_confidence($r, $mtime, $cls, $fileDir, $fileBase) {
     $c = 0; $d = abs((int)$r['ts'] - (int)$mtime);
     $c += $d <= 10 ? 40 : ($d <= 60 ? 30 : ($d <= 300 ? 15 : 5));
@@ -107,7 +107,7 @@ function smpro_fw_confidence($r, $mtime, $cls, $fileDir, $fileBase) {
 }
 
 /**
- * §3.4 — did an interactive login / upload session explain the write? Greps the account's auth+write
+ * §3.4 - did an interactive login / upload session explain the write? Greps the account's auth+write
  * logs near $mtime. Returns {verdict_hint, admin_session_write, known_admin, new_key_or_cron, events[]}.
  * verdict_hint ∈ interactive_upload | admin_session_write | no_login_explains_write | app_self_write.
  */
@@ -127,14 +127,14 @@ function smpro_fw_auth_for_write($user, $file, $mtime) {
         $raw = (string)@shell_exec('timeout 8 sh -c ' . escapeshellarg('tail -n 200000 ' . escapeshellarg($cpl) . ' 2>/dev/null | grep -aiE ' . escapeshellarg('Fileman|save_file|upload') . ' | grep -aF ' . escapeshellarg($user) . ' | tail -n 200') . ' 2>/dev/null');
         foreach (explode("\n", $raw) as $l) { $l = trim($l); if ($l === '') continue; if (preg_match('/\[([^\]]+)\]/', $l, $m)) { $ts = strtotime($m[1]) ?: 0; if ($ts && abs($ts - $mtime) <= $win) { $anyLogin = true; if (stripos($l, $bn) !== false) $sameSessionWrite = true; $ev[] = ['ts' => $ts, 'src' => 'cpanel_fileman', 'line' => mb_substr($l, 0, 200)]; } } }
     }
-    // new authorized_keys / cron in the lookback (30d) — atomic HIGH signals
+    // new authorized_keys / cron in the lookback (30d) - atomic HIGH signals
     $newKeyOrCron = false;
     foreach (["/home/$user/.ssh/authorized_keys", "/home/$user/.ssh/authorized_keys2", "/var/spool/cron/$user"] as $kf) {
         if (is_file($kf) && (time() - (int)@filemtime($kf)) < 30 * 86400 && (int)@filemtime($kf) >= $mtime - $win) { $newKeyOrCron = true; $ev[] = ['ts' => (int)@filemtime($kf), 'src' => 'creds', 'line' => 'modified in window: ' . $kf]; }
     }
     if ($sameSessionWrite) $hint = 'interactive_upload';
     elseif ($anyLogin) { $hint = 'admin_session_write'; $knownAdmin = true; }        // a login in the window; treat account-owner login as known-admin
-    elseif (!$ev) $hint = 'app_self_write';                                            // NO auth event explains the write → app self-write / non-logged local edit
+    elseif (!$ev) $hint = 'app_self_write';                                            // NO auth event explains the write -> app self-write / non-logged local edit
     else $hint = 'no_login_explains_write';
     return ['verdict_hint' => $hint, 'admin_session_write' => ($hint === 'admin_session_write'), 'known_admin' => $knownAdmin, 'new_key_or_cron' => $newKeyOrCron, 'events' => $ev];
 }

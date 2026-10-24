@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/system-updates.php — what is pending on this server (packages, cPanel, kernel), when it was last looked
+ * modules/system-updates.php - what is pending on this server (packages, cPanel, kernel), when it was last looked
  * at, what was applied and how it went; the mode (manual / automatic), Check now, Update now, Repair downloads.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }

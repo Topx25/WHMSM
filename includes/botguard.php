@@ -1,17 +1,17 @@
 <?php
 /**
- * includes/botguard.php — Bot Guard core. Shared by modules/bot-guard.php (the page) and bin/botguard_tick.php
- * (the worker), so it lives in includes/ and is loaded lazily (require_once) by both — not at boot.
+ * includes/botguard.php - Bot Guard core. Shared by modules/bot-guard.php (the page) and bin/botguard_tick.php
+ * (the worker), so it lives in includes/ and is loaded lazily (require_once) by both - not at boot.
  *
  * What it does, in one pass over the Apache domlogs (streamed, never held in memory) plus the WAF index:
  *   • recognises crawlers by User-Agent and VERIFIES the well-known ones the way their publishers say to
- *     (forward-confirmed reverse DNS: ip → host must end in the publisher's domain → host must resolve back to
+ *     (forward-confirmed reverse DNS: ip -> host must end in the publisher's domain -> host must resolve back to
  *     the same ip; or the publisher's published IP ranges when the Firewall allow-list feature has them);
- *   • a VERIFIED crawler → allowed automatically (protected from every automatic block in the plugin);
- *   • an UNVERIFIED bot with no bad requests → pending: the admin decides allow / block / ignore;
+ *   • a VERIFIED crawler -> allowed automatically (protected from every automatic block in the plugin);
+ *   • an UNVERIFIED bot with no bad requests -> pending: the admin decides allow / block / ignore;
  *   • any bot that sent attack-signature requests (secret-file probes, injection, web-shell parameters, login
- *     brute force, or a known scanner tool as its User-Agent) → GRAY list with a per-window counter;
- *   • a gray-list address past the threshold → blocked automatically through smpro_im_block_ip(), which already
+ *     brute force, or a known scanner tool as its User-Agent) -> GRAY list with a per-window counter;
+ *   • a gray-list address past the threshold -> blocked automatically through smpro_im_block_ip(), which already
  *     refuses the server's own IP, Cloudflare edges, private ranges and anything allow-listed, and which the
  *     master Dry-Run switch turns into a "would block" record.
  *
@@ -38,7 +38,7 @@ function smpro_bg_defaults(): array {
         'rdns_cache_days'  => 7,       // a reverse name rarely changes; empty answers are cached too
         'rdns_max_seconds' => 120,     // ceiling on any single sweep, however long the list
         'enabled'                 => false,   // the worker runs only when on; "Scan now" works regardless
-        'auto_block'              => true,    // gray list past the threshold → block (Dry-Run turns this into a record)
+        'auto_block'              => true,    // gray list past the threshold -> block (Dry-Run turns this into a record)
         'gray_threshold'          => 25,      // attack-signature requests inside the window
         'window_hours'            => 24,      // how far back a scan looks (domlog mtime + line timestamps)
         'tail_lines'              => 20000,   // per domlog, newest lines
@@ -47,7 +47,7 @@ function smpro_bg_defaults(): array {
         'firewall_allow_verified' => false,   // ALSO write verified crawler IPs to csf.allow (off: allowed = exempt from Bot Guard/auto-blocks only)
         'scan_minutes'            => 5,       // worker cadence: an attacker past the threshold is blocked within 5 min, not 15 (one scan is ~2 s)
         'ignore_ips'              => [],      // never tracked (admin-entered)
-        'custom_bots'             => [],      // operator-defined crawlers: [{key,name,kind,ua,rdns:[suffix,…]}]
+        'custom_bots'             => [],      // operator-defined crawlers: [{key,name,kind,ua,rdns:[suffix,...]}]
     ];
 }
 function smpro_bg_json_load(string $f): array { $d = @is_file($f) ? json_decode((string)@file_get_contents($f), true) : null; return is_array($d) ? $d : []; }
@@ -121,7 +121,7 @@ function smpro_bg_catalog_builtin(): array {
         'archive'    => ['name' => 'Internet Archive', 'kind' => 'archive', 'ua' => '/archive\.org_bot|ia_archiver/i', 'rdns' => ['archive.org'], 'ranges' => ''],
         /* A publisher only gets an 'rdns' suffix here when that suffix is the one it documents for verification.
          * Where a publisher documents no reverse-DNS method, the entry carries an empty list on purpose: it is
-         * still recognised and reported, but it is NOT shielded, because a guessed suffix is worse than none —
+         * still recognised and reported, but it is NOT shielded, because a guessed suffix is worse than none -
          * too narrow and the shield never fires, too broad and it shields whoever registers a matching name. */
         'amazonbot'  => ['name' => 'Amazonbot',        'kind' => 'search',  'ua' => '/Amazonbot/i', 'rdns' => ['crawl.amazonbot.amazon'], 'ranges' => ''],
         'naver'      => ['name' => 'Naver Yeti',       'kind' => 'search',  'ua' => '/Yeti\//i', 'rdns' => ['naver.com'], 'ranges' => ''],
@@ -145,7 +145,7 @@ function smpro_bg_catalog_builtin(): array {
 
 /**
  * A reverse-DNS suffix an operator may add. Refused unless it is a domain with at least one label of its own
- * ABOVE a public suffix — "com", "co.uk" or "amazon" alone would shield every host on earth that ends that way,
+ * ABOVE a public suffix - "com", "co.uk" or "amazon" alone would shield every host on earth that ends that way,
  * which is the one mistake in this feature that cannot be undone by noticing it later.
  */
 function smpro_bg_suffix_ok(string $sfx): bool {
@@ -153,7 +153,7 @@ function smpro_bg_suffix_ok(string $sfx): bool {
     if ($sfx === '' || strlen($sfx) > 190) return false;
     if (!preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/', $sfx)) return false;
     $parts = explode('.', $sfx);
-    // Two labels is the minimum, and three when the last two are a country-code second level (co.uk, com.br…).
+    // Two labels is the minimum, and three when the last two are a country-code second level (co.uk, com.br...).
     $need = (count($parts) >= 2 && strlen($parts[count($parts) - 1]) === 2 && in_array($parts[count($parts) - 2], ['co', 'com', 'net', 'org', 'gov', 'ac', 'edu'], true)) ? 3 : 2;
     return count($parts) >= $need;
 }
@@ -161,7 +161,7 @@ function smpro_bg_suffix_ok(string $sfx): bool {
 /**
  * Operator-defined crawler entries, merged OVER the built-in catalogue.
  *
- * The built-in list is deliberately static product data — a publisher's verification domain effectively never
+ * The built-in list is deliberately static product data - a publisher's verification domain effectively never
  * changes, and inventing one would be worse than omitting it. But a crawler that appears next month should not
  * need a release to be protected, and an operator who knows their own traffic should not have to wait for us.
  * So the catalogue is the built-in list plus whatever this server has been told, with the same verification
@@ -222,10 +222,10 @@ function smpro_bg_probe_re(): string {
 }
 /**
  * Attack signature of ONE request (method, uri, ua). Returns '' or a category:
- *   exploit    — injection / traversal / web-shell parameters / remote-include
- *   probe      — secret files and admin panels that a legitimate crawler has no business fetching
- *   bruteforce — POSTs to login endpoints (each one is a credential guess)
- *   scanner    — a known attack tool in the User-Agent
+ *   exploit    - injection / traversal / web-shell parameters / remote-include
+ *   probe      - secret files and admin panels that a legitimate crawler has no business fetching
+ *   bruteforce - POSTs to login endpoints (each one is a credential guess)
+ *   scanner    - a known attack tool in the User-Agent
  * Deliberately conservative: a normal page, image, or feed fetch never matches.
  */
 function smpro_bg_classify_req(string $method, string $uri, string $ua): string {
@@ -239,12 +239,12 @@ function smpro_bg_classify_req(string $method, string $uri, string $ua): string 
 }
 
 /* ---------------- domlog parsing ---------------- */
-/** Parse one Apache "combined" line → [ip, ts, method, uri, status, ua] or null. cPanel domlogs are this format. */
+/** Parse one Apache "combined" line -> [ip, ts, method, uri, status, ua] or null. cPanel domlogs are this format. */
 function smpro_bg_parse_line(string $l): ?array {
     if (!preg_match('/^(\S+) \S+ \S+ \[([^\]]+)\] "([^"]*)" (\d{3}) \S+ "[^"]*" "([^"]*)"/', $l, $m)) return null;
     $req = $m[3]; $method = ''; $uri = '';
     if (preg_match('/^(\S+)\s+(\S+)/', $req, $r)) { $method = $r[1]; $uri = $r[2]; } elseif ($req !== '') { $uri = $req; }
-    // "06/Sep/2026:14:05:07 +0000" — strtotime cannot read slash + month-name, so rebuild it with spaces.
+    // "06/Sep/2026:14:05:07 +0000" - strtotime cannot read slash + month-name, so rebuild it with spaces.
     $t = $m[2]; $ts = 0;
     if (preg_match('#^(\d{1,2})/([A-Za-z]{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2})\s*([+\-]\d{4})?#', $t, $d)) $ts = (int)(@strtotime($d[1] . ' ' . $d[2] . ' ' . $d[3] . ' ' . $d[4] . ':' . $d[5] . ':' . $d[6] . ' ' . ($d[7] ?? '')) ?: 0);
     else $ts = (int)(@strtotime($t) ?: 0);
@@ -319,7 +319,7 @@ function smpro_bg_scan(array $cfg): array {
 }
 
 /* ---------------- verification ---------------- */
-/** Default resolvers; a test injects its own. rev: ip → hostname|''. fwd: host → [ips]. */
+/** Default resolvers; a test injects its own. rev: ip -> hostname|''. fwd: host -> [ips]. */
 function smpro_bg_resolvers(): array {
     return [
         'rev' => function (string $ip): string { $h = @gethostbyaddr($ip); return ($h === false || $h === $ip) ? '' : strtolower(rtrim($h, '.')); },
@@ -356,8 +356,8 @@ function smpro_bg_verify(string $ip, string $family, ?array $res = null): array 
  *
  * gethostbyaddr() is sequential and waits out the resolver's own timeout on every miss. On a box whose resolver is
  * slow that is most of a second each: a sweep of 199 blocked addresses got through 30 before its budget ran out,
- * which is a check nobody will run seven times. `dig` asks for all of them at once instead — 16 in flight, each
- * given two seconds and a single try — so the same 199 finish in the time two sequential lookups used to take.
+ * which is a check nobody will run seven times. `dig` asks for all of them at once instead - 16 in flight, each
+ * given two seconds and a single try - so the same 199 finish in the time two sequential lookups used to take.
  *
  * A reverse name changes rarely, so answers are cached for a week, including the ones that came back empty; a
  * re-run then costs nothing at all. Without `dig` this falls back to gethostbyaddr and stays honest about the
@@ -439,7 +439,7 @@ function smpro_bg_rdns_bulk(array $ips, int $budget = 0, int $conc = 0): array {
 
 /**
  * Is this address a REAL search / archive / monitoring crawler? Answered by forward-confirmed reverse DNS against
- * the catalogue above — the method Google, Bing, Apple and Yandex each document — not by a User-Agent string,
+ * the catalogue above - the method Google, Bing, Apple and Yandex each document - not by a User-Agent string,
  * which anyone can send, and not by the owner of the network, which proves nothing either way.
  *
  * This exists because of a genuine confusion the firewall page makes easy: a rented virtual machine inside Google
@@ -465,7 +465,7 @@ function smpro_bg_crawler_shield(string $ip, ?array $res = null, ?string $knownH
     // A bulk sweep has already resolved this one; asking the resolver again would be the whole cost of the sweep
     // paid twice. An empty string is a real answer ("no reverse DNS"), which is why null means "not known yet".
     $host = $knownHost !== null ? strtolower(rtrim(trim($knownHost), '.')) : (string)$res['rev']($ip);
-    if ($host === '') return $memo[$ip] = $no;                      // no reverse DNS at all — no publisher claims it
+    if ($host === '') return $memo[$ip] = $no;                      // no reverse DNS at all - no publisher claims it
 
     foreach (smpro_bg_catalog() as $fam => $cat) {
         if (!$cat['rdns'] || !smpro_bg_host_under($host, $cat['rdns'])) continue;
@@ -489,7 +489,7 @@ function smpro_bg_crawler_shield(string $ip, ?array $res = null, ?string $knownH
  * and v6, compared as packed bytes; a v4 entry never matches a v6 address.
  *
  * The settings field is labelled "IPs/CIDRs" and its validator accepts a range, but the scan matched the list
- * with a plain string comparison — so a range was accepted, shown as saved, and silently did nothing while
+ * with a plain string comparison - so a range was accepted, shown as saved, and silently did nothing while
  * every address inside it stayed trackable and auto-blockable. An ignore rule that reads as applied and is not
  * is worse than one that is refused.
  */
@@ -517,7 +517,7 @@ function smpro_bg_ip_ignored(string $ip, array $list): bool {
 
 /* ---------------- the decision (pure) ---------------- */
 /**
- * Merge a scan into the state and decide each address. $verify(ip, family) → smpro_bg_verify shape.
+ * Merge a scan into the state and decide each address. $verify(ip, family) -> smpro_bg_verify shape.
  * Statuses: allowed (verified, or admin) · pending (unverified bot, no attacks) · gray (attacked, under threshold)
  *           · block (gray past threshold, to be blocked now) · blocked · ignored · denied (admin refused to allow)
  * Admin decisions (decided_by !== 'auto') are never overturned by a scan; counters still refresh.
@@ -744,7 +744,7 @@ function smpro_bg_action(string $act, string $ip, string $by, array $opt = []): 
             break;
         case 'block':
             // The one deliberate path: the operator is looking at this bot, at its verification status and at what
-            // blocking it would cost, and pressed Block anyway. So it goes past the crawler shield — but only from
+            // blocking it would cost, and pressed Block anyway. So it goes past the crawler shield - but only from
             // here, and only when the page has already said what it is.
             $r = function_exists('smpro_fw_block_ip') ? smpro_fw_block_ip($ip, 'Bot Guard: blocked by ' . $by, true)
                : (function_exists('smpro_im_block_ip') ? smpro_im_block_ip($ip, 'Bot Guard: blocked by ' . $by) : ['ok' => false, 'msg' => 'block function unavailable']);

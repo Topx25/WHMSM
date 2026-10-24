@@ -1,11 +1,11 @@
 <?php
 /**
- * modules/top-processes.php — LIVE process monitor (read-only, plan §38).
+ * modules/top-processes.php - LIVE process monitor (read-only, plan §38).
  * Full depth (full usernames, per-user groups, command rollup, raw table) PLUS
  * an interactive relations layer:
- *   - click a user  → filter its processes
- *   - click a command → filter processes by that command
- *   - process Details → parent (PPID) + children (PID) relations, clickable
+ *   - click a user  -> filter its processes
+ *   - click a command -> filter processes by that command
+ *   - process Details -> parent (PPID) + children (PID) relations, clickable
  * No kill / renice / env exposure. Command lines redacted.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -301,10 +301,10 @@ tr.open + tr .tp-details{display:block}
     var kTxt='<span class="rel">children: '+(kids.length?kids.map(function(k){return '<span class="kid" data-jump="'+k.pid+'">'+k.pid+' '+esc(k.process)+'</span>';}).join(', '):'none in list')+'</span>';
     return pTxt+'\n'+kTxt;
   }
-  // System accounts that own genuine service daemons — Kill is not offered for these (the
+  // System accounts that own genuine service daemons - Kill is not offered for these (the
   // backend refuses them anyway). Everything else that is a cPanel account or a non-root user
   // is a user-owned runaway and CAN be offered a kill. (Prior logic had `!r.is_cpanel`, which
-  // wrongly HID the button for cPanel accounts — the exact target — and showed it for daemons.)
+  // wrongly HID the button for cPanel accounts - the exact target - and showed it for daemons.)
   var TP_SYSUSER={root:1,mysql:1,mysqld:1,named:1,nobody:1,dovecot:1,dovenull:1,mailnull:1,mail:1,cpanel:1,cpaneleximscanner:1,cpaneleximfilter:1,mailman:1,nscd:1,redis:1,memcached:1,clamav:1,clam:1,postgres:1,dbus:1,polkitd:1,chrony:1,rpc:1,rpcuser:1,sshd:1,ntp:1,'systemd-network':1,'systemd-resolve':1,'systemd-timesync':1};
   function renderRows(data){
     pidIndex={};(data.rows||[]).forEach(function(r){pidIndex[r.pid]=r;});
@@ -350,7 +350,7 @@ tr.open + tr .tp-details{display:block}
   function render(data){
     if(!data)return;
     lastData=data;
-    /* the load figure lives in the header chip / Server Health — here we keep the CPU-in-use total fresh instead */
+    /* the load figure lives in the header chip / Server Health - here we keep the CPU-in-use total fresh instead */
     (function(){var _e=$('smCpuUse');if(!_e)return;var s=0;(data.rows||[]).forEach(function(r){s+=parseFloat(r.cpu)||0;});_e.textContent=Math.round(s)+'%';})();
     $('smCores').textContent=data.cores||'';
     $('smUsers').textContent=data.users_count||0;
@@ -386,7 +386,7 @@ tr.open + tr .tp-details{display:block}
       })
       .catch(function(){btn.innerHTML=orig;btn.disabled=false;delete btn.dataset.busy;alert('⚠ Network error.');});
   }
-  // ❄ Cool — reversible alternative to Kill: throttle a runaway to 30% CPU for 15 min via the
+  // ❄ Cool - reversible alternative to Kill: throttle a runaway to 30% CPU for 15 min via the
   // existing cooler engine (index.cgi?cooler=1, POST + 'cooler' CSRF + root). No new backend.
   function coolProc(btn){
     var pid=btn.getAttribute('data-cool'), comm=btn.getAttribute('data-comm');
@@ -437,7 +437,7 @@ tr.open + tr .tp-details{display:block}
 </style>
 <script>
 (function(){
-  // Collapsible section cards — start CLOSED, open by clicking the title (or +).
+  // Collapsible section cards - start CLOSED, open by clicking the title (or +).
   document.querySelectorAll('.smpro-main .card > .tp-th').forEach(function(th){
     var card=th.parentElement;
     var body=document.createElement('div'); body.className='tp-collapse';

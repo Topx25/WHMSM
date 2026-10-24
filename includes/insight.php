@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/insight.php — "Daily insight": one useful item per day on the Dashboard, plus any REAL warnings
+ * includes/insight.php - "Daily insight": one useful item per day on the Dashboard, plus any REAL warnings
  * detected on this server right now (pinned above the tip). Content is a mix of:
  *   - a curated library of tips / tricks / options / security best-practices (rotates daily, stable within a day),
  *   - live server-derived warnings (pending update not pulled, CSF disabled, a service down, monitoring/alerts off,
@@ -73,7 +73,7 @@ function smpro_insight_dynamic($m = null) {
         $spct = (float)($m['swap']['pct'] ?? 0);
         if ($spct >= 80) $out[] = ['sev'=>'warn','cat'=>'warning','t'=>'Swap is '.round($spct).'% used','b'=>'Heavy swap use means the server is short on RAM and will feel slow. Investigate the top processes or expand swap.','page'=>'top-processes','cta'=>'See processes'];
     }
-    // 7) end-of-life PHP (the panel's own runtime — a cheap, always-available signal)
+    // 7) end-of-life PHP (the panel's own runtime - a cheap, always-available signal)
     if (defined('PHP_VERSION') && version_compare(PHP_VERSION, '8.0.0', '<'))
         $out[] = ['sev'=>'warn','cat'=>'security','t'=>'End-of-life PHP detected ('.PHP_VERSION.')','b'=>'PHP '.PHP_VERSION.' no longer receives security fixes. Move sites to PHP 8.1+ so they keep getting patched.'];
     return $out;
@@ -86,7 +86,7 @@ function smpro_insight_today($m = null) {
     usort($dyn, fn($a,$b) => ($rank[$a['sev']] ?? 9) <=> ($rank[$b['sev']] ?? 9));
     $pinned = array_slice(array_filter($dyn, fn($x)=>in_array($x['sev'],['critical','high'],true)), 0, 3);
     $suggest = array_values(array_filter($dyn, fn($x)=>in_array($x['sev'],['warn','tip'],true)));
-    // daily rotation seed — changes each day, identical all day (no Date.now equivalent needed; plugin runs under normal PHP)
+    // daily rotation seed - changes each day, identical all day (no Date.now equivalent needed; plugin runs under normal PHP)
     $lib = smpro_insight_library();
     $seed = (int)date('Y') * 366 + (int)date('z');
     // most days show a curated tip; if there are gentle suggestions, fold them into the rotation pool too

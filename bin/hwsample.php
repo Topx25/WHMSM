@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/hwsample.php — hardware workload sampler. Run every 5 minutes from /etc/cron.d/smpro-hwsample.
+ * bin/hwsample.php - hardware workload sampler. Run every 5 minutes from /etc/cron.d/smpro-hwsample.
  * Folds one CPU / memory / swap / disk-busy / disk-space reading into the current hour's bucket so
  * the "does the hardware match the load?" report has real 7-day peaks. Cheap and read-only.
  */

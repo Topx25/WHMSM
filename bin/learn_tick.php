@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/learn_tick.php — every ten minutes: Learned Defense notes processes a file scan cannot see, and hunts the
+ * bin/learn_tick.php - every ten minutes: Learned Defense notes processes a file scan cannot see, and hunts the
  * whole server after a new lesson (or once a day). Reports only; see includes/learn.php.
  */
 define('SMPRO_BOOT', 1);

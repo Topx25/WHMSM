@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/trustfeed_tick.php — pull the signed trusted-bots list from the licence server (see includes/trustfeed.php).
+ * bin/trustfeed_tick.php - pull the signed trusted-bots list from the licence server (see includes/trustfeed.php).
  * Exit 0 always; a failed pull leaves the previous list in place.
  */
 define('SMPRO_BOOT', 1);

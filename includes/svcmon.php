@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/svcmon.php — Service catalog + status + controls + the background SERVICE MONITOR.
+ * includes/svcmon.php - Service catalog + status + controls + the background SERVICE MONITOR.
  * Boot-loaded so the cron worker (bin/svcmon.php), the Dashboard cards, and the cPanel Services module all
  * share ONE service catalog and one control path. The monitor (opt-in) watches the admin's chosen services and,
  * if one stops, restarts it automatically and/or sends a notification through the existing Notifications channels.
@@ -11,12 +11,12 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 if (!defined('SMPRO_SVCMON_CFG'))   define('SMPRO_SVCMON_CFG',   SMPRO_VARLIB . '/svcmon.json');        // {enabled,monitor[],autorestart,notify,recovery}
 if (!defined('SMPRO_SVCMON_STATE')) define('SMPRO_SVCMON_STATE', SMPRO_VARLIB . '/svcmon_state.json');  // per-service down/restart bookkeeping
 if (!defined('SMPRO_SVC_SNAP'))     define('SMPRO_SVC_SNAP',     SMPRO_VARLIB . '/svc_scan.json');       // cached scan snapshot (cheap dashboard reads)
-if (!defined('SMPRO_SVC_IGNORE'))   define('SMPRO_SVC_IGNORE',   SMPRO_VARLIB . '/svc_ignore.json');     // {key: ts} — services the admin muted (never flagged down, never alerted)
+if (!defined('SMPRO_SVC_IGNORE'))   define('SMPRO_SVC_IGNORE',   SMPRO_VARLIB . '/svc_ignore.json');     // {key: ts} - services the admin muted (never flagged down, never alerted)
 
 /* ============================ ignore / mute list ============================
  * When the admin clicks "Ignore" on a stopped service, its key is stored here. An ignored service is not counted
  * as "down", is dropped from the Stopped-services drill-in, and is skipped by the monitor (no auto-restart, no
- * notification) — so a service that is intentionally off stops nagging. Un-ignore removes it and it reappears. */
+ * notification) - so a service that is intentionally off stops nagging. Un-ignore removes it and it reappears. */
 function smpro_svc_ignored() {
     $d = @is_file(SMPRO_SVC_IGNORE) ? json_decode((string)@file_get_contents(SMPRO_SVC_IGNORE), true) : null;
     return is_array($d) ? $d : [];
@@ -30,15 +30,15 @@ function smpro_svc_set_ignore($key, $on) {
     $t = $f . '.tmp'; if (@file_put_contents($t, json_encode($ig), LOCK_EX) === false) return false;
     @chmod($t, 0600); return @rename($t, $f);
 }
-/** Pick the ONE contextual primary action for a stopped service: failed → Fix, disabled → Enable, else → Start. */
+/** Pick the ONE contextual primary action for a stopped service: failed -> Fix, disabled -> Enable, else -> Start. */
 function smpro_svc_fix_action($row, $reg = null) {
     $reg = $reg ?? (smpro_svc_registry()[$row['key']] ?? []);
     $state = (string)($row['state'] ?? '');
     $en    = strtolower((string)($row['enabled'] ?? ''));
     $hasScript = smpro_svc_restartsrv($reg) !== '';
-    if ($state === 'failed') return ['a' => 'restart', 'label' => 'Fix',    'icon' => "\xF0\x9F\x94\xA7", 'cls' => 'restart']; // 🔧 failed → Fix
-    if ($en === 'disabled')  return ['a' => 'enable',  'label' => 'Enable', 'icon' => "\xE2\x96\xB6",     'cls' => 'enable'];  // ▶ disabled → Enable (+start)
-    return ['a' => $hasScript ? 'restart' : 'start', 'label' => 'Start', 'icon' => "\xE2\x9A\xA1", 'cls' => 'start'];          // ⚡ stopped → Start
+    if ($state === 'failed') return ['a' => 'restart', 'label' => 'Fix',    'icon' => "\xF0\x9F\x94\xA7", 'cls' => 'restart']; // 🔧 failed -> Fix
+    if ($en === 'disabled')  return ['a' => 'enable',  'label' => 'Enable', 'icon' => "\xE2\x96\xB6",     'cls' => 'enable'];  // ▶ disabled -> Enable (+start)
+    return ['a' => $hasScript ? 'restart' : 'start', 'label' => 'Start', 'icon' => "\xE2\x9A\xA1", 'cls' => 'start'];          // ⚡ stopped -> Start
 }
 
 /* ============================ catalog + status (shared) ============================ */
@@ -74,7 +74,7 @@ function smpro_svc_cmd_exists($c) { return trim((string)@shell_exec('command -v 
 
 /** Service names cPanel records as DISABLED in /etc/chkserv.d/chkservd.conf ("name:0").
  *  That file is cPanel's own enabled/disabled registry (WHM › Service Manager writes it), so it is the
- *  portable way to tell "the admin turned this off on this server" from "it crashed" — on ANY cPanel box,
+ *  portable way to tell "the admin turned this off on this server" from "it crashed" - on ANY cPanel box,
  *  whatever role that box plays. Cached per request; absent file simply yields no disabled names. */
 function smpro_svc_chkservd_disabled(): array {
     static $c = null;
@@ -103,16 +103,16 @@ function smpro_svc_status($s) {
     $rs = smpro_svc_restartsrv($s);
     $installed = $matched !== '' || $cmdPresent || $rs !== '';
     if (!empty($s['product']) || empty($units)) { $active = $active || $cmdPresent; $state = $active ? 'present' : 'absent'; $enabled = $enabled === 'n/a' && $active ? 'product' : $enabled; }
-    // ADMINISTRATIVELY DISABLED — the service is installed and healthy but its own tooling has been told to
+    // ADMINISTRATIVELY DISABLED - the service is installed and healthy but its own tooling has been told to
     // stand down, so systemd can never start it. CSF writes /etc/csf/csf.disable; `lfd` then prints
     // "csf and lfd have been disabled" and exits 0, and because the unit is Type=forking systemd reports
     // "failed (Result: protocol)". Restarting is guaranteed to fail, so the UI must say WHY instead of
     // offering an action that cannot work and then showing a scary systemd error.
-    // Two sources, in order of specificity. Both are GENERAL mechanisms present on any cPanel server —
+    // Two sources, in order of specificity. Both are GENERAL mechanisms present on any cPanel server -
     // nothing here is tied to one host's setup.
     $offReason = '';
     // 1. cPanel's own service registry: /etc/chkserv.d/chkservd.conf lists "<service>:1|0". A 0 means the
-    //    admin turned it off in WHM > Service Manager, which is a deliberate choice on THIS server — a
+    //    admin turned it off in WHM > Service Manager, which is a deliberate choice on THIS server - a
     //    mail-only box legitimately runs no httpd, a DNS-only box no exim. Reporting that as a fault
     //    would make the page cry wolf on every specialised server.
     $chk = smpro_svc_chkservd_disabled();
@@ -155,7 +155,7 @@ function smpro_svcmon_default_monitor() {
 }
 /** Is a service RECOMMENDED to monitor/auto-restart? (the critical always-on core services). */
 function smpro_svc_monitor_recommended($key) { $s = smpro_svc_registry()[$key] ?? []; return !empty($s['critical']); }
-/** A caution string for services that are NOT recommended to blindly monitor/auto-restart — so the admin avoids
+/** A caution string for services that are NOT recommended to blindly monitor/auto-restart - so the admin avoids
  *  turning auto-restart into a fight against an intentionally-disabled or optional service. '' = no caution. */
 function smpro_svc_monitor_caution($key, $row = null) {
     $s = smpro_svc_registry()[$key] ?? [];
@@ -165,15 +165,15 @@ function smpro_svc_monitor_caution($key, $row = null) {
         'dns'       => 'Only if this server runs DNS (named / PowerDNS).',
         'cron'      => 'Optional — cron rarely stops on its own.',
     ];
-    if (!empty($s['critical'])) return '';                                              // core service → always fine to watch
+    if (!empty($s['critical'])) return '';                                              // core service -> always fine to watch
     if (isset($notes[$key])) return $notes[$key];
-    // installed but currently stopped + non-critical → likely disabled on purpose
+    // installed but currently stopped + non-critical -> likely disabled on purpose
     if (is_array($row) && !empty($row['installed']) && empty($row['active']))
         return 'Currently stopped — if you disabled it on purpose, auto-restart will keep starting it. Watch only if it should always run.';
     return 'Optional service — watch only if you rely on it.';
 }
 
-/** Full scan of every catalog service → normalized rows (used by the module, dashboard, and monitor). */
+/** Full scan of every catalog service -> normalized rows (used by the module, dashboard, and monitor). */
 function smpro_svc_scan() {
     $rows = [];
     $ignored = smpro_svc_ignored();
@@ -185,7 +185,7 @@ function smpro_svc_scan() {
             'runtime'=>$runtime, 'installed'=>$st['installed'], 'active'=>$st['active'], 'state'=>$st['state'],
             'enabled'=>$st['enabled'], 'unit'=>$st['unit'], 'state_label'=>$a[0], 'cls'=>$a[1], 'ignored'=>$isIg,
             'off_reason'=>$st['off_reason'] ?? '',
-            // "down" = a controllable service that is installed but not running (so Start/Fix makes sense). Muted → not down.
+            // "down" = a controllable service that is installed but not running (so Start/Fix makes sense). Muted -> not down.
             // An ADMINISTRATIVELY DISABLED service is not down: it was switched off on purpose, starting it is
             // refused, and counting it here would put it in the "problems" list and hand it to the auto-restart
             // monitor to retry forever on every server that legitimately does not run it.
@@ -219,12 +219,12 @@ function smpro_svcmon_control($key, $action) {
     if (!$svc) return ['ok'=>false,'msg'=>'unknown service'];
     if (!smpro_svc_is_runtime($svc)) return ['ok'=>false,'msg'=>'this product has no runtime control here'];
     if ($action === 'stop' && !empty($svc['no_stop'])) return ['ok'=>false,'msg'=>'refused: stopping this service here is blocked'];
-    // Administratively disabled (e.g. CSF's csf.disable): starting can only fail — systemd would report an
+    // Administratively disabled (e.g. CSF's csf.disable): starting can only fail - systemd would report an
     // opaque "Result: protocol" because lfd exits immediately. Explain the cause and the one-line fix instead
     // of running a doomed command and surfacing the daemon's own confusing failure.
     if (in_array($action, ['start','restart','enable'], true)) {
         $pre = smpro_svc_status($svc);
-        // 'refused' tells the UI this was never attempted — so it reports the reason plainly instead of
+        // 'refused' tells the UI this was never attempted - so it reports the reason plainly instead of
         // framing a deliberate configuration state as a failed action.
         if (!empty($pre['off_reason'])) return ['ok'=>false, 'refused'=>true, 'msg'=>$pre['off_reason'], 'active'=>false];
     }
@@ -243,8 +243,8 @@ function smpro_svcmon_control($key, $action) {
 }
 
 /* ============================ uninstall an installed add-on (the plugin DOES it) ============================
- * The admin asked SM Pro to actually REMOVE an add-on it installed (CSF, Imunify, …), not just print a command.
- * So this is a real engine: it runs an ORDERED set of removal strategies (vendor uninstaller → package manager →
+ * The admin asked SM Pro to actually REMOVE an add-on it installed (CSF, Imunify, ...), not just print a command.
+ * So this is a real engine: it runs an ORDERED set of removal strategies (vendor uninstaller -> package manager ->
  * network installer --uninstall) and stops as soon as the add-on is no longer detected, then ALWAYS runs a purge
  * pass to wipe leftover files / systemd units / iptables chains, and finally verifies. Everything is double-confirmed
  * in the UI + audited. Base-OS layers (CloudLinux) are still executed but flagged high-risk (a kernel swap needs a
@@ -345,7 +345,7 @@ function smpro_svc_uninstall($key) {
         }
         return !empty(smpro_svc_status($reg)['installed']);
     };
-    foreach ((array)($steps['remove'] ?? []) as $st) {                        // strategies, escalating — stop when gone
+    foreach ((array)($steps['remove'] ?? []) as $st) {                        // strategies, escalating - stop when gone
         if (!$stillThere()) break;
         $run($st[0], $st[1], $st[2]);
     }
@@ -396,13 +396,13 @@ function smpro_svcmon_run() {
     $reg = smpro_svc_registry(); $state = smpro_svcmon_state_load(); $now = time(); $acted = 0;
     $ignored = smpro_svc_ignored();
     foreach ($cfg['monitor'] as $key) {
-        if (isset($ignored[$key])) { unset($state[$key]); continue; }   // admin muted this service → no auto-restart, no alert
+        if (isset($ignored[$key])) { unset($state[$key]); continue; }   // admin muted this service -> no auto-restart, no alert
         $svc = $reg[$key] ?? null; if (!$svc || !smpro_svc_is_runtime($svc) || empty($svc['units'])) continue;
         $row = $rows[$key] ?? null; if (!$row || !$row['installed']) { unset($state[$key]); continue; }
-        // ADMINISTRATIVELY DISABLED (chkservd name:0, or CSF's csf.disable) — switched off on purpose, so it is
+        // ADMINISTRATIVELY DISABLED (chkservd name:0, or CSF's csf.disable) - switched off on purpose, so it is
         // not down and must not be alerted on. The page already excludes these; the MONITOR did not, so on a
         // specialised server (mail-only, DNS-only) it kept firing "Service DOWN" for a service the admin
-        // deliberately turned off, and burned the crash-loop budget on restarts that are refused anyway —
+        // deliberately turned off, and burned the crash-loop budget on restarts that are refused anyway -
         // eventually reporting "auto-restart PAUSED, manual attention needed" about a non-problem.
         if (!empty($row['off_reason'])) { unset($state[$key]); continue; }
         if (!empty($row['active'])) {   // healthy (or recovered)

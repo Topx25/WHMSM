@@ -1,10 +1,10 @@
 <?php
 /**
- * loginfeed.php — where a SUCCESSFUL sign-in is actually recorded.
+ * loginfeed.php - where a SUCCESSFUL sign-in is actually recorded.
  *
  * Every login check in this plugin used to read /usr/local/cpanel/logs/login_log and look for "SUCCEEDED LOGIN".
  * On current cPanel that string is never written: login_log holds FAILED and DEFERRED lines only, and a session
- * that is granted is recorded in session_log as a NEW line instead. The result was the worst kind of wrong —
+ * that is granted is recorded in session_log as a NEW line instead. The result was the worst kind of wrong -
  * Account Audit said "0 successful logins", the foreign-login report found nobody, and Country Login Lock scanned
  * and matched nothing. All three looked like an all-clear. None of them could see a success at all.
  *
@@ -13,7 +13,7 @@
  *   session_log   [ts] lvl [svc] IP NEW user:token key=val,key=val       (current cPanel)
  *
  * Not every NEW line is a person typing a password, and that distinction decides whether an event is a finding:
- *   password  the login form, or a mailbox opening its own webmail — somebody presented the credential.
+ *   password  the login form, or a mailbox opening its own webmail - somebody presented the credential.
  *   operator  WHM's "Log in as User", root opening an account, an account opening one of its own mailboxes.
  *   api       a session minted through the API by root.
  *   restored  a session re-opened for the same identity that already had one.
@@ -72,7 +72,7 @@ function smpro_lf_tail(string $path, int $lines): string {
 }
 
 /**
- * One session_log NEW line → a login record, or [] when the line is not a granted session.
+ * One session_log NEW line -> a login record, or [] when the line is not a granted session.
  *
  * PURGE / EXPIRE lines are session endings and are deliberately not logins.
  */
@@ -113,11 +113,11 @@ function smpro_lf_parse_session(string $line): array {
      *                                 mailboxes, or root opening a customer's cPanel. No password was presented.
      *   path=xfercpanel               WHM's "Log in as User".
      *
-     * Counted by method, one live server reported 68 of these as "the account password was accepted" — including
+     * Counted by method, one live server reported 68 of these as "the account password was accepted" - including
      * "an account <- root", which is the operator opening a customer account, and a dozen "mailbox <- its own cPanel account".
      * With Country Login Lock armed, that is an operator being blocked and evicted for doing their job.
      *
-     * Webmail has its own methods, and they were falling through to 'other' — which the feed's default filter
+     * Webmail has its own methods, and they were falling through to 'other' - which the feed's default filter
      * discards. Webmail is the commonest compromise route on shared hosting; it must never be the one that is
      * silently dropped.
      */
@@ -139,7 +139,7 @@ function smpro_lf_parse_session(string $line): array {
         'ts'      => @strtotime($when) ?: 0,
         'ip'      => $ip,
         // Webmail signs in as a mailbox, so '@' is part of the identity. Stripping it turned
-        // a mailbox address into the same string without its "@" — a name that matches no account and no mailbox, and
+        // a mailbox address into the same string without its "@" - a name that matches no account and no mailbox, and
         // an operator cannot act on because it does not exist.
         'user'    => $userTok,
         'service' => $service,
@@ -152,7 +152,7 @@ function smpro_lf_parse_session(string $line): array {
     ];
 }
 
-/** One login_log line → a login record, or [] when it is not a SUCCEEDED/SUCCESS LOGIN. */
+/** One login_log line -> a login record, or [] when it is not a SUCCEEDED/SUCCESS LOGIN. */
 function smpro_lf_parse_login(string $line): array {
     $line = trim($line);
     if ($line === '' || !preg_match('/SUCCEEDED\s+LOGIN|SUCCESS\s+LOGIN/i', $line)) return [];
@@ -247,7 +247,7 @@ function smpro_login_log_tail(int $lines): string {
 /**
  * Every successful sign-in in the window, from both logs, newest last.
  *
- * $kinds limits what is returned; the default is the one that matters — a password was accepted. Pass [] for
+ * $kinds limits what is returned; the default is the one that matters - a password was accepted. Pass [] for
  * everything, including the operator's own jumps into accounts.
  *
  * The return always carries 'sources', so a caller can tell "no successful logins" apart from "the log this

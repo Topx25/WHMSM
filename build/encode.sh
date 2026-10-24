@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# encode.sh — produce an ENCODED, tamper-resistant build of Safety Monitor Pro.
+# encode.sh - produce an ENCODED, tamper-resistant build of Safety Monitor Pro.
 #
 # Why: the plugin's source runs as root on the customer's server, so root can
 # otherwise just edit out the licence gate (set SMPRO_LIC_ENFORCE=false or stub
@@ -11,14 +11,14 @@
 #
 # Target runtime: cPanel PHP 8.4 (verified: ionCube Loader AND SourceGuardian
 # are both already active in /usr/local/cpanel/3rdparty/bin/php on the server,
-# so NO loader needs to be installed — encoded files just run).
+# so NO loader needs to be installed - encoded files just run).
 #
 # Usage:
 #   ./build/encode.sh [SRC_DIR] [OUT_DIR]
 #     SRC_DIR  plaintext plugin root      (default: parent of this script)
 #     OUT_DIR  encoded output directory   (default: <SRC>-encoded)
 #
-# Requires ONE of (run on a Linux build host — encoders are Linux/commercial):
+# Requires ONE of (run on a Linux build host - encoders are Linux/commercial):
 #   - ionCube Encoder 14+      (binary: ioncube_encoder8.4 / ioncube_encoder)
 #       https://www.ioncube.com/sa_encoder.php   (needs PHP 8.4 target support)
 #   - SourceGuardian 13+       (binary: sourceguardian / sg_encode)

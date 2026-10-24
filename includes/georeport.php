@@ -1,19 +1,19 @@
 <?php
 /**
- * includes/georeport.php — which accounts are being signed into from countries you do not allow, and the
+ * includes/georeport.php - which accounts are being signed into from countries you do not allow, and the
  * one response that actually ends it: change the password.
  *
  * Blocking the address stops that address. It does not stop the person, because what they have is the password,
- * and a password that is known stays known. So this pairs the report with the only action that closes it — and
+ * and a password that is known stays known. So this pairs the report with the only action that closes it - and
  * treats the new passwords as the dangerous material they are.
  *
  * HOW THE PASSWORDS ARE HANDLED, and why.
  *
  * A file on disk holding working passwords for every account on the server is a single object whose theft is a
- * total compromise — worse than the incident it was created to fix. So there is no such file. Instead:
+ * total compromise - worse than the incident it was created to fix. So there is no such file. Instead:
  *
  *   - the new passwords exist in ONE response, handed back once, for the operator to save or send;
- *   - the record kept on disk carries the account, the reason, the date and who did it — and NEVER the password;
+ *   - the record kept on disk carries the account, the reason, the date and who did it - and NEVER the password;
  *   - nothing re-displays them. If that one export is lost, the passwords are reset again. That is the correct
  *     trade: a lost export costs five minutes, a leaked password file costs every account on the server.
  */
@@ -27,7 +27,7 @@ if (!defined('SMPRO_GR_LOG')) define('SMPRO_GR_LOG', SMPRO_VARLOG . '/password_r
  * Built on the SAME allow-list the Country Login Lock uses (per account where one is set, otherwise the server's),
  * so the report and the lock can never disagree about what "allowed" means.
  *
- * A SUCCESSFUL sign-in is the finding. A failed one from anywhere is background noise — reported separately and
+ * A SUCCESSFUL sign-in is the finding. A failed one from anywhere is background noise - reported separately and
  * never counted as a compromise, because it is not one.
  */
 function smpro_gr_scan(int $days = 7, int $maxLines = 60000): array {
@@ -59,8 +59,8 @@ function smpro_gr_scan(int $days = 7, int $maxLines = 60000): array {
     $since = smpro_gr_counter_since();
     if ($since > $cut) { $cut = $since; $out['counter_since'] = $since; }
 
-    // The finding of this report is an ACCEPTED password. Current cPanel does not write that to login_log at all —
-    // it records the granted session in session_log — so a report built on login_log alone reported every server
+    // The finding of this report is an ACCEPTED password. Current cPanel does not write that to login_log at all -
+    // it records the granted session in session_log - so a report built on login_log alone reported every server
     // as clean no matter who had signed in. Successes come from the shared feed; login_log supplies the failures.
     if (!function_exists('smpro_lf_success')) { $lf = __DIR__ . '/loginfeed.php'; if (@is_file($lf)) require_once $lf; }
     $feed = function_exists('smpro_lf_success') ? smpro_lf_success($cut, $maxLines) : ['ok' => false, 'events' => []];
@@ -255,7 +255,7 @@ function smpro_gr_set_password(string $user, string $pass): array {
     if (!@is_executable($bin)) return ['ok' => false, 'msg' => 'whmapi1 is not available on this server'];
 
     // The password never reaches the process table. `--input=json` makes whmapi1 read the WHOLE call from stdin,
-    // so `ps` — readable by every account on a shared box — shows only the flags. Passing it as an argument would
+    // so `ps` - readable by every account on a shared box - shows only the flags. Passing it as an argument would
     // publish every customer's new password to every customer, for the life of the call.
     //
     // (An earlier draft of this used `password=STDIN`, which whmapi1 does not support: it would have set every
@@ -355,7 +355,7 @@ function smpro_gr_reset_bulk(array $users, string $reason, string $by, bool $all
  * The record that is kept: who, why, when, by whom, and whether it worked.
  *
  * Deliberately NO password. This file is meant to be readable months later by somebody asking "why was this
- * customer's password changed?" — a question that never requires knowing what it was changed to.
+ * customer's password changed?" - a question that never requires knowing what it was changed to.
  */
 function smpro_gr_record(string $user, string $reason, string $by, bool $ok, string $error = ''): bool {
     $dir = dirname(SMPRO_GR_LOG);
@@ -408,11 +408,11 @@ function smpro_gr_export(array $secrets, string $reason, string $by): string {
 }
 
 /* =====================================================================================================
- * COMPROMISED ACCOUNTS — who should have their password changed, and on what evidence.
+ * COMPROMISED ACCOUNTS - who should have their password changed, and on what evidence.
  *
  * The bulk reset already existed, but it could only ever be fed by one source: a successful login from a
  * country outside the allow-list. That source is silent unless an allow-list has been configured, and it is
- * blind to the commonest case of all — an account entered with the correct password from an ordinary country,
+ * blind to the commonest case of all - an account entered with the correct password from an ordinary country,
  * which is what a stolen or guessed password looks like. On a real incident this week the report offered zero
  * accounts while malware was sitting in dozens of them.
  *
@@ -421,7 +421,7 @@ function smpro_gr_export(array $secrets, string $reason, string $by): string {
  * been cleaned: something put it there, and whatever did still holds whatever it used to get in.
  *
  * Every source reports three states, never two: found / found nothing / COULD NOT LOOK. A source that cannot run
- * must never be summarised as "no accounts affected" — that reads as an all-clear and it is not one.
+ * must never be summarised as "no accounts affected" - that reads as an all-clear and it is not one.
  * ===================================================================================================== */
 
 /**

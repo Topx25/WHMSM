@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/updates.php — in-plugin updates (check + apply + auto-update).
+ * modules/updates.php - in-plugin updates (check + apply + auto-update).
  * GET renders status; all actions go through the ?update=1 endpoint (POST + CSRF + root).
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }

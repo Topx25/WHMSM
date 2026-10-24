@@ -1,24 +1,24 @@
 <?php
 /**
- * Safety Monitor Pro — Restore & Migrate.
+ * Safety Monitor Pro - Restore & Migrate.
  *
  * Brings accounts in from another server. It does NOT reimplement restoring: cPanel already ships a transfer
  * engine that knows how to rebuild an account, and reimplementing that is how migrations lose mailboxes. This
- * drives that engine and adds what it lacks — a readable source picker, a job that survives closing the page,
+ * drives that engine and adds what it lacks - a readable source picker, a job that survives closing the page,
  * and an honest answer when an archive is in a format nothing here can read.
  *
  * Three routes, in order of how much cPanel already does for us:
- *   1. Live server, any panel cPanel knows      → create_remote_root_transfer_session (it pushes its own
+ *   1. Live server, any panel cPanel knows      -> create_remote_root_transfer_session (it pushes its own
  *      pkgacct-* to the source and converts the account there).
- *   2. Local archive already in cPanel format   → start_local_cpmove_restore.
- *   3. Local archive from another panel         → convert to cpmove, then route 2. See smpro_mig_detect().
+ *   2. Local archive already in cPanel format   -> start_local_cpmove_restore.
+ *   3. Local archive from another panel         -> convert to cpmove, then route 2. See smpro_mig_detect().
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 define('SMPRO_MIG_STATE', SMPRO_VARLIB . '/migrate.json');
 
 /**
- * Source panels cPanel can migrate from. The keys are cPanel's own remote-type strings — anything not in
+ * Source panels cPanel can migrate from. The keys are cPanel's own remote-type strings - anything not in
  * Whostmgr::Transfers::Session::Remotes is rejected by the API, so this list must stay in step with it.
  */
 function smpro_mig_sources(): array {

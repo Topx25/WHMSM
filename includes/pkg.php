@@ -1,10 +1,10 @@
 <?php
 /**
- * pkg.php — one-click installer for the optional HELPER tools the plugin can use (cpulimit, lm-sensors,
+ * pkg.php - one-click installer for the optional HELPER tools the plugin can use (cpulimit, lm-sensors,
  * whois, curl, e2fsprogs/chattr). Lets the UI show a real "Install" button instead of only telling the
  * admin to run a command by hand. Whitelisted tools only; runs the host package manager (apt/dnf/yum/
  * zypper) as root (this is a WHM root plugin); best-effort, bounded, audited. install.sh installs these
- * at setup time too — this is the after-setup path for anything still missing (or a newer server).
+ * at setup time too - this is the after-setup path for anything still missing (or a newer server).
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
@@ -16,7 +16,7 @@ function smpro_pkg_catalog(): array {
         'whois'    => ['check' => 'whois',    'apt' => 'whois',     'dnf' => 'whois',     'yum' => 'whois',     'zypper' => 'whois',     'epel' => false, 'label' => 'whois — IP intelligence'],
         'curl'     => ['check' => 'curl',     'apt' => 'curl',      'dnf' => 'curl',      'yum' => 'curl',      'zypper' => 'curl',      'epel' => false, 'label' => 'curl — AI / Telegram / WhatsApp notifications'],
         'chattr'   => ['check' => 'chattr',   'apt' => 'e2fsprogs', 'dnf' => 'e2fsprogs', 'yum' => 'e2fsprogs', 'zypper' => 'e2fsprogs', 'epel' => false, 'label' => 'chattr/lsattr — PHP-Harden file locking'],
-        // Site Doctor "Optimize" image tools (group=image) — auto-installed on demand so image/WebP become one-click.
+        // Site Doctor "Optimize" image tools (group=image) - auto-installed on demand so image/WebP become one-click.
         'jpegoptim' => ['check' => 'jpegoptim', 'apt' => 'jpegoptim', 'dnf' => 'jpegoptim', 'yum' => 'jpegoptim', 'zypper' => 'jpegoptim', 'epel' => true, 'group' => 'image', 'label' => 'jpegoptim — lossless JPEG recompression'],
         'optipng'   => ['check' => 'optipng',   'apt' => 'optipng',   'dnf' => 'optipng',   'yum' => 'optipng',   'zypper' => 'optipng',   'epel' => true, 'group' => 'image', 'label' => 'optipng — lossless PNG recompression'],
         'gifsicle'  => ['check' => 'gifsicle',  'apt' => 'gifsicle',  'dnf' => 'gifsicle',  'yum' => 'gifsicle',  'zypper' => 'gifsicle',  'epel' => true, 'group' => 'image', 'label' => 'gifsicle — GIF optimization'],
@@ -24,7 +24,7 @@ function smpro_pkg_catalog(): array {
     ];
 }
 
-// Is the host package manager currently busy (a transaction in flight — e.g. cPanel's upcp / dnf-automatic)?
+// Is the host package manager currently busy (a transaction in flight - e.g. cPanel's upcp / dnf-automatic)?
 // We NEVER wait behind or kill it; if busy, the installer returns busy=true and changes nothing.
 function smpro_pkg_mgr_busy(): bool {
     $out = trim((string) @shell_exec("timeout 5 sh -c 'pgrep -x dnf >/dev/null 2>&1 || pgrep -x yum >/dev/null 2>&1 || pgrep -x rpm >/dev/null 2>&1 || pgrep -x packagekitd >/dev/null 2>&1 || fuser /var/lib/rpm/.rpm.lock /run/dnf.pid /var/run/yum.pid >/dev/null 2>&1; echo $?'"));
@@ -78,7 +78,7 @@ function smpro_pkg_have(string $bin): bool {
     return trim((string) @shell_exec('command -v ' . escapeshellarg($bin) . ' 2>/dev/null')) !== '';
 }
 
-// Fallback: install the cpulimit binary SHIPPED WITH THE PLUGIN (static, no repo, no network) — for
+// Fallback: install the cpulimit binary SHIPPED WITH THE PLUGIN (static, no repo, no network) - for
 // servers that can't reach EPEL/mirrors (the exact "could not be installed" case). Placed in
 // /usr/local/bin because the plugin dir may be mounted noexec.
 function smpro_pkg_bundled_cpulimit(): bool {
@@ -123,7 +123,7 @@ function smpro_pkg_install(string $tool): array {
 
     @shell_exec('timeout 180 sh -c ' . escapeshellarg($cmd) . ' >/dev/null 2>&1');
     $ok = smpro_pkg_have($t['check']);
-    if (!$ok && $tool === 'cpulimit') $ok = smpro_pkg_bundled_cpulimit();   // ship-with-plugin static binary — no repo/network needed
+    if (!$ok && $tool === 'cpulimit') $ok = smpro_pkg_bundled_cpulimit();   // ship-with-plugin static binary - no repo/network needed
     if (function_exists('smpro_audit')) smpro_audit('pkg_install', ['tool' => $tool, 'ok' => $ok]);
     $failMsg = $tool === 'cpulimit'
         ? 'cpulimit could not be installed (repo/network) — no problem: the plugin uses its BUILT-IN CPU throttle instead, so the cap still works. Retry later for slightly lower overhead.'

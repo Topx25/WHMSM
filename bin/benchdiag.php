@@ -1,7 +1,7 @@
 <?php
 /**
- * bin/benchdiag.php — Benchmark & Diagnostics worker. Spawned detached by smpro_bd_start() so the full suite
- * (CPU/RAM/disk + PHP + MySQL) keeps running — and is saved to the report history — even if the admin closes
+ * bin/benchdiag.php - Benchmark & Diagnostics worker. Spawned detached by smpro_bd_start() so the full suite
+ * (CPU/RAM/disk + PHP + MySQL) keeps running - and is saved to the report history - even if the admin closes
  * the page. Writes progress + partial results to the state file as it goes.
  * Usage: php benchdiag.php <disk-mount>
  */

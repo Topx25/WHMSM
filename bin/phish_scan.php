@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/phish_scan.php — detached background worker for the Spam & Phishing per-account phishing scan.
+ * bin/phish_scan.php - detached background worker for the Spam & Phishing per-account phishing scan.
  * Launched by smpro_ps_start() with the account name as argv[1]; runs the scan and writes the result file,
  * so the scan finishes even if the admin closed the page. Root already (invoked from the root CGI).
  */

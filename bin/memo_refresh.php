@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/memo_refresh.php <key> — re-run one memoised shell command in the background (see smpro_memo_cmd) and
+ * bin/memo_refresh.php <key> - re-run one memoised shell command in the background (see smpro_memo_cmd) and
  * store its output. Started by a page that served a stale value; nothing else calls it. The command comes from
  * the root-only cache dir, never from the argument.
  */

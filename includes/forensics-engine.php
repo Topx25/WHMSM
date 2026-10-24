@@ -1,11 +1,11 @@
 <?php
 /**
- * forensics-engine.php — SM Pro "Comprehensive Account Forensics Report" engine.
+ * forensics-engine.php - SM Pro "Comprehensive Account Forensics Report" engine.
  *
  * READ-ONLY, per-account deep forensics. Prefixes:
- *   smpro_fx_*  — §3.0 normalized contract, scope, §3.1 flagged-file deep analysis,
+ *   smpro_fx_*  - §3.0 normalized contract, scope, §3.1 flagged-file deep analysis,
  *                 §3.2 file-integrity sweep, per-file baselines.
- *   smpro_fe_*  — the UNIFIED whitelist store (shared with the Malicious-Upload detector),
+ *   smpro_fe_*  - the UNIFIED whitelist store (shared with the Malicious-Upload detector),
  *                 §3.5 persistence hunt, §3.6 synthesis, §6 run governor.
  *
  * INVARIANTS (see the build spec):
@@ -14,7 +14,7 @@
  *  - Every finding carries ≥1 concrete evidence ref (smpro_fx_finding drops evidence-less findings).
  *  - Bounded + streaming: fixed buffers, per-step timeouts, an overall wall-clock budget, load-gated.
  *  - English-only output.
- *  - State dir is SMPRO_VARLIB (/var/lib/smpro) — the plugin's real convention; the spec's
+ *  - State dir is SMPRO_VARLIB (/var/lib/smpro) - the plugin's real convention; the spec's
  *    /var/cpanel/sm_pro/ is aspirational and intentionally NOT used.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -23,7 +23,7 @@ define('SMPRO_FX_ROOT', SMPRO_VARLIB . '/forensics');          // reports + base
 define('SMPRO_FE_WL',   SMPRO_VARLIB . '/whitelist.json');     // THE single whitelist both detector + UI use
 
 /* =========================================================================================
- *  §3.0 — normalized data contract (Finding + timeline event) + shared helpers
+ *  §3.0 - normalized data contract (Finding + timeline event) + shared helpers
  * ======================================================================================= */
 
 /** timeout+nice+ionice wrapper (mirrors smpro_fa_wrap; self-contained so the engine never needs a module). */
@@ -39,7 +39,7 @@ function smpro_fx_redact($s, $keep = 120) {
     return $s;
 }
 
-/** Evidence row — {type,value,sha256?,mtime?,ctime?,source_file?,line_no?,excerpt}. */
+/** Evidence row - {type,value,sha256?,mtime?,ctime?,source_file?,line_no?,excerpt}. */
 function smpro_fx_ev($type, $value, array $extra = []) {
     $e = ['type' => $type, 'value' => (string)$value];
     foreach (['sha256', 'mtime', 'ctime', 'source_file', 'line_no', 'col'] as $k) if (isset($extra[$k])) $e[$k] = $extra[$k];
@@ -47,7 +47,7 @@ function smpro_fx_ev($type, $value, array $extra = []) {
     return $e;
 }
 
-/** Normalized Finding factory. DROPS (returns null) a finding with no evidence — §2.6. */
+/** Normalized Finding factory. DROPS (returns null) a finding with no evidence - §2.6. */
 function smpro_fx_finding(array $o) {
     $acct = (string)($o['account'] ?? '');
     $ev = $o['evidence'] ?? [];
@@ -93,14 +93,14 @@ function smpro_fx_event(array $o) {
     ];
 }
 
-/** band → 0-100 severity midpoint. */
+/** band -> 0-100 severity midpoint. */
 function smpro_fx_band_to_sev($band) {
     return ['clean' => 0, 'info' => 15, 'low' => 15, 'medium' => 45, 'high' => 75, 'critical' => 92][strtolower((string)$band)] ?? 0;
 }
-/** 0-100 severity → the existing forensics-audit fa[] severity word. */
+/** 0-100 severity -> the existing forensics-audit fa[] severity word. */
 function smpro_fx_sev_word($sev) { $sev = (int)$sev; return $sev >= 85 ? 'critical' : ($sev >= 60 ? 'high' : ($sev >= 30 ? 'medium' : 'info')); }
 
-/** ADAPTER: normalized §3.0 Finding → the existing modules/forensics-audit.php fa[] shape so
+/** ADAPTER: normalized §3.0 Finding -> the existing modules/forensics-audit.php fa[] shape so
  *  smpro_fa_render_report / summary / iocs render it unchanged. LOAD-BEARING (unit-tested). */
 function smpro_fx_to_fa(array $f) {
     $ev = '';
@@ -133,7 +133,7 @@ function smpro_fx_to_fa(array $f) {
 }
 
 /* =========================================================================================
- *  Scope resolution (§3.0) — cheap, shared by all collectors, static-cached per user
+ *  Scope resolution (§3.0) - cheap, shared by all collectors, static-cached per user
  * ======================================================================================= */
 function smpro_fx_scope($user) {
     static $cache = [];
@@ -141,7 +141,7 @@ function smpro_fx_scope($user) {
     if ($user === '' || !is_dir(smpro_user_home($user))) return null;
     if (isset($cache[$user])) return $cache[$user];
     $home = smpro_user_home($user);
-    // owner uid/gid — NEVER assume; posix guarded, stat fallback, 'unknown' if unresolved
+    // owner uid/gid - NEVER assume; posix guarded, stat fallback, 'unknown' if unresolved
     $uid = null; $gid = null; $owner_verified = false;
     if (function_exists('posix_getpwnam')) { $pw = @posix_getpwnam($user); if (is_array($pw)) { $uid = (int)$pw['uid']; $gid = (int)$pw['gid']; $owner_verified = true; } }
     if ($uid === null) { $st = @stat($home); if ($st) { $uid = (int)$st['uid']; $gid = (int)$st['gid']; $owner_verified = true; } }
@@ -171,7 +171,7 @@ function smpro_fx_in_webroot($path, array $scope) {
 }
 
 /* =========================================================================================
- *  §3.1 — flagged-file deep analysis: entropy, weighted token scan, verdict, flag-explain
+ *  §3.1 - flagged-file deep analysis: entropy, weighted token scan, verdict, flag-explain
  * ======================================================================================= */
 
 /** Shannon entropy over sampled windows (first 256KB + N seeded blocks). O(1) memory. */
@@ -215,7 +215,7 @@ function smpro_fx_token_table() {
     ];
 }
 
-/** Streaming weighted token scan — bounded 64KB fread windows (packed single-line defense),
+/** Streaming weighted token scan - bounded 64KB fread windows (packed single-line defense),
  *  small overlap for boundary tokens, hard 8MB/60s caps. Returns tokens[], score, nested_chain,
  *  families_seen[], truncated. */
 function smpro_fx_tokenscan($path, $capBytes = 8388608, $capSec = 60) {
@@ -245,14 +245,14 @@ function smpro_fx_tokenscan($path, $capBytes = 8388608, $capSec = 60) {
                 }
             }
         }
-        // nested decode→eval chain (obfusc inside an exec call) — the strong web-shell signal
+        // nested decode->eval chain (obfusc inside an exec call) - the strong web-shell signal
         if (!$out['nested_chain'] && preg_match('/\b(?:eval|assert|preg_replace|create_function|system|exec|shell_exec|passthru)\s*+\([^;]{0,80}?\b(?:base64_decode|gzinflate|gzuncompress|str_rot13)\s*+\(/i', $buf)) $out['nested_chain'] = true;
         $consumed += strlen($data);
         $lineBase += substr_count($data, "\n") + ($consumed === strlen($data) ? $carryLines : 0);
         $carry = substr($buf, -$overlap);
     }
     @fclose($fh);
-    if ($out['nested_chain']) $score += 10;   // ×2-equivalent boost for the chain
+    if ($out['nested_chain']) $score += 10;   // x2-equivalent boost for the chain
     $out['token_score'] = $score;
     $out['families_seen'] = array_keys($fams);
     return $out;
@@ -276,7 +276,7 @@ function smpro_fx_deepfile($path, array $scope, $baseline = null) {
     $r['world_writable'] = (bool)($ls['mode'] & 0002); $r['suid_sgid'] = (bool)($ls['mode'] & 06000);
     if (($scope['uid'] ?? null) !== null) $r['owner_ok'] = ((int)$ls['uid'] === (int)$scope['uid']) ? 'yes' : 'no';
     if ($r['ctime'] > 0 && $r['mtime'] > 0 && $r['ctime'] < $r['mtime']) { $r['timestomp'] = 'high'; $r['contributing_signals'][] = 'timestomp_ctime_lt_mtime'; }
-    // WP Guard trust short-circuit — never re-flag our own security plugin's files (caps at INFO)
+    // WP Guard trust short-circuit - never re-flag our own security plugin's files (caps at INFO)
     if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($path)) { $r['wp_guard_trusted'] = true; $r['contributing_signals'][] = 'wp_guard_trusted'; }
     if ($r['size'] <= 5 * 1024 * 1024) $r['sha256'] = (string)@hash_file('sha256', $path);
     else { $r['sha256'] = 'SKIPPED_LARGE'; $r['contributing_signals'][] = 'hash_skipped_large'; }
@@ -284,7 +284,7 @@ function smpro_fx_deepfile($path, array $scope, $baseline = null) {
     $ts = smpro_fx_tokenscan($path);
     $r['tokens'] = $ts['tokens']; $r['token_score'] = $ts['token_score']; $r['nested_chain'] = $ts['nested_chain'];
     $r['families_seen'] = $ts['families_seen']; $r['truncated'] = $ts['truncated'];
-    // baseline diff — "content changed but token fingerprint identical" is the strong FP signal
+    // baseline diff - "content changed but token fingerprint identical" is the strong FP signal
     if (is_array($baseline)) {
         $prevFams = (array)($baseline['families'] ?? []); sort($prevFams);
         $nowFams = $r['families_seen']; sort($nowFams);
@@ -327,7 +327,7 @@ function smpro_fx_verdict(array $d) {
     return ['band' => $band, 'score' => smpro_fx_band_to_sev($band), 'contributing_signals' => $sig];
 }
 
-/** §3.1 Flag Explanation — reproduce the REAL heuristic that fired (NOT the spec's phantom 256KB).
+/** §3.1 Flag Explanation - reproduce the REAL heuristic that fired (NOT the spec's phantom 256KB).
  *  The alert is smpro_im_breaches: an exploit-class ModSec 2xx/3xx AND a webroot .php changed within
  *  ~60 min that trips smpro_im_looks_malicious. We name exactly which token families fired. */
 function smpro_fx_flag_explain($path, array $scope, array $deep) {
@@ -351,7 +351,7 @@ function smpro_fx_flag_explain($path, array $scope, array $deep) {
 }
 
 /* =========================================================================================
- *  §3.1 — per-file baseline (token-fingerprint) store. NEVER writes an account file.
+ *  §3.1 - per-file baseline (token-fingerprint) store. NEVER writes an account file.
  * ======================================================================================= */
 function smpro_fx_baseline_path($user, $path) {
     $user = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)$user);
@@ -377,7 +377,7 @@ function smpro_fx_baseline_accept($user, array $deep) {
 }
 
 /* =========================================================================================
- *  §5 — UNIFIED WHITELIST STORE (the single file the Malicious-Upload detector AND the
+ *  §5 - UNIFIED WHITELIST STORE (the single file the Malicious-Upload detector AND the
  *  forensics UI share). Precedence: file_hash(silent) > path_size > path > glob(downgrade).
  *  Only file_hash SILENCES; everything else DOWNGRADES (finding still rendered, greyed).
  * ======================================================================================= */
@@ -394,7 +394,7 @@ function smpro_fe_wl_save($wl) {
     @is_dir(dirname(SMPRO_FE_WL)) || @mkdir(dirname(SMPRO_FE_WL), 0700, true);
     $tmp = SMPRO_FE_WL . '.tmp'; @file_put_contents($tmp, json_encode($wl, JSON_UNESCAPED_SLASHES), LOCK_EX); @rename($tmp, SMPRO_FE_WL); @chmod(SMPRO_FE_WL, 0600);
 }
-/** One-time idempotent seed from the legacy breach_exclude substrings → glob entries (detector-suppression only). */
+/** One-time idempotent seed from the legacy breach_exclude substrings -> glob entries (detector-suppression only). */
 function smpro_fe_wl_migrate($wl) {
     $changed = false;
     if (function_exists('smpro_in_cfg')) {
@@ -422,7 +422,7 @@ function smpro_fe_wl_add($account, $scope, $value, array $opts = []) {
               'expires' => (int)($opts['expires'] ?? 0), 'source_run_id' => (string)($opts['source_run_id'] ?? '')];
     if ($scope === 'file_hash') $entry['sha256'] = (string)($opts['sha256'] ?? (is_file($value) ? @hash_file('sha256', $value) : ''));
     if ($scope === 'path_size') { $cur = is_file($value) ? (int)@filesize($value) : 0; $entry['size_ceiling'] = (int)($opts['size_ceiling'] ?? max(65536, $cur * 10)); }
-    // Rich fingerprint so tamper is caught even when NO new family name appears (a nested decode→eval
+    // Rich fingerprint so tamper is caught even when NO new family name appears (a nested decode->eval
     // chain injected into a file that already has exec+obfusc families = same families, but new chain).
     if (in_array($scope, ['path', 'path_size'], true) && is_file($value)) { $d = smpro_fx_tokenscan($value); $entry['token_fingerprint'] = ['families' => $d['families_seen'], 'nested' => $d['nested_chain'], 'score' => $d['token_score']]; }
     $wl[$id] = $entry; smpro_fe_wl_save($wl);
@@ -463,7 +463,7 @@ function smpro_fe_wl_match($account, $path, $sha256 = null, $size = null) {
     return null;
 }
 /* =========================================================================================
- *  §3.6 (subset) — verdict for the FLAGGED-FILE report + the run orchestrator.
+ *  §3.6 (subset) - verdict for the FLAGGED-FILE report + the run orchestrator.
  *  (Account-wide sweep §3.2, persistence §3.5, and the full merged timeline/IOC synthesis are
  *   layered in later stages; the flagged-file verdict below already triages the incident.)
  * ======================================================================================= */
@@ -524,11 +524,11 @@ function smpro_fx_run_flagged($user, $flaggedFiles, array $opts = []) {
         $base = smpro_fx_baseline_load($user, $fp);
         $deep = smpro_fx_deepfile($fp, $scope, $base);
         $fe = smpro_fx_flag_explain($fp, $scope, $deep);
-        // §3.3 web-attack correlation (Stage 3) — optional until built
+        // §3.3 web-attack correlation (Stage 3) - optional until built
         $web = null;
         if (function_exists('smpro_fw_correlate')) { $wc = smpro_fw_correlate($user, $fp, $deep['mtime'], $deep['ctime'], $alertTs, (int)($opts['win'] ?? 1800)); $web = ['verdict_hint' => $wc['verdict_hint'] ?? '', 'possible_drop' => !empty($wc['possible_drop']), 'attack_hit' => !empty($wc['attack_hit']), 'result' => $wc]; }
         else $partial[] = 'web-attack correlation not yet available';
-        // §3.4 auth correlation (Stage 3) — optional until built
+        // §3.4 auth correlation (Stage 3) - optional until built
         $auth = null;
         if (function_exists('smpro_fw_auth_for_write')) { $auth = smpro_fw_auth_for_write($user, $fp, $deep['mtime']); }
         else $partial[] = 'auth correlation not yet available';
@@ -551,8 +551,8 @@ function smpro_fx_run_flagged($user, $flaggedFiles, array $opts = []) {
 }
 
 /** Cheap TAMPER signal vs the whitelist entry's cached fingerprint. true ⇒ re-arm (do NOT suppress).
- *  Catches: a NEW token family, a newly-appeared nested decode→eval CHAIN (same families but new
- *  threat — the injected-backdoor case), or a large token-score jump. In-PHP set-compare, at most one
+ *  Catches: a NEW token family, a newly-appeared nested decode->eval CHAIN (same families but new
+ *  threat - the injected-backdoor case), or a large token-score jump. In-PHP set-compare, at most one
  *  bounded tokenscan per file per run. A glob (pattern/dir) trust is never re-armed (no per-file fp). */
 function smpro_fe_wl_added_obfuscation($path, $account) {
     $m = smpro_fe_wl_match($account, $path, null, is_file($path) ? (int)@filesize($path) : null);
@@ -564,9 +564,9 @@ function smpro_fe_wl_added_obfuscation($path, $account) {
     $ck = $path . '|' . (@filemtime($path) ?: 0) . '|' . (@filesize($path) ?: 0);   // bust cache when the file changes
     if (!isset($cache[$ck])) { $d = smpro_fx_tokenscan($path); $cache[$ck] = ['families' => $d['families_seen'], 'nested' => $d['nested_chain'], 'score' => $d['token_score']]; }
     $cur = $cache[$ck];
-    // legacy flat-array fingerprint (families only) or missing → can't fully verify: re-arm on nested chain, else be safe
+    // legacy flat-array fingerprint (families only) or missing -> can't fully verify: re-arm on nested chain, else be safe
     if (!is_array($fp) || !isset($fp['families'])) { $prev = is_array($fp) ? $fp : []; return !empty($cur['nested']) || (bool)array_diff($cur['families'], $prev); }
-    if (!empty($cur['nested']) && empty($fp['nested'])) return true;                    // a decode→eval chain appeared
+    if (!empty($cur['nested']) && empty($fp['nested'])) return true;                    // a decode->eval chain appeared
     if (array_diff($cur['families'], (array)$fp['families'])) return true;              // a new token family appeared
     if ((int)($cur['score'] ?? 0) > (int)($fp['score'] ?? 0) + 20) return true;         // token score jumped a lot
     return false;

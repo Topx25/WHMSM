@@ -1,12 +1,12 @@
 <?php
 /**
- * modules/server-tuning.php — Server Tune-up: scan engines, recommend perf/security improvements,
+ * modules/server-tuning.php - Server Tune-up: scan engines, recommend perf/security improvements,
  * back up configs (timestamped), and record a profile of applied changes. Apply via ?tuning=1.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 /* ---------- Hide "Server Information" (cPanel "Server Status Viewer", feature key `serverstatus`) from customer
- *            cPanel — the page that lists server name, OS, cPanel/Apache/MySQL/PHP versions and the IP. This is
+ *            cPanel - the page that lists server name, OS, cPanel/Apache/MySQL/PHP versions and the IP. This is
  *            what Feature Manager toggles; we set serverstatus=0 in every feature list. Reversible; each list is
  *            backed up first. Unknown keys in a feature list are ignored by cPanel, so this can never break it. ---------- */
 function smpro_cphide_dir() { return '/var/cpanel/features'; }
@@ -55,8 +55,8 @@ if ($reqMethod === 'POST' && ($_POST['cphide_action'] ?? '') !== '') {
     echo json_encode(['ok' => false, 'msg' => 'bad action']); exit;
 }
 
-// smpro_tun_scan() is a heavy probe stack (imunify config show, whmapi1, sshd -T, httpd -M ×2, php -r ×3,
-// getent, cagefsctl…). Cache it off the render path; the ?tuning=1 handler busts the cache after any apply/
+// smpro_tun_scan() is a heavy probe stack (imunify config show, whmapi1, sshd -T, httpd -M x2, php -r x3,
+// getent, cagefsctl...). Cache it off the render path; the ?tuning=1 handler busts the cache after any apply/
 // restore so the posture reloads fresh.
 // A stale copy is shown AT ONCE and refreshed by a detached worker (job 'rescan'); the operator waited twelve seconds
 // at every fifth-minute visit before. Only a server with no scan yet (first visit, or right after an apply busted the
@@ -330,11 +330,11 @@ AI_JOB=<?= json_encode($aiJob, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JS
   else if(AI_JOB&&AI_JOB.status==='done'&&AI_JOB.result)aiRender(AI_JOB.result);
   else if(AI_JOB&&AI_JOB.status==='error'&&AI_JOB.result)aimsg('✗ '+((AI_JOB.result&&AI_JOB.result.msg)||'Last scan failed'),'#b91c1c');
 
-  // Security Advisor — every item has an Apply button; backend handles 9 advisory types automatically.
+  // Security Advisor - every item has an Apply button; backend handles 9 advisory types automatically.
   var sevClrSa={fatal:'#b91c1c',warn:'#b45309',info:'#0369a1'};
   // Normalize advisory key the same way the backend does (strip class path, drop non-alnum incl. underscores)
   function saNorm(id){var p=id.split('::');return p[p.length-1].toUpperCase().replace(/[^A-Z0-9]/g,'');}
-  // SSH-access advisories → show the lockout warning (substring match on normalized key)
+  // SSH-access advisories -> show the lockout warning (substring match on normalized key)
   function saIsSshRisk(n){return n.indexOf('ROOTLOGIN')>-1||n.indexOf('PASSWORDAUTH')>-1||(n.indexOf('SSH')>-1&&n.indexOf('PASSWORD')>-1);}
   window.tunSaApply=function(rawId,btn){
     if(!confirm('Apply this Security Advisor fix?\n\nA config backup is created automatically before any change, and you can restore it from the Config Backups table below at any time.'))return;

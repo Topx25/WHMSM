@@ -1,16 +1,16 @@
 <?php
 /**
- * phlock.php — the privileged half of file protection: reading and setting the immutable attribute.
+ * phlock.php - the privileged half of file protection: reading and setting the immutable attribute.
  *
  * These lived in modules/php-harden.php, and a page module cannot be required from cron: it runs its router at
  * include time. bin/sp_queue.php is the worker that actually carries out the protect and release requests
  * accounts make from cPanel, it needs exactly these functions, and its own comment claimed they had already been
  * moved here. They had not. The worker's guard refused to run rather than reporting requests as handled without
- * handling them — which is the right refusal, and it meant Site Protection performed nothing at all on a live
+ * handling them - which is the right refusal, and it meant Site Protection performed nothing at all on a live
  * server for 29 hours while the page went on offering the feature.
  *
  * WHY NOT includes/phstack.php. That file is copied wholesale into the ACCOUNT-side plugin by
- * build/gen-cpuser-stack.php. Detection — which application is in this web root, which of its files matter — is
+ * build/gen-cpuser-stack.php. Detection - which application is in this web root, which of its files matter - is
  * the same question for both sides and belongs there. chattr is not: an account cannot set an immutable bit, so
  * shipping these to the account side would add surface that can never be used. Root-only work lives here.
  */
@@ -39,12 +39,12 @@ function smpro_ph_chattr($flag, $path) {
 /**
  * Set or clear the immutable attribute on MANY paths at once, and report what actually happened to each.
  *
- * One process per file cost four processes per file — `command -v chattr`, `chattr`, `command -v lsattr`,
- * `lsattr` — measured at ~12ms each on a cPanel box: locking 200 files took 2.4 seconds of almost pure process
+ * One process per file cost four processes per file - `command -v chattr`, `chattr`, `command -v lsattr`,
+ * `lsattr` - measured at ~12ms each on a cPanel box: locking 200 files took 2.4 seconds of almost pure process
  * spawning, against 29ms for the same work batched. It also made force-unprotect quietly INCOMPLETE, because its
  * time budget was spent forking: the sweep stopped after a few thousand files and reported that it had.
  *
- * Success is decided by READING THE ATTRIBUTE BACK, never by an exit code — chattr returns non-zero when any one
+ * Success is decided by READING THE ATTRIBUTE BACK, never by an exit code - chattr returns non-zero when any one
  * path in a batch fails, and a filesystem that does not support attributes accepts the command and changes
  * nothing. Paths that are missing, are symlinks, or are already in the wanted state cost no process at all.
  *
@@ -94,7 +94,7 @@ function smpro_ph_locked($path) {
     return strpos($flags, 'i') !== false;
 }
 
-/** Batch lock-status for many paths → [path => bool]. */
+/** Batch lock-status for many paths -> [path => bool]. */
 function smpro_ph_locked_map(array $paths) {
     $map = [];
     foreach ($paths as $p) $map[$p] = false;
@@ -139,7 +139,7 @@ if (!function_exists('smpro_ph_inside')) {
 function smpro_ph_inside($u, $path) {
     // Both strings must be non-empty BEFORE realpath() sees them. realpath('') does not return false: it resolves
     // to the current working directory, so an unknown account (home '') compared against an empty path came back
-    // equal — "yes, that is inside the user's home" for two values that name nothing at all.
+    // equal - "yes, that is inside the user's home" for two values that name nothing at all.
     $h = smpro_ph_home($u);
     if ($h === '' || (string)$path === '') return false;
     $home = realpath($h); $real = realpath($path);

@@ -1,15 +1,15 @@
 <?php
 /**
- * Safety Monitor Pro — stuck scheduled jobs.
+ * Safety Monitor Pro - stuck scheduled jobs.
  *
- * A load average that stays high while the processors sit idle is usually not work — it is a queue. The most
+ * A load average that stays high while the processors sit idle is usually not work - it is a queue. The most
  * common source on a shared server is a site's own scheduled job that never finishes: each run adds a process,
  * nothing ever removes one, and where per-account CPU is capped (CloudLinux LVE) they pile up runnable but
  * throttled. Load counts a process waiting for its turn exactly like one doing work, so the number climbs while
  * the machine has nothing to do. Measured on a live server: 282 such processes across five accounts, some more
  * than ten days old, load ~60 on 96 cores with 78-90% of the processors idle.
  *
- * WordPress is the usual source because it is the common case, not the only one — anything scheduled that can
+ * WordPress is the usual source because it is the common case, not the only one - anything scheduled that can
  * outlive its interval behaves the same way, so the scan is by AGE and OWNERSHIP first and by name second.
  *
  * Three things keep it happening, and all three are visible from here:
@@ -35,11 +35,11 @@ function smpro_cc_job_name(string $args): string {
 /**
  * Account-owned scheduled jobs still running after $minMinutes.
  * Returns ['ok','total','oldest_min','accounts'=>[user=>['n','oldest_min','script','pids'=>[[pid,min]]]]].
- * A job older than its own schedule can never be healthy — by then the next run has already started.
+ * A job older than its own schedule can never be healthy - by then the next run has already started.
  */
 function smpro_cc_stuck(int $minMinutes = 60): array {
     // Its OWN ps, not the shared top-N list. That list is ordered by CPU and truncated, and a job stuck behind a
-    // per-account CPU cap uses almost none — exactly the processes this looks for are the ones a "top consumers"
+    // per-account CPU cap uses almost none - exactly the processes this looks for are the ones a "top consumers"
     // view drops. Under-counting here would understate the problem while looking like an answer.
     $pat = implode('|', array_map(fn($p) => preg_quote($p, '/'), smpro_cc_job_patterns()));
     $raw = smpro_run("ps -eo user:32=,pid=,etimes=,args= 2>/dev/null | grep -Ei "
@@ -48,7 +48,8 @@ function smpro_cc_stuck(int $minMinutes = 60): array {
         return ['ok' => true, 'total' => 0, 'oldest_min' => 0, 'accounts' => [], 'scanned' => 0, 'why' => ''];
     }
     $out = []; $total = 0; $oldest = 0; $scanned = 0;
-    foreach (preg_split('/?
+    foreach (preg_split('/
+?
 /', $raw) as $line) {
         $line = trim($line); if ($line === '') continue;
         $p = preg_split('/\s+/', $line, 4);
@@ -89,7 +90,7 @@ function smpro_cc_crontab(string $user): array {
 /**
  * Entries in one crontab that run the SAME script.
  * Two schedules for one job is the quiet half of this problem: each looks reasonable alone, and together they
- * guarantee overlap. Returns [script => [lines…]] for scripts scheduled more than once.
+ * guarantee overlap. Returns [script => [lines...]] for scripts scheduled more than once.
  */
 function smpro_cc_duplicates(string $user): array {
     $byScript = [];
@@ -98,7 +99,7 @@ function smpro_cc_duplicates(string $user): array {
         if ($job === '') continue;
         // Resolve to the actual FILE, because the same job is almost never written the same way twice. The real
         // pair this was built from was "cd /home/u/public_html; php -q wp-cron.php" alongside
-        // "php /home/u/public_html/wp-cron.php" — one relative, one absolute, the same file, and grouping on the
+        // "php /home/u/public_html/wp-cron.php" - one relative, one absolute, the same file, and grouping on the
         // text alone reported no duplication for the very case that caused the pile-up.
         if (preg_match('#(/[^\s;&|]*' . preg_quote($job, '#') . ')#i', $line, $m)) {
             $path = $m[1];

@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/auto-reports.php — schedule periodic security+health reports and pick delivery channels.
+ * modules/auto-reports.php - schedule periodic security+health reports and pick delivery channels.
  * Config + "Generate now" go through the ?autoreport=1 endpoint (POST + CSRF + root).
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }

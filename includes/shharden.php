@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/shharden.php — server hardening fixes for Security Health, each with a journaled undo.
+ * includes/shharden.php - server hardening fixes for Security Health, each with a journaled undo.
  *
  * Grew out of hardening a production server by hand: every step that proved safe there is a fix here, so
  * every licensee gets the same result from one page. Rules:

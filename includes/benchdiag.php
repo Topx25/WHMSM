@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/benchdiag.php — Benchmark & Diagnostics hub engine.
+ * includes/benchdiag.php - Benchmark & Diagnostics hub engine.
  *
  * Extends the hardware benchmark (includes/benchmark.php, smpro_bm_*) into a full
  * benchmark + troubleshooting suite that is portable to ANY server:
@@ -78,9 +78,9 @@ function smpro_bd_mysql_bench() {
     smpro_dbh_q("SELECT BENCHMARK($iter, MD5('smpro'))", 40);
     $el = microtime(true) - $t0;
     $qops = $el > 0.01 ? (int)round($iter / $el) : null;
-    // 3) InnoDB write rate — TEMPORARY table (session-scoped, auto-dropped; no schema left behind)
+    // 3) InnoDB write rate - TEMPORARY table (session-scoped, auto-dropped; no schema left behind)
     // `mysql -e` starts with NO default schema, so a bare CREATE TEMPORARY TABLE fails with "No database
-    // selected" — give it a schema context. The table is TEMPORARY: session-private, never persisted into
+    // selected" - give it a schema context. The table is TEMPORARY: session-private, never persisted into
     // that schema, and dropped automatically when this one-shot client connection ends.
     $rows = 2000; $batch = implode(',', array_fill(0, 100, "('smpro-bench-row')"));
     $sql = "USE mysql; CREATE TEMPORARY TABLE smpro_bench_tmp (id INT PRIMARY KEY AUTO_INCREMENT, v VARCHAR(64)) ENGINE=InnoDB;";
@@ -168,7 +168,7 @@ function smpro_bd_mount_class($mount) {
     }
     $hit = null;
     foreach ($disks as $d) if ($parent !== '' && $d['name'] === $parent) { $hit = $d; break; }
-    if (!$hit) {   // RAID/LVM or unresolved — fall back to the best class present
+    if (!$hit) {   // RAID/LVM or unresolved - fall back to the best class present
         foreach ($disks as $d) { if ($d['tran'] === 'nvme') { $hit = $d; break; } if (!$d['rota'] && !$hit) $hit = $d; }
         if (!$hit && $disks) $hit = $disks[0];
     }
@@ -262,7 +262,7 @@ function smpro_bd_assess(array $res) {
             'spec' => 'Populate memory in matched pairs/quads so it runs in dual or quad channel, and prefer DDR4-3200 (or DDR5) modules. If this is a VM, the host is likely contended — a dedicated or higher-tier instance will fix it.'];
     }
 
-    /* ---- DISK — the one that usually decides how the server feels ---- */
+    /* ---- DISK - the one that usually decides how the server feels ---- */
     $dsk = $mc['disk'];
     $gd = ['title' => 'Storage', 'icon' => '&#128190;',
            'tested' => ($dsk ? ('/dev/' . $dsk['name'] . ' · ' . $dsk['size'] . ($dsk['model'] !== '' ? ' · ' . $dsk['model'] : '')) : 'storage')
@@ -279,7 +279,7 @@ function smpro_bd_assess(array $res) {
             'expect' => 'THE number that decides how a busy cPanel/MySQL server feels — ' . ($mc['class'] === 'hdd' ? 'an HDD can only do ~100–200' : ($mc['class'] === 'nvme' ? 'NVMe should do 80k+' : 'a SATA SSD should do 15k+')),
             'rating' => $io[0], 'rating_txt' => $io[1]];
     }
-    // storage upgrade advice — specific type, capacity and the properties that matter
+    // storage upgrade advice - specific type, capacity and the properties that matter
     if ($mc['class'] === 'hdd') {
         $usedGb = (int)trim(smpro_bd_sh("df -PBG " . escapeshellarg($mount !== '' ? $mount : '/') . " | awk 'NR==2{gsub(/G/,\"\",\$3); print \$3}'", 8));
         $capGb  = max(480, (int)(ceil(max($usedGb * 2, 240) / 240) * 240));
@@ -392,7 +392,7 @@ function smpro_bd_hist_stats() {
     foreach ($keys as $k) { $out[$k] = ['peak' => null, 'avg' => null, 'samples' => 0]; }
     if (!$h) return ['hours' => 0, 'samples' => 0] + $out;
     // Count ONLY buckets that actually recorded a metric. Buckets written by an older sampler that
-    // lack the *_max keys must not masquerade as zero-usage samples — otherwise a box with plenty of
+    // lack the *_max keys must not masquerade as zero-usage samples - otherwise a box with plenty of
     // history but only legacy buckets shows a peak of 0 (or "no data"), which is exactly the bug this
     // fixes. A metric stays null until it has at least one real sample, then shows its true peak.
     foreach ($keys as $k) {
@@ -422,7 +422,7 @@ function smpro_bd_workload_fit() {
     $row = function ($key, $label, $cap, $peak, $avg, $now, $note, $warnAt = 70, $dangAt = 88) {
         $p = $peak === null ? 0 : (float)$peak;
         $tier = $p >= $dangAt ? 'dang' : ($p >= $warnAt ? 'warn' : 'good');
-        // Named explicitly, not via compact() — see the note in dbhealth.php: obfuscation renames the variables
+        // Named explicitly, not via compact() - see the note in dbhealth.php: obfuscation renames the variables
         // but not the strings compact() looks them up by, so this silently returned an empty row in every build.
         return ['key' => $key, 'label' => $label, 'cap' => $cap, 'peak' => $peak,
                 'avg' => $avg, 'now' => $now, 'note' => $note, 'tier' => $tier];
@@ -459,7 +459,7 @@ function smpro_bd_workload_fit() {
 /** Composite 0-100: Performance 35 · Health 35 · Headroom 15 · Configuration 15. Health-heavy on purpose. */
 function smpro_bd_hw_score() {
     $parts = [];
-    // performance — from whatever devices have been measured
+    // performance - from whatever devices have been measured
     $dev = smpro_bd_dev_results(); $pv = [];
     foreach ($dev as $k => $r) {
         if (strpos($k, 'disk:') !== 0) continue;
@@ -468,7 +468,7 @@ function smpro_bd_hw_score() {
     }
     $pv = array_values(array_filter($pv, function ($x) { return $x !== null; }));
     $parts['performance'] = $pv ? (int)round(array_sum($pv) / count($pv)) : null;
-    // health — SMART / RAID / ECC findings
+    // health - SMART / RAID / ECC findings
     $hw = smpro_bd_hw_health_cached(false);
     if (is_array($hw)) {
         $h = 100;
@@ -476,13 +476,13 @@ function smpro_bd_hw_score() {
             $h -= ['critical' => 60, 'high' => 25, 'medium' => 10, 'low' => 3][$f['sev']] ?? 0;
         $parts['health'] = max(0, min(100, $h));
     } else $parts['health'] = null;
-    // headroom — inverse of the worst peak
+    // headroom - inverse of the worst peak
     $fit = smpro_bd_workload_fit();
     if (!$fit['warm']) {
         $worst = 0; foreach ($fit['rows'] as $r) $worst = max($worst, (float)($r['peak'] ?? 0));
         $parts['headroom'] = (int)round(max(0, min(100, 100 - $worst)));
     } else $parts['headroom'] = null;
-    // configuration — kernel/software findings
+    // configuration - kernel/software findings
     $diag = smpro_bd_diagnose_cached(false);
     if (is_array($diag)) {
         $c = 100;
@@ -498,7 +498,7 @@ function smpro_bd_hw_score() {
     }
     $score = $den ? (int)round($num / $den) : null;
     // Coverage matters as much as the number. Scoring only the parts we could measure and then
-    // presenting the result as a finished verdict overstates it — half an assessment is not an
+    // presenting the result as a finished verdict overstates it - half an assessment is not an
     // "Excellent" machine, it is an untested one. So the band carries the coverage, and below
     // ~60% the score is explicitly provisional rather than being given a confident grade.
     $total = array_sum($w);
@@ -521,7 +521,7 @@ function smpro_bd_hw_score() {
 /* ================= GROW A FILESYSTEM (the only storage change ever offered) =================
  * Detection only finds the safe case: a mounted ext4/xfs whose block device is materially LARGER
  * than the filesystem on it, i.e. there is unallocated room to grow INTO. Shrinking, RAID-level
- * changes and member replacement are never offered — they can destroy data or the boot. */
+ * changes and member replacement are never offered - they can destroy data or the boot. */
 /**
  * Resolve the WHOLE storage stack behind a device, because "can this grow?" depends entirely on
  * what it is sitting on: a plain partition, an mdadm array, an LVM logical volume, a hardware-RAID
@@ -589,7 +589,7 @@ function smpro_bd_storage_ops() {
         $base = ['dev' => $devPath, 'name' => $st['name'], 'fs' => $fs, 'mount' => $mi['mount'],
                  'fs_bytes' => $fsBytes, 'dev_bytes' => $devBytes, 'stack' => $stackTxt, 'st' => $st];
 
-        // 1) filesystems that manage their own pool — never touched with resize2fs/xfs_growfs
+        // 1) filesystems that manage their own pool - never touched with resize2fs/xfs_growfs
         if (in_array($fs, ['zfs', 'btrfs'], true)) {
             $blocked[] = $base + ['why' => strtoupper($fs) . ' manages its own storage pool',
                 'detail' => 'Growing it is a pool operation, not a filesystem resize, and the wrong tool here would be destructive.',
@@ -614,7 +614,7 @@ function smpro_bd_storage_ops() {
             continue;
         }
 
-        // 4) no slack at this layer — is there room one layer down, and is it safe for us to take it?
+        // 4) no slack at this layer - is there room one layer down, and is it safe for us to take it?
         if ($st['is_md']) {
             $blocked[] = $base + ['why' => 'Sits on an mdadm ' . ($st['md_level'] ?: 'array') . ' that is already full',
                 'detail' => 'Growing the array itself (mdadm --grow) reshapes data across every member disk. A reshape that is '
@@ -694,7 +694,7 @@ function smpro_bd_grow_apply($devName, $confirm) {
 /* ================= STORAGE LAYOUT: drive types, sizes, RAID level, members, usage =================
  * Everything here is read-only: lsblk, /proc/mdstat and df. */
 
-/** partition → parent disk map (sda1→sda, nvme0n1p2→nvme0n1), built in one lsblk call. */
+/** partition -> parent disk map (sda1->sda, nvme0n1p2->nvme0n1), built in one lsblk call. */
 function smpro_bd_part_map() {
     static $m = null; if ($m !== null) return $m;
     $m = [];
@@ -787,7 +787,7 @@ function smpro_bd_grade_cls($g) {
     return ['excellent' => 'green', 'verygood' => 'green', 'good' => 'blue',
             'poor' => 'orange', 'failing' => 'red', 'unknown' => 'gray'][$g] ?? 'gray';
 }
-/** Log-scale position (0-100%) of an IOPS figure on the grade ruler (10 → 500k). */
+/** Log-scale position (0-100%) of an IOPS figure on the grade ruler (10 -> 500k). */
 function smpro_bd_ruler_pos($iops) {
     $v = max(10, min(500000, (float)$iops));
     return round((log10($v) - 1) / (log10(500000) - 1) * 100, 1);
@@ -797,7 +797,7 @@ function smpro_bd_ruler_pos($iops) {
  * A raw WRITE to a physical device would destroy the filesystem on it, so a single disk is
  * measured with strictly read-only probes: sequential read via dd O_DIRECT, and random-read
  * IOPS via fio on the raw device. A slow or dying disk shows up in reads too, and on a mirror
- * the slower member is what caps array writes — so this is enough to find the culprit.       */
+ * the slower member is what caps array writes - so this is enough to find the culprit.       */
 if (!defined('SMPRO_BD_DEV')) define('SMPRO_BD_DEV', SMPRO_VARLIB . '/benchdiag_devices.json');
 function smpro_bd_dev_results() {
     $d = @is_file(SMPRO_BD_DEV) ? json_decode((string)@file_get_contents(SMPRO_BD_DEV), true) : null;
@@ -819,7 +819,7 @@ function smpro_bd_test_disk($dev) {
     // sequential read, O_DIRECT so the page cache cannot fake it
     $r = smpro_bm_dd_mbs('dd if=' . escapeshellarg($path) . ' of=/dev/null bs=1M count=1024 iflag=direct 2>&1', 120);
     if ($r === null) $r = smpro_bm_dd_mbs('dd if=' . escapeshellarg($path) . ' of=/dev/null bs=1M count=512 2>&1', 120);
-    // random 4K read IOPS — read-only fio directly on the device
+    // random 4K read IOPS - read-only fio directly on the device
     $iops = null;
     if (smpro_bd_has('fio')) {
         $out = smpro_bd_sh('fio --name=r --filename=' . escapeshellarg($path) . ' --rw=randread --bs=4k --size=256M'
@@ -931,7 +931,7 @@ function smpro_bd_smart_one($dev) {
     // NVMe: smartctl prints the human total in brackets, e.g. "Data Units Written: 12,345,678 [6.32 TB]".
     if (preg_match('/Data Units Written:.*\[([^\]]+)\]/i', $raw, $m)) $r['written_h'] = trim($m[1]);
     if (preg_match('/Data Units Read:.*\[([^\]]+)\]/i', $raw, $m))    $r['read_h']    = trim($m[1]);
-    // ATA/SATA: Total_LBAs_Written / _Read attributes → bytes via the logical sector size.
+    // ATA/SATA: Total_LBAs_Written / _Read attributes -> bytes via the logical sector size.
     $sec = 512; if (preg_match('/Sector Sizes?:\s*(\d+)\s*bytes logical/i', $raw, $m)) $sec = (int)$m[1];
     elseif (preg_match('/Logical block size:\s*(\d+)/i', $raw, $m)) $sec = (int)$m[1];
     if (!isset($r['written_h']) && ($lw = $grab('Total_LBAs_Written')) !== null && $lw > 0) $r['written_bytes'] = (float)$lw * $sec;
@@ -940,7 +940,7 @@ function smpro_bd_smart_one($dev) {
     if (!isset($r['written_h']) && !isset($r['written_bytes']) && ($gw = $grab('Host_Writes_GiB')) !== null && $gw > 0) $r['written_bytes'] = (float)$gw * 1073741824;
     return $r;
 }
-/** Bytes → "1.23 TB". */
+/** Bytes -> "1.23 TB". */
 function smpro_bd_bytes_h($b) {
     $b = (float)$b; if ($b <= 0) return '—';
     $u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']; $i = 0;
@@ -974,7 +974,7 @@ function smpro_bd_disk_perf_pct($dev, $class) {
 function smpro_bd_hw_health() {
     $out = ['disks' => [], 'findings' => [], 'raid' => '', 'ecc' => null, 'smart_ok' => smpro_bd_has('smartctl')];
     $add = function ($sev, $title, $detail, $rec) use (&$out) {
-        // Not compact() — obfuscation breaks it silently; see dbhealth.php.
+        // Not compact() - obfuscation breaks it silently; see dbhealth.php.
         $out['findings'][] = ['sev' => $sev, 'title' => $title, 'detail' => $detail, 'rec' => $rec];
     };
 
@@ -1091,7 +1091,7 @@ function smpro_bd_kernel_findings() {
     $F = [];
     foreach (smpro_bd_sysctl_targets() as $t) {
         $cur = smpro_bd_sysctl_get($t['key']);
-        if ($cur === null) continue;                       // not present on this kernel — skip silently
+        if ($cur === null) continue;                       // not present on this kernel - skip silently
         $curN = (float)$cur; $want = (float)$t['want'];
         $bad = ($t['cmp'] === 'gte') ? ($curN < $want) : ($curN > $want);
         if (!$bad) continue;
@@ -1105,7 +1105,7 @@ function smpro_bd_kernel_findings() {
     return $F;
 }
 
-/* ---------------- kernel: dmesg health scan (advisory — these need investigation, not a toggle) ---------------- */
+/* ---------------- kernel: dmesg health scan (advisory - these need investigation, not a toggle) ---------------- */
 function smpro_bd_dmesg_findings() {
     $raw = smpro_bd_sh('dmesg -T 2>/dev/null | tail -n 4000', 12);
     if (trim($raw) === '') $raw = smpro_bd_sh('dmesg 2>/dev/null | tail -n 4000', 12);
@@ -1144,7 +1144,7 @@ function smpro_bd_dmesg_findings() {
     foreach ($pats as $p) {
         $n = preg_match_all($p['re'], $raw, $m);
         if (!$n) continue;
-        // last matching line for context (trimmed, no payload leakage concerns — kernel text)
+        // last matching line for context (trimmed, no payload leakage concerns - kernel text)
         $last = '';
         foreach (array_reverse(explode("\n", $raw)) as $l) { if (preg_match($p['re'], $l)) { $last = trim($l); break; } }
         $F[] = ['sev' => $p['sev'], 'area' => 'kernel', 'id' => 'dmesg:' . $p['id'],
@@ -1229,7 +1229,7 @@ function smpro_bd_kernel_info() {
 
 /* ================= LIVE payload + off-render caching =================
  * SMART (smartctl per disk), the dmesg scan and probing every EA-PHP binary are far too slow to run
- * on a page render — on a box with several disks and 8 PHP versions that is many seconds. They are
+ * on a page render - on a box with several disks and 8 PHP versions that is many seconds. They are
  * cached with a TTL and refreshed by the JSON poll, exactly like the hardware inventory. The page
  * render reads cache-only, so it opens instantly and then fills in. */
 function smpro_bd_cache($key, $ttl, $compute, callable $producer) {
@@ -1298,7 +1298,7 @@ function smpro_bd_storage_html() {
         . '<div class="bd-tile"><div class="k">Free space</div><div class="v">' . smpro_bd_kb_h($L['free_kb']) . '</div><div class="s">across mounted filesystems</div></div>'
         . '</div>';
 
-    /* physical drives — collapsed, with a summary that keeps any warning visible */
+    /* physical drives - collapsed, with a summary that keeps any warning visible */
     $bad = 0; $rows = '';
     foreach ($L['disks'] as $d) {
         $r = $dev['disk:' . $d['name']] ?? null;
@@ -1329,7 +1329,7 @@ function smpro_bd_storage_html() {
         . ($bad ? ' <span class="b red">' . $bad . ' need attention</span>' : '') . '</span></button>'
         . '<div id="bdDrives" hidden>' . $rows . '</div>';
 
-    /* arrays — read-only */
+    /* arrays - read-only */
     if ($L['arrays']) {
         $ar = '';
         foreach (smpro_bd_array_analysis() as $a) {

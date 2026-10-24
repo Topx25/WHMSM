@@ -1,11 +1,11 @@
 <?php
 /**
- * includes/dbhealth.php — GENERAL MySQL/MariaDB slowness & health diagnostic.
+ * includes/dbhealth.php - GENERAL MySQL/MariaDB slowness & health diagnostic.
  *
  * Portable across ANY WHM/cPanel server: it reads the LOCAL MySQL/MariaDB as root
  * (--defaults-extra-file=/root/.my.cnf), gathers SHOW GLOBAL STATUS / VARIABLES,
  * information_schema.PROCESSLIST and InnoDB counters, and derives uptime-normalized,
- * server-agnostic findings — temp-tables spilling to disk, unindexed full joins,
+ * server-agnostic findings - temp-tables spilling to disk, unindexed full joins,
  * slow-query-log visibility, connection saturation, InnoDB buffer-pool efficiency,
  * table-cache overflow, lock waits, and the queries that are slow RIGHT NOW.
  *
@@ -34,13 +34,13 @@ function smpro_dbh_cmd($sql) {
     return smpro_dbh_cli() . smpro_dbh_defaults() . ' --connect-timeout=5 -N --batch -e ' . escapeshellarg($sql);
 }
 /** Run SQL and return the server's ERROR text (STDERR) if it rejected the statement; '' on success.
- *  Used for writes (SET GLOBAL …) so the real rejection reason is surfaced instead of a generic failure. */
+ *  Used for writes (SET GLOBAL ...) so the real rejection reason is surfaced instead of a generic failure. */
 function smpro_dbh_q_err($sql, $t = 15) {
     $err = (string)@shell_exec('timeout ' . (int)$t . ' ' . smpro_dbh_cli() . smpro_dbh_defaults()
         . ' --connect-timeout=5 -N --batch -e ' . escapeshellarg($sql) . ' 2>&1 1>/dev/null');   // capture STDERR, drop STDOUT
     return trim($err);
 }
-/** key\tvalue rows → assoc array. */
+/** key\tvalue rows -> assoc array. */
 function smpro_dbh_kv($sql, $t = 12) {
     $out = [];
     foreach (explode("\n", smpro_dbh_q($sql, $t)) as $l) {
@@ -83,7 +83,7 @@ function smpro_dbh_redact_sql($q) {
     if ($q === '' || strcasecmp($q, 'NULL') === 0) return '';
     $q = preg_replace("/'(?:[^'\\\\]|\\\\.)*'/", "'?'", $q);   // single-quoted strings → '?'
     $q = preg_replace('/"(?:[^"\\\\]|\\\\.)*"/', '"?"', $q);   // double-quoted strings → "?"
-    $q = preg_replace('/\b\d{4,}\b/', '?', $q);                // long numeric literals (ids/phones) → ?
+    $q = preg_replace('/\b\d{4,}\b/', '?', $q);                // long numeric literals (ids/phones) -> ?
     $q = preg_replace('/\s+/', ' ', $q);
     return function_exists('mb_substr') ? mb_substr($q, 0, 240) : substr($q, 0, 240);
 }
@@ -152,7 +152,7 @@ function smpro_dbh_analyze() {
     $F = [];
     $add = function ($sev, $id, $title, $evidence, $detail, $rec, $fix = null) use (&$F) {
         // Written out key by key on purpose. compact() names its variables in STRINGS, and the obfuscator that
-        // builds every release renames the variables without touching those strings — so compact() looked up
+        // builds every release renames the variables without touching those strings - so compact() looked up
         // names that no longer existed and returned an empty array. Findings then rendered as blank rows: the
         // page counted five problems and described none of them. Nothing reported the mismatch, and the test
         // suite runs on the source, where it works.
@@ -161,10 +161,10 @@ function smpro_dbh_analyze() {
     };
     $perHr = function ($v) use ($up) { return round(smpro_dbh_rate($v, $up) * 3600, 1); };
 
-    // 0) warm-up note — some ratios need a running-in period to be meaningful.
+    // 0) warm-up note - some ratios need a running-in period to be meaningful.
     $warm = $up < 3600;
 
-    // 1) TEMP TABLES SPILLING TO DISK — the classic "queries suddenly slow" signal.
+    // 1) TEMP TABLES SPILLING TO DISK - the classic "queries suddenly slow" signal.
     $tmp   = smpro_dbh_n($s, 'Created_tmp_tables');
     $tmpD  = smpro_dbh_n($s, 'Created_tmp_disk_tables');
     if ($tmp > 200 && $tmpD > 0) {
@@ -194,7 +194,7 @@ function smpro_dbh_analyze() {
         }
     }
 
-    // 2) UNINDEXED JOINS / FULL SCANS — joins with no usable index are pathologically slow.
+    // 2) UNINDEXED JOINS / FULL SCANS - joins with no usable index are pathologically slow.
     $fullJoin = smpro_dbh_n($s, 'Select_full_join');
     $rangeChk = smpro_dbh_n($s, 'Select_range_check');
     $scan     = smpro_dbh_n($s, 'Select_scan');
@@ -207,7 +207,7 @@ function smpro_dbh_analyze() {
             (($v['slow_query_log'] ?? 'OFF') !== 'ON') ? ['action' => 'enable_slowlog', 'label' => 'Enable slow-query log to capture them'] : null);
     }
 
-    // 3) SLOW-QUERY LOG — visibility. If off, DB slowness is invisible.
+    // 3) SLOW-QUERY LOG - visibility. If off, DB slowness is invisible.
     $slowOn = (($v['slow_query_log'] ?? 'OFF') === 'ON');
     $slowQ  = smpro_dbh_n($s, 'Slow_queries');
     $lqt    = (float)($v['long_query_time'] ?? 10);
@@ -226,7 +226,7 @@ function smpro_dbh_analyze() {
             'Review the slow log (or run: pt-query-digest ' . ($v['slow_query_log_file'] ?? '/var/lib/mysql/*-slow.log') . '), then index/rewrite the top offenders.', null);
     }
 
-    // 4) CONNECTION SATURATION — pileups + rejected connections.
+    // 4) CONNECTION SATURATION - pileups + rejected connections.
     $maxConn   = max(1, (int)smpro_dbh_n($v, 'max_connections'));
     $connd     = (int)smpro_dbh_n($s, 'Threads_connected');
     $maxUsed   = (int)smpro_dbh_n($s, 'Max_used_connections');
@@ -245,7 +245,7 @@ function smpro_dbh_analyze() {
             'Connection usage has peaked close to the ceiling. If it reaches 100% the server starts rejecting connections and sites error out.',
             'Investigate what holds connections open (slow queries, an app not closing connections). Consider a modest max_connections increase only if you have RAM headroom.', null);
     }
-    // running threads vs cores — live contention signal
+    // running threads vs cores - live contention signal
     if ($running > max(4, $cores * 2)) {
         $add('high', 'threads_running',
             $running . ' queries running at once (server has ' . $cores . ' cores)',
@@ -254,7 +254,7 @@ function smpro_dbh_analyze() {
             'Look at "Queries running now" below for the long-running / locking statement at the head of the pileup and address it (index it, or kill it if it is stuck).', null);
     }
 
-    // 5) InnoDB BUFFER POOL — is hot data served from RAM or re-read from disk?
+    // 5) InnoDB BUFFER POOL - is hot data served from RAM or re-read from disk?
     $reads    = smpro_dbh_n($s, 'Innodb_buffer_pool_reads');           // physical reads (missed cache)
     $reqs     = smpro_dbh_n($s, 'Innodb_buffer_pool_read_requests');   // logical reads
     $bp       = (int)smpro_dbh_n($v, 'innodb_buffer_pool_size');
@@ -272,8 +272,8 @@ function smpro_dbh_analyze() {
         }
     }
 
-    // 5b) BUFFER POOL UNDERSIZED FOR THIS MACHINE — the "shipped default on a big server" trap.
-    // Lesson from a real production box: a 124 GB server was running the 128 MB compiled-in default —
+    // 5b) BUFFER POOL UNDERSIZED FOR THIS MACHINE - the "shipped default on a big server" trap.
+    // Lesson from a real production box: a 124 GB server was running the 128 MB compiled-in default -
     // the single biggest missed performance win. Config-vs-hardware check, so it needs no warm-up.
     $ramB = (float)$srv['ram_bytes'];
     if ($bp > 0 && $ramB >= 4 * 1073741824) {                                  // need a believable RAM reading on a real server
@@ -293,7 +293,7 @@ function smpro_dbh_analyze() {
         }
     }
 
-    // 6) TABLE CACHE OVERFLOW — reopening tables constantly is pure overhead.
+    // 6) TABLE CACHE OVERFLOW - reopening tables constantly is pure overhead.
     $toc_of = smpro_dbh_n($s, 'Table_open_cache_overflows');
     $opened = smpro_dbh_n($s, 'Opened_tables');
     $toc    = (int)smpro_dbh_n($v, 'table_open_cache');
@@ -306,7 +306,7 @@ function smpro_dbh_analyze() {
             ['action' => 'bump_table_cache', 'label' => 'Raise table_open_cache (live)']);
     }
 
-    // 7) MyISAM TABLE-LEVEL LOCK WAITS — one write blocks all readers.
+    // 7) MyISAM TABLE-LEVEL LOCK WAITS - one write blocks all readers.
     $lkWait = smpro_dbh_n($s, 'Table_locks_waited');
     $lkImm  = smpro_dbh_n($s, 'Table_locks_immediate');
     if ($lkWait > 50 && ($lkWait / max(1, $lkImm + $lkWait)) >= 0.01) {
@@ -317,7 +317,7 @@ function smpro_dbh_analyze() {
             'Convert the hot MyISAM tables to InnoDB (row-level locking): ALTER TABLE <t> ENGINE=InnoDB. Check with: SELECT table_schema,table_name FROM information_schema.tables WHERE engine=\'MyISAM\' AND table_schema NOT IN (\'mysql\',\'information_schema\',\'performance_schema\').', null);
     }
 
-    // 8) InnoDB ROW-LOCK CONTENTION — long transactions blocking each other.
+    // 8) InnoDB ROW-LOCK CONTENTION - long transactions blocking each other.
     $rlWaits = smpro_dbh_n($s, 'Innodb_row_lock_waits');
     $rlAvg   = smpro_dbh_n($s, 'Innodb_row_lock_time_avg');   // ms
     if ($rlWaits > 100 && $rlAvg >= 200) {
@@ -328,7 +328,7 @@ function smpro_dbh_analyze() {
             'Keep transactions short, commit promptly, and index the WHERE columns of UPDATE/DELETE so they lock few rows. Look for an app that opens a transaction and does slow work before COMMIT.', null);
     }
 
-    // 9) InnoDB LOG BUFFER — waits mean the redo log buffer is too small.
+    // 9) InnoDB LOG BUFFER - waits mean the redo log buffer is too small.
     if (smpro_dbh_n($s, 'Innodb_log_waits') > 0) {
         $add('low', 'innodb_logwaits',
             'InnoDB redo-log buffer waits',
@@ -337,7 +337,7 @@ function smpro_dbh_analyze() {
             'Increase innodb_log_buffer_size (e.g. 16–64M) in my.cnf.', null);
     }
 
-    // 10) SORT MERGE PASSES — big sorts spilling because of a small sort buffer / missing index.
+    // 10) SORT MERGE PASSES - big sorts spilling because of a small sort buffer / missing index.
     $smp = smpro_dbh_n($s, 'Sort_merge_passes');
     if (!$warm && $smp > 0 && smpro_dbh_rate($smp, $up) * 60 >= 1) {
         $add('low', 'sort_merge',
@@ -347,7 +347,7 @@ function smpro_dbh_analyze() {
             'Add indexes matching the heavy ORDER BY clauses; only raise sort_buffer_size modestly if genuinely needed (it is per-connection, so large values waste RAM).', null);
     }
 
-    // 11) QUERY CACHE (MariaDB / MySQL 5.7) — a scalability bottleneck under concurrency.
+    // 11) QUERY CACHE (MariaDB / MySQL 5.7) - a scalability bottleneck under concurrency.
     if (($v['query_cache_type'] ?? 'OFF') !== 'OFF' && (int)smpro_dbh_n($v, 'query_cache_size') > 0) {
         $prunes = smpro_dbh_n($s, 'Qcache_lowmem_prunes');
         $sev = ($prunes > 0 && smpro_dbh_rate($prunes, $up) * 60 >= 1) ? 'medium' : 'low';
@@ -358,7 +358,7 @@ function smpro_dbh_analyze() {
             'On a busy server, set query_cache_type=OFF and query_cache_size=0 and rely on the InnoDB buffer pool + application caching instead.', null);
     }
 
-    // 12) ABORTED CONNECTIONS — auth/network churn.
+    // 12) ABORTED CONNECTIONS - auth/network churn.
     $abConn = smpro_dbh_n($s, 'Aborted_connects');
     if ($abConn > 100 && smpro_dbh_rate($abConn, $up) * 3600 >= 10) {
         $add('low', 'aborted_conn',
@@ -368,7 +368,7 @@ function smpro_dbh_analyze() {
             'Check which app/host is failing to authenticate; ensure MySQL is not exposed to the internet on 3306 (bind-address / firewall).', null);
     }
 
-    // 13) QUERIES SLOW RIGHT NOW — the live smoking gun.
+    // 13) QUERIES SLOW RIGHT NOW - the live smoking gun.
     $longNow = [];
     foreach ($active as $r) if ($r['time'] >= 15 && strcasecmp($r['command'], 'Sleep') !== 0) $longNow[] = $r;
     if ($longNow) {
@@ -380,7 +380,7 @@ function smpro_dbh_analyze() {
             'Review "Queries running now" below. If a query is genuinely stuck (e.g. "Waiting for table metadata lock", or a runaway SELECT with no index), you can kill just that statement from there. Then fix its root cause (index / rewrite / long transaction).', null);
     }
 
-    // stable severity sort (critical→high→medium→low)
+    // stable severity sort (critical->high->medium->low)
     $rank = ['critical' => 0, 'high' => 1, 'medium' => 2, 'low' => 3];
     usort($F, function ($a, $b) use ($rank) { return ($rank[$a['sev']] ?? 9) <=> ($rank[$b['sev']] ?? 9); });
     return ['findings' => $F, 'warm' => $warm, 'active' => $active, 'proc' => $pl, 'server' => $srv, 'status' => $s, 'vars' => $v];
@@ -529,7 +529,7 @@ function smpro_dbh_live($full = false) {
         'proc'             => $pl,
         'ts'               => date('H:i:s'),
     ];
-    if ($full) {                                   // whole page re-rendered server-side → one source of truth
+    if ($full) {                                   // whole page re-rendered server-side -> one source of truth
         $R   = smpro_dbh_report();
         $rec = smpro_dbh_recommend();
         $out['score']       = $R['score'];
@@ -548,7 +548,7 @@ function smpro_dbh_live($full = false) {
     return $out;
 }
 
-/* ---------------- InnoDB data size (cached — the information_schema aggregate is the one expensive query) ---------------- */
+/* ---------------- InnoDB data size (cached - the information_schema aggregate is the one expensive query) ---------------- */
 function smpro_dbh_datasize_mb($ttl = 3600) {
     $f = SMPRO_VARLIB . '/dbh_datasize.json';
     $d = @is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
@@ -562,7 +562,7 @@ function smpro_dbh_datasize_mb($ttl = 3600) {
     return $mb;
 }
 
-/* ---------------- MyISAM hot tables (cached ~1h) — names the tables behind the myisam_locks finding ---------------- */
+/* ---------------- MyISAM hot tables (cached ~1h) - names the tables behind the myisam_locks finding ---------------- */
 /** Read-only list of the biggest user MyISAM tables (each is a table-lock candidate to convert to InnoDB). */
 function smpro_dbh_myisam_tables($ttl = 3600) {
     $f = SMPRO_VARLIB . '/dbh_myisam.json';
@@ -601,7 +601,7 @@ function smpro_dbh_recommend() {
     $dataMb = smpro_dbh_datasize_mb();
     $rows = [];
 
-    // 1) InnoDB buffer pool — big enough for the hot data, capped at 50% RAM on a shared cPanel box.
+    // 1) InnoDB buffer pool - big enough for the hot data, capped at 50% RAM on a shared cPanel box.
     $bpCur = (int)smpro_dbh_n($v, 'innodb_buffer_pool_size');
     if ($ram > 0) {
         $want = $dataMb > 0 ? ($dataMb * 1048576 * 1.2) : ($ram * 0.25);   // fit data+indexes with 20% headroom
@@ -704,13 +704,13 @@ function smpro_dbh_apply_rec($key) {
     }
     if ($key === 'innodb_buffer_pool_size') {
         $to = (int)$rec['rec_raw']; $from = (int)smpro_dbh_n($v, 'innodb_buffer_pool_size');
-        // Resizing the pool is online on MySQL 5.7+/MariaDB 10.2+, but it is real memory — refuse if the box lacks free RAM.
+        // Resizing the pool is online on MySQL 5.7+/MariaDB 10.2+, but it is real memory - refuse if the box lacks free RAM.
         $freeB = (float)((int)trim((string)@shell_exec("awk '/MemAvailable/{print \$2*1024}' /proc/meminfo 2>/dev/null")));
         if ($freeB > 0 && ($to - $from) > $freeB * 0.7)
             return ['ok' => false, 'msg' => 'Refused: growing the pool by ' . smpro_dbh_bytes_h($to - $from) . ' would use most of the ' . smpro_dbh_bytes_h($freeB) . ' currently available RAM. Free memory first, or apply it in my.cnf and restart during a quiet window.'];
-        // Align the target UP to the engine's resize granularity (chunk_size × instances) so the server accepts the
+        // Align the target UP to the engine's resize granularity (chunk_size x instances) so the server accepts the
         // exact size instead of silently rounding DOWN below our tolerance. These vars are ABSENT on MariaDB 10.11+
-        // (single instant resize) → the queries return '' and we skip alignment.
+        // (single instant resize) -> the queries return '' and we skip alignment.
         $chunk = (int)trim(smpro_dbh_q('SELECT @@global.innodb_buffer_pool_chunk_size', 6));
         $inst  = (int)trim(smpro_dbh_q('SELECT @@global.innodb_buffer_pool_instances', 6));
         $gran  = $chunk > 0 ? $chunk * max(1, $inst) : 0;
@@ -719,7 +719,7 @@ function smpro_dbh_apply_rec($key) {
         // Capture STDERR so a rejection (read-only var on an old build, size cap, permissions) is reported with the
         // real reason instead of the generic "did not accept".
         $setErr = smpro_dbh_q_err('SET GLOBAL innodb_buffer_pool_size=' . $to, 20);
-        // The resize can be asynchronous (MySQL runs it in a background thread) — poll the read-back briefly.
+        // The resize can be asynchronous (MySQL runs it in a background thread) - poll the read-back briefly.
         $now = $from;
         for ($i = 0; $i < 6; $i++) {
             $now = (int)trim(smpro_dbh_q('SELECT @@global.innodb_buffer_pool_size', 8));
@@ -885,7 +885,7 @@ function smpro_dbh_apply($action) {
     if ($action === 'grow_buffer_pool') {
         // Findings-card entry point for the undersized-pool finding. Delegates to the existing guarded
         // recommendation path (mirror of apply_rec's 'slow_query_log' delegation): same free-RAM refusal,
-        // same prev-value Undo ('rec:innodb_buffer_pool_size'), same audit — no new write path.
+        // same prev-value Undo ('rec:innodb_buffer_pool_size'), same audit - no new write path.
         return smpro_dbh_apply_rec('innodb_buffer_pool_size');
     }
     return ['ok' => false, 'msg' => 'Unknown action.'];

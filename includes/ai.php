@@ -1,11 +1,11 @@
 <?php
 /**
- * includes/ai.php — central AI access layer for Safety Monitor Pro.
+ * includes/ai.php - central AI access layer for Safety Monitor Pro.
  *
  * Reuses the (independent) AI Providers engine + config at /var/lib/smpro/ai:
  * active provider, decrypted API key, base URL and model. All providers are
- * OpenAI-compatible (POST <base>/chat/completions). One function — smpro_ai_chat()
- * — is what every module calls; nothing else needs to know about providers.
+ * OpenAI-compatible (POST <base>/chat/completions). One function - smpro_ai_chat()
+ * - is what every module calls; nothing else needs to know about providers.
  *
  * Privacy: callers must redact sensitive data before passing it in, and AI is
  * only ever invoked on an explicit user action (button), never automatically.
@@ -46,7 +46,7 @@ function smpro_ai_ready(): array {
 /** True if at least one provider is configured with a key. */
 function smpro_ai_available(): bool { $r = smpro_ai_ready(); return !empty($r['ok']); }
 
-/** Production execution mode: 'series' (fallback chain — recommended, quota-safe) or 'parallel' (rotate to spread load). */
+/** Production execution mode: 'series' (fallback chain - recommended, quota-safe) or 'parallel' (rotate to spread load). */
 function smpro_ai_exec_mode(): string {
     if (!smpro_ai_engine_loaded()) return 'series';
     $cfg = mspro_ai304_load_config();
@@ -68,7 +68,7 @@ function smpro_ai_set_exec_mode(string $mode): array {
 function smpro_ai_candidates(array $cfg): array {
     $active = (array)($cfg['active_providers'] ?? []);
     if (!$active && !empty($cfg['provider'])) $active = [$cfg['provider']];
-    $perProvCap = 3;                                                       // 3 models per provider is plenty — if 3 fail the key/provider is down
+    $perProvCap = 3;                                                       // 3 models per provider is plenty - if 3 fail the key/provider is down
     $byProv = [];                                                          // provider => [cand, cand, ...]
     foreach ($active as $p) {
         if (!is_string($p)) continue;
@@ -82,7 +82,7 @@ function smpro_ai_candidates(array $cfg): array {
         foreach (array_slice($models, 0, $perProvCap) as $mdl) if ($mdl !== '') $list[] = ['provider' => $p, 'model' => $mdl, 'base' => $base, 'key' => $key];
         if ($list) $byProv[] = $list;
     }
-    // round-robin interleave: provA-m1, provB-m1, provC-m1, provA-m2, …  → other providers reached fast
+    // round-robin interleave: provA-m1, provB-m1, provC-m1, provA-m2, ...  -> other providers reached fast
     $cands = []; $i = 0; $more = true;
     while ($more && count($cands) < 12) {
         $more = false;
@@ -124,7 +124,7 @@ function smpro_ai_chat(string $system, string $user, array $opts = []): array {
     }
 
     // SECURITY (defense in depth): redact secrets from EVERY outbound AI payload HERE, so no caller can ever
-    // forget — e.g. the Reports-Center outage analysis sent raw auth.log/error_log evidence (tokens, DB
+    // forget - e.g. the Reports-Center outage analysis sent raw auth.log/error_log evidence (tokens, DB
     // passwords) with no redaction. Idempotent for callers that already redact.
     $system = smpro_ai_redact($system);
     $user   = smpro_ai_redact($user);
@@ -156,7 +156,7 @@ function smpro_ai_chat(string $system, string $user, array $opts = []): array {
         $lastHttp = (int)($res['http_code'] ?? 0); $lastProvider = $c['provider']; $lastModel = $c['model'];
         $tried[] = $c['provider'] . '/' . $c['model'];
         // only keep falling back on rate-limit / transient / auth / model-specific issues; a 400 bad-request won't fix itself.
-        // 404 = model not found / decommissioned (common on free providers that rotate ':free' models) — it's per-model, so
+        // 404 = model not found / decommissioned (common on free providers that rotate ':free' models) - it's per-model, so
         // fall through to the next candidate/provider instead of aborting the whole failover chain.
         if (!in_array($lastHttp, [0, 401, 402, 403, 404, 408, 409, 429, 500, 502, 503, 504], true)) break;
     }
@@ -171,7 +171,7 @@ function smpro_ai_chat(string $system, string $user, array $opts = []): array {
  * EXECUTABLE DECISIONS
  * Builds a concrete, section-specific list of actionable items (the "pack")
  * so the global "Recommend decisions" button can return NAMED, EXECUTABLE
- * buttons (Block / Delete / Clean / Suspend …) wired to the real endpoints —
+ * buttons (Block / Delete / Clean / Suspend ...) wired to the real endpoints -
  * not free text. The AI only chooses WHICH item + action; the target and the
  * exec descriptor (URL + fields + freshly-minted CSRF token) come from here,
  * so the model can never invent a target or bypass a guard.
@@ -193,7 +193,7 @@ function smpro_ai_lve_bin(): string {
          : (is_executable('/usr/bin/lveinfo') ? '/usr/bin/lveinfo' : '');
 }
 
-/** ps etime ([[DD-]hh:]mm:ss) → seconds. Returns 0 when the field is not a runtime. */
+/** ps etime ([[DD-]hh:]mm:ss) -> seconds. Returns 0 when the field is not a runtime. */
 function smpro_ai_etime_secs(string $e): int {
     $e = trim($e); if ($e === '') return 0;
     $days = 0;
@@ -222,7 +222,7 @@ function smpro_ai_decide_coverage(string $ctx): array {
  * Read the per-account limit-fault history once per request.
  * Returns ['ok'=>bool,'why'=>string,'raw'=>string]. ok=false means the numbers could not be read AT ALL, which
  * must never be shown as "no faults". The common case is the collector: when lvestats is down, lveinfo answers
- * "No data found" for every period — so a dead monitor and a perfectly healthy server produce identical output,
+ * "No data found" for every period - so a dead monitor and a perfectly healthy server produce identical output,
  * and the reassuring reading is the wrong one. Observed on the lab box, where lvestats sits in failed state.
  */
 function smpro_ai_lve_probe(): array {
@@ -299,7 +299,7 @@ function smpro_ai_decide_pack(string $ctx): array {
         }
     } elseif ($kind === 'intrusion') {
         // Live WAF attackers (ModSecurity), region-aware: home-region residential IPs are
-        // offered only allow/investigate (never auto-block) — matches smpro_im_region_status policy.
+        // offered only allow/investigate (never auto-block) - matches smpro_im_region_status policy.
         if (function_exists('smpro_im_parse_modsec') && function_exists('smpro_im_offenders') && defined('SMPRO_IM_PAGE_BYTES')) {
             $ev  = smpro_im_parse_modsec(SMPRO_IM_PAGE_BYTES, defined('SMPRO_IM_CAP') ? SMPRO_IM_CAP : 4000, time() - 6 * 3600);
             $off = smpro_im_offenders($ev, 25);
@@ -335,7 +335,7 @@ function smpro_ai_decide_pack(string $ctx): array {
     } elseif ($kind === 'resource') {
         $i = 0;
 
-        // 1. Bandwidth. cPanel's own bwlimited flag IS the 509 "Bandwidth Limit Exceeded" state — a monthly
+        // 1. Bandwidth. cPanel's own bwlimited flag IS the 509 "Bandwidth Limit Exceeded" state - a monthly
         //    transfer-quota suspension, a different subsystem from the LVE limits below (which produce 508).
         //    A limit of 0 means unlimited, so the flag is the ground truth and the percentage is early warning.
         $bw = json_decode(smpro_run('whmapi1 showbw --output=json', 30, ['stderr' => 'discard']), true);
@@ -356,7 +356,7 @@ function smpro_ai_decide_pack(string $ctx): array {
             if (++$i >= 8) break;
         }
 
-        // 2. LVE faults — the 508 "Resource Limit Reached" side. Same parse as the notifier: lveinfo prints a
+        // 2. LVE faults - the 508 "Resource Limit Reached" side. Same parse as the notifier: lveinfo prints a
         //    box-drawing table, and reserved/system LVE contexts must be dropped or they read as accounts.
         $lve = smpro_ai_lve_probe();
         if (!empty($lve['ok']) && function_exists('smpro_ntf_lve_acct')) {
@@ -387,7 +387,7 @@ function smpro_ai_decide_pack(string $ctx): array {
         }
 
         // 3. Processes an account left running far too long. A stuck worker holds an entry process for its whole
-        //    lifetime, so a handful of them exhausts the EP limit while overall CPU still looks quiet — which is
+        //    lifetime, so a handful of them exhausts the EP limit while overall CPU still looks quiet - which is
         //    why "the server is idle but the site is 508ing" is the usual report.
         $tp = function_exists('smpro_top_processes') ? smpro_top_processes(120) : ['rows' => []];
         $stuck = [];
@@ -552,17 +552,17 @@ function smpro_ai_redact(string $s): string {
     if (function_exists('smpro_redact_sensitive')) $s = smpro_redact_sensitive($s);
     // strip obvious secrets the model never needs (this text is sent to a THIRD-PARTY AI endpoint)
     $s = preg_replace('/\b(cpsess\d+)\b/i', 'cpsessXXXX', $s);
-    // "Bearer <token>" — the generic key=value rule below only swallows the word "Bearer" and would leave
+    // "Bearer <token>" - the generic key=value rule below only swallows the word "Bearer" and would leave
     // the token exposed (e.g. "Authorization: Bearer <jwt>" -> "...=REDACTED <jwt>"). Redact the whole
     // token first, and catch raw JWTs anywhere (dotted base64url, which the long-blob rule below misses).
     $s = preg_replace('/\bbearer\s+[A-Za-z0-9._~+\/=-]{4,}/i', 'Bearer [REDACTED]', $s);
     $s = preg_replace('/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{2,}/', '[REDACTED JWT]', $s);
     $s = preg_replace('/(password|passwd|secret|api[_-]?key|token|bearer|authorization)\s*[=:]\s*\S+/i', '$1=REDACTED', $s);
-    // PEM / SSH / cert key blocks → drop entirely (never leak key material off-box)
+    // PEM / SSH / cert key blocks -> drop entirely (never leak key material off-box)
     $s = preg_replace('/-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----/s', '[REDACTED PRIVATE KEY]', $s);
     $s = preg_replace('/-----BEGIN (?:OPENSSH|RSA|EC|DSA|PGP)[^-]*-----.*?-----END [^-]*-----/s', '[REDACTED KEY BLOCK]', $s);
     $s = preg_replace('/\bssh-(?:rsa|ed25519|dss)\s+[A-Za-z0-9+\/=]{40,}/', '[REDACTED SSH KEY]', $s);
-    // /etc/shadow-style password hashes ($6$…/$2y$…/$y$…) + long base64 blobs (keys/tokens)
+    // /etc/shadow-style password hashes ($6$.../$2y$.../$y$...) + long base64 blobs (keys/tokens)
     $s = preg_replace('/\$(?:1|2[aby]?|5|6|y|gy)\$[^\s:]{8,}/', '[REDACTED HASH]', $s);
     $s = preg_replace('/\b[A-Za-z0-9+\/]{120,}={0,2}/', '[REDACTED BLOB]', $s);
     return $s;

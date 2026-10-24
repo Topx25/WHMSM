@@ -1,6 +1,6 @@
 <?php
 /**
- * cooler.php — "Cooler mode". Detect what is driving server load (top CPU processes / users)
+ * cooler.php - "Cooler mode". Detect what is driving server load (top CPU processes / users)
  * and *throttle* the offender for a chosen duration, fully reversibly:
  *   - renice to +19 (lowest CPU priority) and ionice to idle class,
  *   - if `cpulimit` is installed and a hard cap % is chosen, apply a real CPU ceiling,
@@ -34,10 +34,10 @@ function smpro_cool_cap_method(): string {
 
 /* ---------------- protected (never-throttle) processes ----------------
  * CRITICAL SAFETY RULE: the cooler/guard must NEVER slow down the web server, database, mail,
- * DNS, FTP, SSH, firewall or cPanel services — doing so would degrade or "stop" live customer
+ * DNS, FTP, SSH, firewall or cPanel services - doing so would degrade or "stop" live customer
  * sites. It also never kills a process and never suspends an account. Only ISOLATED runaway
  * processes (a stray script, a heavy cron/backup, a standalone binary) may be deprioritised. */
-// CRITICAL infrastructure — the web server, database, mail, DNS, FTP, SSH, firewall & cPanel
+// CRITICAL infrastructure - the web server, database, mail, DNS, FTP, SSH, firewall & cPanel
 // daemons. Slowing any of these would degrade EVERY hosted site, so they are NEVER throttled,
 // not even by a manual selection. (php-fpm master serves all pools, so it stays here too.)
 function smpro_cool_critical_exact(): array {
@@ -67,20 +67,20 @@ function smpro_cool_is_critical(string $comm, int $pid = 0): bool {
         $exe = strtolower(basename((string)@readlink('/proc/' . $pid . '/exe')));
         if ($exe !== '' && (in_array($exe, smpro_cool_critical_exact(), true) || in_array($exe, ['cpsrvd', 'cpsrvd.so', 'perl', 'cpanel', 'sshd', 'pure-ftpd', 'proftpd', 'dovecot', 'imap-login', 'pop3-login'], true))) return true;
     }
-    // Also never throttle a known security/hosting daemon (Imunify rustbolit/aibolit, CloudLinux LVE/CageFS…).
+    // Also never throttle a known security/hosting daemon (Imunify rustbolit/aibolit, CloudLinux LVE/CageFS...).
     if (function_exists('smpro_is_trusted_system_proc') && smpro_is_trusted_system_proc($c)) return true;
     return false;
 }
 // Per-site PHP engines (one request = one customer site). The UNATTENDED guard never touches these
 // on its own (so it can't silently slow a customer's site); an admin may still MANUALLY cool a
-// confirmed-runaway one. renice only lowers priority — it never stops the request or the site.
+// confirmed-runaway one. renice only lowers priority - it never stops the request or the site.
 function smpro_cool_is_site_engine(string $comm): bool {
     $c = strtolower(trim($comm));
     foreach (['php-cgi', 'lsphp', 'suphp', 'cgiwrap'] as $n) if ($c === $n || strpos($c, $n) === 0) return true;
     return $c === 'php';
 }
 // Background WordPress cron under a per-site PHP engine (e.g. `php-cgi -q wp-cron.php`). This is NOT a live
-// visitor request — it's WP's scheduled-task runner — so throttling it only makes cron run slower, it never
+// visitor request - it's WP's scheduled-task runner - so throttling it only makes cron run slower, it never
 // slows a real page load. The unattended guard MAY cool these; they are the usual cause of wp-cron storms.
 function smpro_cool_is_bg_cron(string $args): bool {
     return stripos($args, 'wp-cron.php') !== false;
@@ -164,7 +164,7 @@ function smpro_cool_start(array $pids, int $percent, int $minutes): array {
                 // -z makes cpulimit exit when the target dies; detached so it survives this request
                 @shell_exec('nohup ' . escapeshellarg($cpulimit) . ' -p ' . (int)$pid . ' -l ' . (int)$percent . ' -z >/dev/null 2>&1 &');
             } elseif (is_file($lite)) {
-                // FALLBACK (no cpulimit binary): built-in SIGSTOP/SIGCONT duty-cycle throttle — the cap still works
+                // FALLBACK (no cpulimit binary): built-in SIGSTOP/SIGCONT duty-cycle throttle - the cap still works
                 @shell_exec('nohup bash ' . escapeshellarg($lite) . ' ' . (int)$pid . ' ' . (int)$percent . ' ' . ($minutes * 60) . ' ' . escapeshellarg($start) . ' >/dev/null 2>&1 &');
             }
         }
@@ -217,7 +217,7 @@ function smpro_cool_stop(): array {
 function smpro_cool_status(): array {
     $st = smpro_cool_state();
     $active = !empty($st['active']) && time() < (int)($st['expires'] ?? 0);
-    if (!empty($st['active']) && !$active) { smpro_cool_revert($st); smpro_cool_state_save(['active' => false]); }  // expired → tidy
+    if (!empty($st['active']) && !$active) { smpro_cool_revert($st); smpro_cool_state_save(['active' => false]); }  // expired -> tidy
     $targets = [];
     foreach (($st['targets'] ?? []) as $t) {
         $alive = is_dir('/proc/' . (int)$t['pid']);
@@ -282,9 +282,9 @@ function smpro_cool_guard_tick(): void {
         if (!$warned && function_exists('smpro_audit')) { smpro_audit('cooler_ceiling_raised', ['configured' => $ceil, 'effective' => $cores / 2, 'cores' => $cores]); $warned = true; }
         $ceil = $cores / 2;
     }
-    if ($load1 < $ceil) return;                                       // under the ceiling → nothing to do
+    if ($load1 < $ceil) return;                                       // under the ceiling -> nothing to do
     if (function_exists('smpro_load_overload_record_if_high')) smpro_load_overload_record_if_high((float)$g['ceiling']);  // report history (deduped ~5min)
-    if (!empty(smpro_cool_status()['active'])) return;               // already cooling → let it work
+    if (!empty(smpro_cool_status()['active'])) return;               // already cooling -> let it work
     if (time() - (int)$g['last_fire'] < (int)$g['cooldown']) return; // anti-spam window
 
     $src = smpro_cool_sources(12); $pids = [];
@@ -292,16 +292,16 @@ function smpro_cool_guard_tick(): void {
     // it with SIGSTOP stalls every site that talks to it. The unattended guard never touches a listener.
     $listening = [];
     foreach (explode("\n", (string)@shell_exec('timeout 5 ss -lnpH 2>/dev/null')) as $l) if (preg_match_all('/pid=(\d+)/', $l, $pm)) foreach ($pm[1] as $pid) $listening[(int)$pid] = 1;
-    // unattended: isolated runaways + background wp-cron PHP (php-cgi -q wp-cron.php) — never a live service
+    // unattended: isolated runaways + background wp-cron PHP (php-cgi -q wp-cron.php) - never a live service
     // and never a per-site PHP request serving a visitor; skip exited procs.
     foreach ($src['procs'] as $p) { if (empty($p['protected']) && !isset($listening[(int)$p['pid']]) && (empty($p['site_engine']) || !empty($p['bg_cron'])) && $p['cpu'] >= (float)$g['min_cpu'] && is_dir('/proc/' . $p['pid'])) { $pids[] = $p['pid']; if (count($pids) >= (int)$g['topk']) break; } }
-    if (!$pids) {                                                          // load is driven by services or customer-site PHP — do NOT touch them automatically
+    if (!$pids) {                                                          // load is driven by services or customer-site PHP - do NOT touch them automatically
         if (function_exists('smpro_audit')) smpro_audit('cooler_guard_noop', ['load1' => $load1, 'reason' => 'no safe isolated target (services & site PHP are never auto-throttled)']);
         return;
     }
 
     $r = smpro_cool_start($pids, (int)$g['percent'], (int)$g['minutes']);
-    if (empty($r['ok'])) {                                                  // all targets vanished/protected — retry next minute, don't burn the cooldown
+    if (empty($r['ok'])) {                                                  // all targets vanished/protected - retry next minute, don't burn the cooldown
         if (function_exists('smpro_audit')) smpro_audit('cooler_guard_miss', ['load1' => $load1, 'msg' => $r['msg'] ?? '']);
         return;
     }

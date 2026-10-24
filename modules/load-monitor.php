@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/load-monitor.php — Load Monitor (live).
+ * modules/load-monitor.php - Load Monitor (live).
  * A full, organised view of server load: load averages + pressure, per-core CPU,
  * memory & swap detail, disk usage, and the top processes by CPU and by memory,
  * plus a live load sparkline and a hardware summary. Read-only; self-contained
@@ -118,7 +118,7 @@ if (isset($_GET['live'])) {
 
 /* ---------------- render ---------------- */
 // smpro_lo_live() blocks 0.75s on a two-point CPU sample. The page self-polls ?live=1 every 3s (which calls
-// smpro_lo_live() fresh), so cache the RENDER sample briefly — first paint is instant, the poll keeps it live.
+// smpro_lo_live() fresh), so cache the RENDER sample briefly - first paint is instant, the poll keeps it live.
 $L = smpro_cache_through('lo_live_render', 5, fn() => smpro_lo_live());
 // hardware summary
 $cpuModel = '';
@@ -415,7 +415,7 @@ foreach (glob('/sys/class/thermal/thermal_zone*/temp') ?: [] as $tf) { $tc = (in
     var ln=document.getElementById('loSparkLine');if(ln)ln.setAttribute('points',pts);
     var sn=document.getElementById('loSparkNow');if(sn)sn.textContent='now '+L.load['1m']+' · peak '+mx.toFixed(2);
   }
-  // persistent 24h history chart — hist is [[ts, load1], ...] from the server ring
+  // persistent 24h history chart - hist is [[ts, load1], ...] from the server ring
   function drawHist(hist){
     if(!hist||!hist.length){return;}
     var mx=1; hist.forEach(function(p){if(p[1]>mx)mx=p[1];});
@@ -433,7 +433,7 @@ foreach (glob('/sys/class/thermal/thermal_zone*/temp') ?: [] as $tf) { $tc = (in
 })();
 </script>
 <script>
-/* Server Health score — live (polls the shared serverhealth snapshot) */
+/* Server Health score - live (polls the shared serverhealth snapshot) */
 (function(){var R=2*Math.PI*52,ring=document.getElementById('svRing');if(!ring)return;
   function apply(d){if(!d)return;var s=document.getElementById('svScore');if(s)s.textContent=d.score;ring.style.strokeDashoffset=R*(1-d.score/100);
     var st=document.getElementById('svStatus');if(st){st.textContent=d.status;st.className='pill '+d.cls;}

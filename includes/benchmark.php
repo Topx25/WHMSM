@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/benchmark.php — Hardware benchmark (CPU · RAM · Disk) + a live hardware inventory.
+ * includes/benchmark.php - Hardware benchmark (CPU · RAM · Disk) + a live hardware inventory.
  * The benchmark runs as a DETACHED background worker (bin/benchmark.php) so it survives the admin closing the tab;
  * progress + results are written to a state file the page polls (index.php format=json&metric=benchmark). Every test
  * is bounded and uses tools that are always present (openssl, dd) with optional fio for random IOPS. Read inventory
@@ -13,10 +13,10 @@ if (!defined('SMPRO_BENCH_STATE')) define('SMPRO_BENCH_STATE', SMPRO_VARLIB . '/
 function smpro_bm_sh($cmd, $t = 8) { return smpro_run((string)$cmd, (int)$t, ['path' => true]); }
 function smpro_bm_has($bin) { return trim((string)@shell_exec('command -v ' . escapeshellarg($bin) . ' 2>/dev/null')) !== ''; }
 
-/* ---------------- hardware inventory (CACHED — hardware is static; computed off the page render) ----------------
+/* ---------------- hardware inventory (CACHED - hardware is static; computed off the page render) ----------------
  * The disk-storage render calls smpro_bm_inventory(false) = cache-only (never runs dmidecode/lscpu/lsblk, so the
  * page stays fast even on a busy server); the benchmark JSON poll calls smpro_bm_inventory(true) which computes +
- * caches it once (~24h). A cold cache returns a "detecting…" skeleton so the render never fatals. */
+ * caches it once (~24h). A cold cache returns a "detecting..." skeleton so the render never fatals. */
 if (!defined('SMPRO_BM_INV')) define('SMPRO_BM_INV', SMPRO_VARLIB . '/hw_inventory.json');
 function smpro_bm_inventory_default() {
     return ['cpu' => ['model' => 'detecting…', 'cores' => 0, 'tpc' => 0, 'sockets' => 0, 'mhz_max' => '', 'l3' => ''],
@@ -138,7 +138,7 @@ function smpro_bm_disk($mount) {
     @unlink($f); @rmdir($dir);
     return ['write_mbs' => $w, 'read_mbs' => $r, 'iops' => $iops, 'size_mb' => $size, 'mount' => $mount];
 }
-/** Worker body: run CPU → RAM → Disk, writing progress after each so the page can show it live. */
+/** Worker body: run CPU -> RAM -> Disk, writing progress after each so the page can show it live. */
 function smpro_bm_run($mount) {
     @ignore_user_abort(true); @set_time_limit(300);
     $started = (int)(smpro_bm_state()['started'] ?? time());

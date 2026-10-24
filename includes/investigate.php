@@ -1,6 +1,6 @@
 <?php
 /**
- * investigate.php — Site Doctor: diagnose WHY a domain/account is failing (500/blank/down)
+ * investigate.php - Site Doctor: diagnose WHY a domain/account is failing (500/blank/down)
  * and (optionally) apply a SAFE, REVERSIBLE fix. Read paths are root; every fix is backup-first
  * (rename, never delete), path-whitelisted to the account docroot, and recorded for one-click undo.
  * Used by the Forensics module's Site Doctor section.
@@ -17,7 +17,7 @@ function smpro_inv_manifest_add($e) {
     $lk = @fopen(SMPRO_LOCKS . '/sitedoctor-manifest.lock', 'c'); if ($lk) @flock($lk, LOCK_EX);
     $m = smpro_inv_manifest_load();
     $e['id'] = substr(md5(($e['to'] ?? '') . microtime(true) . smpro_inv_uniqtag()), 0, 12); $e['ts'] = time(); $e['status'] = 'applied'; $m[] = $e;
-    // Cap the file WITHOUT ever dropping a still-reversible ('applied') entry — only trim the oldest 'undone' ones.
+    // Cap the file WITHOUT ever dropping a still-reversible ('applied') entry - only trim the oldest 'undone' ones.
     if (count($m) > 500) {
         $keep = array_values(array_filter($m, fn($x) => ($x['status'] ?? '') === 'applied'));
         $undone = array_values(array_filter($m, fn($x) => ($x['status'] ?? '') !== 'applied'));
@@ -30,7 +30,7 @@ function smpro_inv_manifest_add($e) {
     return $e['id'];
 }
 
-/** Resolve a domain/URL (with optional subpath) OR account → [user, domain, docroot, home, phpver, subpath, url]. */
+/** Resolve a domain/URL (with optional subpath) OR account -> [user, domain, docroot, home, phpver, subpath, url]. */
 function smpro_inv_resolve($target) {
     $raw = strtolower(trim((string)$target));
     $raw = preg_replace('#^https?://#', '', $raw);
@@ -62,7 +62,7 @@ function smpro_inv_resolve($target) {
     if ($phpver === '') { $raw = (string)@shell_exec('timeout 8 grep -aoE "ea-php[0-9]+" /var/cpanel/userdata/' . escapeshellarg($user) . '/' . escapeshellarg($domain !== '' ? $domain : 'main') . ' 2>/dev/null | head -1'); if ($raw) $phpver = trim($raw); }
     $docroot = rtrim($docroot, '/');
     // A subpath is a REAL subdirectory install ONLY if the folder exists on disk; otherwise it's a
-    // VIRTUAL route (e.g. /ar/ on a multilingual site handled by the root WordPress) → docroot stays root
+    // VIRTUAL route (e.g. /ar/ on a multilingual site handled by the root WordPress) -> docroot stays root
     // and RewriteBase must be '/', NOT '/ar/'. (This was the bug that re-wrote the wrong base.)
     $diskSub = '';
     if ($sub !== '' && is_dir($docroot . '/' . $sub)) { $docroot .= '/' . $sub; $diskSub = $sub; }
@@ -71,7 +71,7 @@ function smpro_inv_resolve($target) {
 }
 /** Parse account disk usage into clean stats. */
 function smpro_inv_disk($user) {
-    // whmapi1 IGNORES a plain `user=` arg on get_disk_usage — it returns EVERY account, and grabbing the
+    // whmapi1 IGNORES a plain `user=` arg on get_disk_usage - it returns EVERY account, and grabbing the
     // first blocks_used gives a random account (Perl hash order). Use the real api.filter mechanism so only
     // this user's row comes back.
     $ua = escapeshellarg($user);
@@ -303,7 +303,7 @@ function smpro_inv_server_ip() {
     $ip = trim((string)@shell_exec('hostname -I 2>/dev/null')); $ip = trim((string)strtok($ip, ' '));
     return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '';
 }
-/** STEP 0 — validate the domain itself: does public DNS resolve it, to which IP, and does it point HERE?
+/** STEP 0 - validate the domain itself: does public DNS resolve it, to which IP, and does it point HERE?
  *  This is the first thing to check before any PHP/plugin diagnosis (a domain not pointed here can never load). */
 function smpro_inv_dns($domain) {
     $domain = strtolower(trim((string)$domain));
@@ -326,22 +326,22 @@ function smpro_inv_dns($domain) {
     else                  { $state = 'elsewhere';$note = 'DNS points to ' . implode(', ', $ips) . ', NOT this server (' . ($serverIp ?: '?') . '). The domain is pointed at a different host — that is why it does not load here.'; }
     return ['domain'=>$domain,'ips'=>$ips,'server_ip'=>$serverIp,'resolves'=>$resolves,'here'=>$here,'proxied'=>$proxied,'state'=>$state,'note'=>$note];
 }
-/** HTTP probe that FOLLOWS redirects and detects loops — so a 301/302 (and a redirect loop) is diagnosed,
+/** HTTP probe that FOLLOWS redirects and detects loops - so a 301/302 (and a redirect loop) is diagnosed,
  *  not mistaken for "up". Returns first code, final code, hop count, final URL, and whether it looped. */
 function smpro_inv_http($url) {
     $out = ['code'=>0,'url'=>$url,'first'=>0,'final'=>0,'hops'=>0,'final_url'=>'','loop'=>false,'chain'=>''];
     if ($url === '') return $out;
     $A = '-A ' . escapeshellarg('SafetyMonitorPro/investigate') . ' --connect-timeout 10 -m 20 -ksS';
-    // (1) first response WITHOUT following — reveals a 301/302 at the entry
+    // (1) first response WITHOUT following - reveals a 301/302 at the entry
     $first = (int)trim((string)@shell_exec('timeout 22 curl ' . $A . ' -o /dev/null -w "%{http_code}" ' . escapeshellarg($url) . ' 2>/dev/null'));
-    // (2) follow up to 10 hops — final code + hop count + effective URL
+    // (2) follow up to 10 hops - final code + hop count + effective URL
     $w = (string)@shell_exec('timeout 25 curl ' . $A . ' -L --max-redirs 10 -o /dev/null -w "%{http_code}|%{num_redirects}|%{url_effective}" ' . escapeshellarg($url) . ' 2>/dev/null');
     $p = explode('|', trim($w));
     $final = (int)($p[0] ?? 0); $hops = (int)($p[1] ?? 0); $furl = (string)($p[2] ?? '');
     $loop = ($hops >= 10) || ($final === 0 && $hops > 0);     // hit the hop cap (or curl aborted mid-redirect) = loop
     $out['first'] = $first; $out['final'] = $final; $out['hops'] = $hops; $out['final_url'] = $furl; $out['loop'] = $loop;
     $out['code'] = $loop ? 310 : ($final ?: $first);          // 310 = synthetic "redirect loop"
-    // capture the Location chain (reveals the loop pattern, e.g. https→http→https) — diagnostic + AI evidence
+    // capture the Location chain (reveals the loop pattern, e.g. https->http->https) - diagnostic + AI evidence
     if ($first >= 300 && $first < 400) {
         $hdr = (string)@shell_exec('timeout 25 curl ' . $A . ' -sIL --max-redirs 10 ' . escapeshellarg($url) . ' 2>/dev/null');
         $locs = []; foreach (explode("\n", $hdr) as $ln) { if (stripos($ln, 'location:') === 0) { $loc = trim(substr($ln, 9)); if ($loc !== '') $locs[] = $loc; if (count($locs) >= 6) break; } }
@@ -355,7 +355,7 @@ function smpro_inv_run($target) {
     $r = smpro_inv_resolve($target);
     if (!$r) return ['ok'=>false,'msg'=>'Could not resolve that domain/account on this server.'];
     $domain = $r['domain']; $docroot = $r['docroot']; $home = $r['home']; $url = $r['url'] ?: ($domain ? 'https://' . $domain . '/' : '');
-    // STEP 0: domain/DNS validity (first troubleshooting step — is the domain even pointed here?)
+    // STEP 0: domain/DNS validity (first troubleshooting step - is the domain even pointed here?)
     $dns = $domain !== '' ? smpro_inv_dns($domain) : null;
     // HTTP with redirect-follow + loop detection (so 301/302 is handled, not read as "up")
     $http = smpro_inv_http($url);
@@ -370,7 +370,7 @@ function smpro_inv_run($target) {
         }
         $ht = ['mtime'=>date('Y-m-d H:i', (int)@filemtime($htp)),'head'=>mb_substr($head, 0, 1400),'path'=>$htp,'issues'=>$issues];
     }
-    // Last raw log lines (warnings/notices too) — shown when there is no clear fatal, so the tool is never a dead end.
+    // Last raw log lines (warnings/notices too) - shown when there is no clear fatal, so the tool is never a dead end.
     $logtail = [];
     foreach ([$docroot . '/error_log', $home . '/public_html/error_log'] as $lg) {
         if (!is_file($lg)) continue;
@@ -383,9 +383,9 @@ function smpro_inv_run($target) {
     $live = null; foreach ($fatals as $f) if (!empty($f['fix_target']) && !empty($f['target_exists'])) { $live = $f; break; }
     // "up" = the FOLLOWED final response is 2xx/3xx AND it is not a redirect loop (a 301 that ends at 200 is up).
     $up = (!$http['loop'] && $http['final'] >= 200 && $http['final'] < 400);
-    // STEP-0 gates: a domain that doesn't resolve here, or a redirect loop, is the real cause — surface it first.
+    // STEP-0 gates: a domain that doesn't resolve here, or a redirect loop, is the real cause - surface it first.
     $dnsBad = $dns && in_array($dns['state'], ['nxdomain','elsewhere'], true);
-    if     ($dnsBad)                 $status = 'dns';            // domain not pointed here → nothing else matters
+    if     ($dnsBad)                 $status = 'dns';            // domain not pointed here -> nothing else matters
     elseif ($http['loop'])           $status = 'redirect_loop';  // 301/302 loop (e.g. http↔https, really-simple-ssl, wrong siteurl)
     elseif ($up && !$live)           $status = 'up';            // responding + no actionable culprit
     elseif ($live)                   $status = 'down_actionable';// a fixable culprit is present
@@ -406,7 +406,7 @@ function smpro_inv_run($target) {
 }
 
 /**
- * SPEED diagnosis — measure the site live (TTFB breakdown) and RANK the real causes of slowness.
+ * SPEED diagnosis - measure the site live (TTFB breakdown) and RANK the real causes of slowness.
  * Read-only, cheap (page-load safe), and graceful: every signal is guarded so a missing tool/file is
  * skipped, never fatal. Returns { ok, user, domain, url, phpver, code, timing{}, server_side, causes[] }.
  */
@@ -416,7 +416,7 @@ function smpro_inv_speed($target) {
     $user = $r['user']; $domain = $r['domain']; $docroot = $r['docroot']; $url = $r['url']; $phpver = (string)$r['phpver'];
     $A = "-A 'SafetyMonitorPro/speed'";
 
-    // 1) one curl for the full latency split (seconds → ms)
+    // 1) one curl for the full latency split (seconds -> ms)
     $wfmt = 'DNS=%{time_namelookup} CONN=%{time_connect} TLS=%{time_appconnect} TTFB=%{time_starttransfer} TOTAL=%{time_total} SIZE=%{size_download} SPEED=%{speed_download} HTTP=%{http_version} CODE=%{http_code}';
     $probe = function ($ua, $maxt) use ($wfmt, $url) {
         $raw = (string)@shell_exec('timeout ' . ((int)$maxt + 6) . ' curl -A ' . escapeshellarg($ua) . ' --connect-timeout 8 -m ' . (int)$maxt . ' -ksSL --max-redirs 5 -o /dev/null -w ' . escapeshellarg($wfmt) . ' ' . escapeshellarg($url) . ' 2>/dev/null');
@@ -424,7 +424,7 @@ function smpro_inv_speed($target) {
         return $t;
     };
     $t = $probe('SafetyMonitorPro/speed', 16);
-    // A curl http_code of 0 is NOT proof the site is down — a slow app or a WAF that blocks non-browser User-Agents
+    // A curl http_code of 0 is NOT proof the site is down - a slow app or a WAF that blocks non-browser User-Agents
     // also yields 0. Retry once with a real browser UA + a longer timeout before concluding anything.
     if ((int)($t['CODE'] ?? 0) === 0) $t = $probe('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 SafetyMonitorPro', 30);
     $code = (int)($t['CODE'] ?? 0);
@@ -454,9 +454,9 @@ function smpro_inv_speed($target) {
 
     $causes = [];
     $add = function ($sev, $cause, $evidence, $fix, $action = null) use (&$causes) { $causes[] = ['sev' => $sev, 'cause' => $cause, 'evidence' => $evidence, 'fix' => $fix, 'action' => $action]; };
-    $serverSide = ($think >= 700);   // server processing dominates → dig into PHP/DB/limits
+    $serverSide = ($think >= 700);   // server processing dominates -> dig into PHP/DB/limits
 
-    // 3) whole-server overload (reuse the load engine — a slow site may just be a slow box)
+    // 3) whole-server overload (reuse the load engine - a slow site may just be a slow box)
     if (function_exists('smpro_load_evidence')) {
         $ev = smpro_load_evidence();
         $lpc = (float)($ev['load_per_core'] ?? 0); $wa = (float)($ev['cpu']['wa'] ?? 0); $stl = (float)($ev['cpu']['st'] ?? 0);
@@ -472,7 +472,7 @@ function smpro_inv_speed($target) {
         if ($swap >= 40) $add('medium', 'Server is swapping (RAM exhausted)', 'swap ' . $swap . '% used · RAM ' . $memp . '%', 'Memory pressure slows everything. Reduce memory use or add RAM.');
     }
 
-    // 4) CloudLinux LVE throttling of THIS account — the #1 shared-hosting slowness cause
+    // 4) CloudLinux LVE throttling of THIS account - the #1 shared-hosting slowness cause
     if (is_file('/etc/cloudlinux-release')) {
         $lv = (string)@shell_exec('timeout 8 lveinfo --user=' . escapeshellarg($user) . ' --period=1h --show-columns aCPU,cpuf,epf,mpf,iof --json 2>/dev/null');
         if ($lv === '') $lv = (string)@shell_exec('timeout 8 lveinfo -d --user ' . escapeshellarg($user) . ' --period 1h 2>/dev/null');
@@ -484,7 +484,7 @@ function smpro_inv_speed($target) {
         }
     }
 
-    // 5) OPcache OFF for the account's PHP — flat tax on every request
+    // 5) OPcache OFF for the account's PHP - flat tax on every request
     if (preg_match('/php\s*[-_]?\s*(\d)\.?(\d)/i', $phpver, $pv) || preg_match('/(\d)(\d)/', $phpver, $pv)) {
         $bin = '/opt/cpanel/ea-php' . $pv[1] . $pv[2] . '/root/usr/bin/php';
         if (is_executable($bin)) {
@@ -542,7 +542,7 @@ function smpro_inv_speed($target) {
 }
 
 /* =====================================================================================
- * OPTIMIZE — proactively make a HEALTHY-but-improvable site FASTER (vs. smpro_inv_speed
+ * OPTIMIZE - proactively make a HEALTHY-but-improvable site FASTER (vs. smpro_inv_speed
  * which explains WHY it's slow). Read-only scan surfaces: stack, server flavor, asset
  * sizes (which files need optimizing + how), browser-cache/gzip gaps, and a full catalog
  * of speed scenarios. Every mutation is opt-in, backup-first, docroot-scoped, reversible.
@@ -620,7 +620,7 @@ function smpro_inv_optimize_htaccess_block($which) {
 }
 
 /** Splice the given SMPRO-PERF blocks into the current .htaccess. Only the SAME feature's fenced
- *  region is stripped (by its "# BEGIN SMPRO-PERF (<label>)" marker) before re-appending — so
+ *  region is stripped (by its "# BEGIN SMPRO-PERF (<label>)" marker) before re-appending - so
  *  applying gzip never removes a previously-applied cache block. Idempotent per feature. */
 function smpro_inv_optimize_merge_htaccess($current, $blocks) {
     $cur = (string)$current;
@@ -637,21 +637,21 @@ function smpro_inv_optimize_merge_htaccess($current, $blocks) {
 }
 
 /** Additive .htaccess writer for the Optimize path. Unlike smpro_inv_write_htaccess (which validates
- *  the WHOLE file as strict ASCII — and so refuses any docroot whose cPanel-generated .htaccess already
+ *  the WHOLE file as strict ASCII - and so refuses any docroot whose cPanel-generated .htaccess already
  *  contains smart-quote comments, i.e. almost all of them), this validates ONLY the block(s) we inject
  *  (we own what we add) and preserves the user's original bytes verbatim. Backup-first, chattr-aware,
- *  chown-to-docroot-owner, manifest kind='file' → one-click Undo via the existing file-restore branch. */
+ *  chown-to-docroot-owner, manifest kind='file' -> one-click Undo via the existing file-restore branch. */
 function smpro_inv_optimize_write_htaccess($r, $merged, $blocks, $run = '') {
     $docroot = rtrim($r['docroot'], '/');
     if (strpos($docroot, '/home/') !== 0) return ['ok' => false, 'msg' => 'refused: docroot outside /home'];
-    foreach ((array)$blocks as $b) {   // we are responsible for what we ADD — it must be clean ASCII, small, no PHP
+    foreach ((array)$blocks as $b) {   // we are responsible for what we ADD - it must be clean ASCII, small, no PHP
         if (strlen($b) > 8192 || stripos($b, '<?php') !== false || preg_match('/[^\x09\x0a\x0d\x20-\x7e]/', $b))
             return ['ok' => false, 'msg' => 'refused: generated block failed safety validation'];
     }
     if (strlen($merged) > 32768) return ['ok' => false, 'msg' => 'refused: resulting .htaccess is too large'];
     $user = (string)($r['user'] ?? (preg_match('#^/home/([^/]+)#', $docroot, $mu) ? $mu[1] : ''));
     $imm  = smpro_inv_imm($docroot . '/.htaccess');
-    // symlink-safe write — a root chown/write can never follow an account-planted symlink out of the account.
+    // symlink-safe write - a root chown/write can never follow an account-planted symlink out of the account.
     [$ok, $ht, $bak, $err] = smpro_inv_ht_safe_write($docroot . '/.htaccess', $docroot, $user, rtrim($merged, "\n") . "\n");
     if (!$ok) return ['ok' => false, 'msg' => $err];
     $id = smpro_inv_manifest_add(['user' => $r['user'], 'domain' => $r['domain'], 'action' => 'optimize_htaccess', 'kind' => 'file', 'from' => $ht, 'backup' => $bak, 'hardened' => $imm ? 1 : 0, 'run' => (string)$run]);
@@ -676,11 +676,11 @@ function smpro_inv_optimize_allowed($docroot, $path) {
 }
 
 /** Run an optimizer on a docroot file AS THE ACCOUNT USER (so output ownership stays correct and,
- *  on CloudLinux, the account's LVE can contain it) — hard-bounded by ulimit CPU-seconds + address
+ *  on CloudLinux, the account's LVE can contain it) - hard-bounded by ulimit CPU-seconds + address
  *  space + wall-clock timeout, and de-prioritized with nice/ionice. Falls back to running as root
  *  (the caller restores ownership afterwards regardless). $inner = the bare tool command with args
  *  already escaped. A root optimizer with only nice/ionice would ESCAPE the tenant's LVE cap and could
- *  load the whole shared box — the ulimit + single-file-at-a-time discipline is the hard safety net. */
+ *  load the whole shared box - the ulimit + single-file-at-a-time discipline is the hard safety net. */
 function smpro_inv_optimize_run_tool($user, $inner, $timeout) {
     $t = max(5, (int)$timeout);
     $bounded = 'ulimit -t ' . $t . ' 2>/dev/null; ulimit -v 1572864 2>/dev/null; exec nice -n ' . SMPRO_SCAN_NICE . ' ionice -c' . SMPRO_SCAN_IONICE_CLASS . ' ' . $inner;
@@ -752,7 +752,7 @@ function smpro_inv_optimize_scan($target) {
     $gzipPresent = (bool)($compressed || preg_match('/AddOutputFilterByType\s+DEFLATE/i', $htRaw) || preg_match('/<IfModule\s+mod_deflate/i', $htRaw) || strpos($htRaw, '# BEGIN SMPRO-PERF (compression)') !== false);
 
     // 5) asset inventory (one bounded, low-priority find). NOTE: many cPanel docroots are SYMLINKS
-    // (e.g. public_html → app/public), and find won't descend a symlinked start path — resolve it first.
+    // (e.g. public_html -> app/public), and find won't descend a symlinked start path - resolve it first.
     $assets = []; $imgNoWebp = []; $minifiable = []; $totalScanned = 0;
     $scanRoot = @realpath($docroot); if ($scanRoot === false || $scanRoot === '') $scanRoot = $docroot;
     $prune = "\\( -path '*/node_modules/*' -o -path '*/vendor/*' -o -path '*/cache/*' -o -path '*/.git/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/wp-admin/*' -o -path '*/wp-includes/*' \\) -prune -o";
@@ -795,14 +795,14 @@ function smpro_inv_optimize_scan($target) {
     $lsNote = $flavor === 'litespeed' ? ' LiteSpeed detected — these rules work, but installing LiteSpeed Cache (LSCache) gives page-cache + auto image/CSS/JS optimization and is the bigger win.' : '';
     $cfNote = $flavor === 'cloudflare_front' ? ' Cloudflare is in front — it already compresses/caches at the edge; origin rules still help direct-origin & non-cached hits.' : '';
 
-    // (a) browser cache — safe one-click
+    // (a) browser cache - safe one-click
     $scen[] = ['id' => 'htaccess:cache', 'title' => 'Add browser caching (Expires / Cache-Control)', 'category' => 'htaccess', 'safety' => 'safe_oneclick',
         'does' => 'Tells browsers to cache images, CSS, JS & fonts so returning visitors don\'t re-download them.',
         'method' => 'Appends a reversible mod_expires + Cache-Control block to .htaccess (HTML stays uncached). Original backed up; one-click Undo.' . $cfNote,
         'impact' => 'high', 'applicable' => !$cachePresent, 'skip_reason' => $cachePresent ? 'Browser caching is already configured (Expires/Cache-Control present).' : '',
         'files' => [['name' => '.htaccess', 'rel' => '.htaccess', 'bytes' => strlen($htRaw), 'human' => smpro_inv_human(strlen($htRaw)), 'status' => 'edit']]];
 
-    // (b) gzip — safe one-click
+    // (b) gzip - safe one-click
     $scen[] = ['id' => 'htaccess:gzip', 'title' => 'Enable Gzip compression', 'category' => 'htaccess', 'safety' => 'safe_oneclick',
         'does' => 'Compresses HTML/CSS/JS/SVG/JSON on the way out, cutting transfer size (often 60-80% smaller).',
         'method' => 'Appends a reversible mod_deflate block to .htaccess (binaries like JPG/PNG/WebP are skipped — already compressed). Backup + Undo.' . $lsNote,
@@ -812,7 +812,7 @@ function smpro_inv_optimize_scan($target) {
     // a package manager the plugin can drive to auto-install the image tools (turns advisory -> actionable)
     $pkgMgr = trim((string)@shell_exec('command -v dnf 2>/dev/null')) !== '' ? 'dnf' : (trim((string)@shell_exec('command -v yum 2>/dev/null')) !== '' ? 'yum' : (trim((string)@shell_exec('command -v apt-get 2>/dev/null')) !== '' ? 'apt' : ''));
 
-    // (c) image optimization — per-file, needs approval, tool-gated (auto-installable)
+    // (c) image optimization - per-file, needs approval, tool-gated (auto-installable)
     $imgTool = $tools['jpegoptim'] || $tools['optipng'] || $tools['gifsicle'];
     if ($bigImages) $scen[] = ['id' => 'assets:image', 'title' => 'Optimize large images (' . count($bigImages) . ')', 'category' => 'assets', 'safety' => 'needs_approval',
         'does' => 'Recompresses oversized JPG/PNG/GIF images (lossless PNG via optipng, JPEG quality 82) — smaller files, same page.',
@@ -822,7 +822,7 @@ function smpro_inv_optimize_scan($target) {
         'skip_reason' => $imgTool ? '' : ($pkgMgr ? 'Image tools not installed yet — install them with one click.' : 'Image tools (jpegoptim/optipng) are not installed and no package manager was found.'),
         'files' => array_slice($bigImages, 0, 25)];
 
-    // (d) WebP generation — additive, per-file, needs approval, tool-gated (auto-installable)
+    // (d) WebP generation - additive, per-file, needs approval, tool-gated (auto-installable)
     if ($imgNoWebp) $scen[] = ['id' => 'assets:webp', 'title' => 'Generate WebP versions (' . count($imgNoWebp) . ')', 'category' => 'assets', 'safety' => 'needs_approval',
         'does' => 'Creates a modern WebP copy alongside each JPG/PNG (original untouched) — much smaller for browsers that support it.',
         'method' => $tools['cwebp'] ? 'Per file: cwebp writes a NEW <file>.webp sibling AS THE ACCOUNT USER; the original is never modified. Undo deletes the generated .webp. Pair with the "Serve WebP" rule below.' : ($pkgMgr ? 'cwebp is not installed — click "Install & enable" and the plugin installs libwebp-tools for you, then this becomes one-click.' : 'cwebp is not installed and no package manager — advisory only.'),
@@ -831,14 +831,14 @@ function smpro_inv_optimize_scan($target) {
         'skip_reason' => $tools['cwebp'] ? '' : ($pkgMgr ? 'cwebp not installed yet — install it with one click.' : 'cwebp (libwebp-tools) is not installed and no package manager was found.'),
         'files' => array_slice($imgNoWebp, 0, 25)];
 
-    // (e) serve WebP via .htaccess — needs approval
+    // (e) serve WebP via .htaccess - needs approval
     if ($imgNoWebp || preg_match('/\.webp/i', $htRaw)) $scen[] = ['id' => 'htaccess:webp_serve', 'title' => 'Serve WebP to supported browsers', 'category' => 'htaccess', 'safety' => 'needs_approval',
         'does' => 'Automatically serves the .webp version to browsers that accept it, falling back to the original otherwise.',
         'method' => 'Appends a reversible mod_rewrite content-negotiation block to .htaccess. Backup + Undo.' . ($flavor === 'cloudflare_front' ? ' (Cloudflare Polish may already do this at the edge.)' : ''),
         'impact' => 'medium', 'applicable' => $flavor !== 'cloudflare_front', 'skip_reason' => '',
         'files' => [['name' => '.htaccess', 'rel' => '.htaccess', 'bytes' => strlen($htRaw), 'human' => smpro_inv_human(strlen($htRaw)), 'status' => 'edit']]];
 
-    // (f) minify CSS/JS — per-file, needs approval, tool-gated
+    // (f) minify CSS/JS - per-file, needs approval, tool-gated
     $minTool = $tools['terser'] || $tools['uglifyjs'] || $tools['cleancss'];
     if ($minifiable) $scen[] = ['id' => 'assets:minify', 'title' => 'Minify CSS / JS (' . count($minifiable) . ')', 'category' => 'assets', 'safety' => 'needs_approval',
         'does' => 'Strips whitespace/comments from large un-minified CSS & JS files to shrink them.',
@@ -847,7 +847,7 @@ function smpro_inv_optimize_scan($target) {
         'skip_reason' => $minTool ? '' : 'CSS/JS minifiers (terser/cleancss) are not installed on this server.',
         'files' => array_slice($minifiable, 0, 25)];
 
-    // (f2) brotli compression — per-account htaccess, offered only when mod_brotli is loaded & not already on & not CF-fronted
+    // (f2) brotli compression - per-account htaccess, offered only when mod_brotli is loaded & not already on & not CF-fronted
     $hasBrotli = stripos((string)@shell_exec('timeout 6 sh -c ' . escapeshellarg('apachectl -M 2>/dev/null; httpd -M 2>/dev/null; /usr/local/apache/bin/httpd -M 2>/dev/null') . ' 2>/dev/null'), 'brotli') !== false;
     $brOnWire = preg_match('/content-encoding:\s*br/i', isset($hdr) ? $hdr : '') === 1;
     if ($hasBrotli && !$brOnWire && $flavor !== 'cloudflare_front' && strpos($htRaw, '# BEGIN SMPRO-PERF (brotli)') === false)
@@ -857,15 +857,15 @@ function smpro_inv_optimize_scan($target) {
             'impact' => 'medium', 'applicable' => true, 'skip_reason' => '',
             'files' => [['name' => '.htaccess', 'rel' => '.htaccess', 'bytes' => strlen($htRaw), 'human' => smpro_inv_human(strlen($htRaw)), 'status' => 'edit']]];
 
-    // (g) advisory catalog — fold the live speed causes (OPcache/PHP/DB/cache/HTTP2/LVE/CDN…) + stack scenarios.
+    // (g) advisory catalog - fold the live speed causes (OPcache/PHP/DB/cache/HTTP2/LVE/CDN...) + stack scenarios.
     // Where a cause maps to a proven, reversible Server Tune-up applier, tag it server_apply=<recId> so the UI
     // can offer a one-click "Apply (server-wide)" alongside the deep-link (gated off behind Cloudflare for edge-served ones).
     $sp = smpro_inv_speed($target);
     $spCauses = (!empty($sp['ok']) && !empty($sp['causes'])) ? $sp['causes'] : [];
     foreach ($spCauses as $c) {
         $sa = null;
-        if (stripos($c['cause'], 'OPcache') !== false) $sa = 'php_opcache';                                  // origin PHP — always applicable
-        elseif (stripos($c['cause'], 'slow-query') !== false) $sa = 'mysql_slowlog';                          // origin MySQL — always applicable
+        if (stripos($c['cause'], 'OPcache') !== false) $sa = 'php_opcache';                                  // origin PHP - always applicable
+        elseif (stripos($c['cause'], 'slow-query') !== false) $sa = 'mysql_slowlog';                          // origin MySQL - always applicable
         elseif (stripos($c['cause'], 'HTTP/2') !== false && $flavor !== 'cloudflare_front') $sa = 'http_h2_apache'; // moot behind CF
         $scen[] = ['id' => 'advisory:' . substr(md5($c['cause']), 0, 8), 'title' => $c['cause'], 'category' => 'advisory', 'safety' => 'advisory_only',
             'does' => $c['evidence'], 'method' => $c['fix'], 'impact' => $c['sev'] === 'high' ? 'high' : ($c['sev'] === 'medium' ? 'medium' : 'low'),
@@ -890,7 +890,7 @@ function smpro_inv_optimize_scan($target) {
     if ($flavor !== 'cloudflare_front') $adv[] = ['t' => 'Put a CDN in front (Cloudflare)', 'd' => 'A CDN caches static assets at edge locations near visitors and adds Brotli/HTTP-3.', 'm' => 'Point DNS at Cloudflare (free tier) and enable caching + Brotli. Origin stays this server.', 'i' => 'medium'];
     foreach ($adv as $a) $scen[] = ['id' => 'advisory:' . substr(md5($a['t']), 0, 8), 'title' => $a['t'], 'category' => 'advisory', 'safety' => 'advisory_only', 'does' => $a['d'], 'method' => $a['m'], 'impact' => $a['i'], 'applicable' => true, 'files' => [], 'server_apply' => ($a['sa'] ?? null), 'deep_link' => (!empty($a['sa']) ? ['page' => 'server-tuning', 'label' => 'Open Server Tune-up'] : null)];
 
-    // rank scenarios: actionable (safe → approval) first, by impact; advisory last
+    // rank scenarios: actionable (safe -> approval) first, by impact; advisory last
     $safRank = ['safe_oneclick' => 0, 'needs_approval' => 1, 'advisory_only' => 2];
     $impRank = ['high' => 0, 'medium' => 1, 'low' => 2];
     usort($scen, function ($a, $b) use ($safRank, $impRank) {
@@ -905,7 +905,7 @@ function smpro_inv_optimize_scan($target) {
 }
 
 /** Bounded GC of orphaned optimize backups (.smpro-optbak-* / .htaccess.smpro-bak-*) that are NOT
- *  referenced by a still-applied manifest entry and are older than $days — so repeated runs can't
+ *  referenced by a still-applied manifest entry and are older than $days - so repeated runs can't
  *  slowly fill an account's disk/inodes. Cheap: one bounded find, capped deletes. */
 function smpro_inv_optimize_gc($docroot, $days = 7) {
     $docroot = @realpath($docroot); if ($docroot === false || strpos($docroot, '/home/') !== 0) return 0;
@@ -960,7 +960,7 @@ function smpro_inv_optimize_apply($target, $id, $run = '') {
         $stFile = @stat($abs); $fileMode = $stFile ? ($stFile['mode'] & 0777) : 0644;
         if ($acctUid !== false && $stFile && $stFile['uid'] !== $acctUid) return ['ok' => true, 'noop' => 1, 'msg' => basename($abs) . ' is not owned by the account — skipped for safety.', 'files' => [$rel]];
         $before = (int)@filesize($abs); $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION)); $tools = smpro_inv_optimize_tools();
-        // size guard: a 40MP PNG can burn CPU/RAM even bounded — skip huge files on a shared box
+        // size guard: a 40MP PNG can burn CPU/RAM even bounded - skip huge files on a shared box
         if ($before > 15 * 1024 * 1024) return ['ok' => true, 'noop' => 1, 'msg' => basename($abs) . ' is larger than 15 MB — skipped to protect the shared server.', 'files' => [$rel]];
         // disk/quota guard: don't create backups/.webp when the account is (near) full
         $disk = smpro_inv_disk($r['user']); if ($disk && ($disk['pct'] ?? 0) >= 97) return ['ok' => false, 'msg' => 'The account disk quota is nearly full (' . (int)$disk['pct'] . '%) — free space before optimizing (backups need room).'];
@@ -980,7 +980,7 @@ function smpro_inv_optimize_apply($target, $id, $run = '') {
             return ['ok' => true, 'msg' => 'Created ' . basename($webp) . ' (' . smpro_inv_human($before) . ' → ' . smpro_inv_human($after) . ' WebP).', 'undo_id' => $undo, 'before' => $before, 'after' => $after, 'files' => [$rel]];
         }
 
-        // in-place actions (image recompress, minify) — backup first, validate, swap, keep backup for undo
+        // in-place actions (image recompress, minify) - backup first, validate, swap, keep backup for undo
         $bak = $abs . '.smpro-optbak-' . date('Ymd_His') . '-' . smpro_inv_uniqtag();
         if (!@copy($abs, $bak)) return ['ok' => false, 'msg' => 'Could not create a backup — aborted (nothing changed).'];
         @chown($bak, $acctUid !== false ? $acctUid : @fileowner($abs)); @chgrp($bak, $acctGid !== false ? $acctGid : @filegroup($abs));
@@ -993,7 +993,7 @@ function smpro_inv_optimize_apply($target, $id, $run = '') {
             if (!$ran) { @unlink($bak); return ['ok' => false, 'msg' => 'No image tool available for a ' . strtoupper($ext) . ' file.']; }
             clearstatcache(); $after = (int)@filesize($abs);
             $valid = @getimagesize($abs) !== false;
-            if (!$valid || $after <= 0 || $after >= $before) {   // no gain or corrupt → restore, no manifest
+            if (!$valid || $after <= 0 || $after >= $before) {   // no gain or corrupt -> restore, no manifest
                 @copy($bak, $abs); @unlink($bak); smpro_inv_optimize_fix_owner($abs, $acctUid, $acctGid, $fileMode);
                 return ['ok' => true, 'msg' => $valid ? ('Already optimal — ' . basename($abs) . ' could not be made smaller (left unchanged).') : ('Optimizer produced an invalid image — restored the original.'), 'before' => $before, 'after' => $before, 'files' => [$rel], 'noop' => 1];
             }
@@ -1037,7 +1037,7 @@ function smpro_inv_optimize_undo_run($runId) {
 }
 
 /** Apply a SERVER-GLOBAL tuning recommendation by REUSING the proven, reversible Server Tune-up engine
- *  (smpro_tun_apply: backup → change → validate → restartsrv, restorable via Server Tune-up). Whitelisted
+ *  (smpro_tun_apply: backup -> change -> validate -> restartsrv, restorable via Server Tune-up). Whitelisted
  *  rec ids only. This affects ALL sites on the box, so the UI gates it behind an explicit confirm; it is
  *  deliberately NOT recorded in the per-account Site Doctor undo list (its undo lives in Server Tune-up). */
 function smpro_inv_optimize_apply_server($recId) {
@@ -1049,7 +1049,7 @@ function smpro_inv_optimize_apply_server($recId) {
     return $res;
 }
 
-/** Is a path immutable (chattr +i) — i.e. hardened so it can't be renamed/edited? */
+/** Is a path immutable (chattr +i) - i.e. hardened so it can't be renamed/edited? */
 function smpro_inv_imm($p) {
     $r = (string)@shell_exec('lsattr -d ' . escapeshellarg($p) . ' 2>/dev/null');
     $tok = trim((string)strtok(trim($r), " \t"));
@@ -1061,13 +1061,13 @@ function smpro_inv_fix_allowed($docroot, $path) {
 }
 
 /** Find hardened/locked items that block the site from self-repairing.
- *  Priority: consult the PHP Harden manifest (authoritative — covers every file it locked);
+ *  Priority: consult the PHP Harden manifest (authoritative - covers every file it locked);
  *  then fall back to a broad lsattr scan over the docroot's standard files + .htaccess files.
  *  Also flags .htaccess files the SITE user can't write (mode missing owner-write / wrong owner). */
 function smpro_inv_hardened_scan($docroot, $user = '') {
     if (!is_dir($docroot) || strpos($docroot, '/home/') !== 0) return [];
     $out = [];
-    // ── 1. PHP Harden manifest (most accurate — lists exactly what it locked) ──────────────────
+    // ── 1. PHP Harden manifest (most accurate - lists exactly what it locked) ──────────────────
     $u = $user !== '' ? $user : basename(dirname(rtrim($docroot, '/')));
     $mp = SMPRO_VARLIB . '/php_harden/' . preg_replace('/[^a-zA-Z0-9._-]/', '', $u) . '.json';
     if (is_file($mp)) {
@@ -1115,7 +1115,7 @@ function smpro_inv_hardened_scan($docroot, $user = '') {
 
 /** Detect "self-healer" mu-plugins that keep reverting our fixes (re-hardening / forcing RewriteBase),
  *  by matching tags in the site error_log (e.g. "[some-mu-plugin] ... auto-fixed (RewriteBase") to mu-plugin
- *  files. The tag is whatever the plugin writes at runtime — no plugin name is hardcoded here. */
+ *  files. The tag is whatever the plugin writes at runtime - no plugin name is hardcoded here. */
 function smpro_inv_selfhealers($docroot) {
     $out = []; $log = $docroot . '/error_log'; $mu = $docroot . '/wp-content/mu-plugins';
     if (!is_file($log) || !is_dir($mu)) return $out;
@@ -1134,7 +1134,7 @@ function smpro_inv_selfhealers($docroot) {
     return $out;
 }
 
-/** Disable a self-healing mu-plugin file (rename .php → .disabled). Reversible. Hardening-aware. */
+/** Disable a self-healing mu-plugin file (rename .php -> .disabled). Reversible. Hardening-aware. */
 function smpro_inv_fix_muplugin($r, $path) {
     $docroot = $r['docroot']; $path = rtrim((string)$path, '/');
     if (!preg_match('#^' . preg_quote($docroot, '#') . '/wp-content/mu-plugins/[A-Za-z0-9._-]+\.php$#', $path)) return ['ok'=>false,'msg'=>'refused: not a mu-plugin file'];
@@ -1152,7 +1152,7 @@ function smpro_inv_fix_muplugin($r, $path) {
     return ['ok'=>true,'msg'=>'Disabled self-healing mu-plugin ' . basename($path) . ' (it was reverting fixes / forcing the wrong RewriteBase). Reversible.','undo_id'=>$id];
 }
 
-/** RULE #1 fix: un-harden — clear immutability (chattr -i) + strip PHP Harden deny-exec blocks +
+/** RULE #1 fix: un-harden - clear immutability (chattr -i) + strip PHP Harden deny-exec blocks +
  *  restore owner-writable perms on ALL locked files/folders PHP Harden (or any other hardener) touched.
  *  Reads the PHP Harden manifest for the user so it unlocks the full set, not just the 5 paths the
  *  old scan checked. Also updates the manifest status to 'unlocked' so the PHP Harden page reflects it. */
@@ -1186,8 +1186,8 @@ function smpro_inv_fix_unharden($r) {
         if (strpos($p, smpro_user_home($user) . '/') !== 0 && $p !== smpro_user_home($user)) continue;  // scope to this account
         // SECURITY (privesc): resolve to a realpath confined to the account home BEFORE any root mutation.
         // The manifest/scan paths ($p) are account-controlled; a symlinked DIRECTORY component (e.g. the
-        // owner swaps wp-content/uploads → /root after harden) is caught here (realpath escapes /home/$user
-        // → rejected), and a root-owned resolved file is refused outright — so the chattr/write/chown below
+        // owner swaps wp-content/uploads -> /root after harden) is caught here (realpath escapes /home/$user
+        // -> rejected), and a root-owned resolved file is refused outright - so the chattr/write/chown below
         // can never take ownership of, or write through, a root file. (No race needed for the original bug.)
         $safe = function_exists('smpro_path_safe') ? smpro_path_safe($p, $confine) : '';
         if ($safe === '' || $safe === false) continue;
@@ -1222,7 +1222,7 @@ function smpro_inv_fix_unharden($r) {
 
 /**
  * Apply a safe, reversible fix. Clears hardening (immutable flag on the target + its parent dir)
- * BEFORE renaming, then re-hardens the parent — so a hardened plugin/theme can still be disabled.
+ * BEFORE renaming, then re-hardens the parent - so a hardened plugin/theme can still be disabled.
  * Returns ['ok','msg','undo_id'?].
  */
 function smpro_inv_fix($action, $target, $path) {
@@ -1258,11 +1258,11 @@ function smpro_inv_fix($action, $target, $path) {
 /**
  * SECURITY (root-context, shared-hosting): safely rewrite an account-owned .htaccess as root.
  * The account owner controls their /home dir, so a plain copy()/file_put_contents()/chown() on
- * docroot/.htaccess follows a symlink they plant (→ read /etc/shadow, or chown a root file to their
+ * docroot/.htaccess follows a symlink they plant (-> read /etc/shadow, or chown a root file to their
  * uid = privesc). This helper: (1) confines the target to /home/<user> and REJECTS a symlink via
  * smpro_path_safe (realpath), (2) writes the backup with O_EXCL (fopen 'xb') so a pre-planted symlink
  * at the backup path can't be followed, (3) writes the new content to an O_EXCL temp then ATOMIC-renames
- * over the target — rename replaces a symlink rather than following it, so the root write + chown can
+ * over the target - rename replaces a symlink rather than following it, so the root write + chown can
  * never land outside the account even if the leaf was swapped after the check. Returns [ok, bak, err].
  */
 function smpro_inv_ht_safe_write($ht, $docroot, $user, $new) {
@@ -1281,7 +1281,7 @@ function smpro_inv_ht_safe_write($ht, $docroot, $user, $new) {
     if (is_file($ht)) {                                                // back up only an existing file
         $bak = $ht . '.smpro-bak-' . date('Ymd_His') . '-' . $rnd;
         $cur = @file_get_contents($ht);
-        $bfh = ($cur !== false) ? @fopen($bak, 'xb') : false;         // O_CREAT|O_EXCL → fails on a planted symlink/file
+        $bfh = ($cur !== false) ? @fopen($bak, 'xb') : false;         // O_CREAT|O_EXCL -> fails on a planted symlink/file
         if ($bfh === false) { if ($imm) @shell_exec('chattr +i ' . escapeshellarg($ht) . ' 2>/dev/null'); return [false, $ht, '', 'backup failed (permissions?)']; }
         @fwrite($bfh, $cur); @fclose($bfh); @chmod($bak, 0600);
     }
@@ -1306,7 +1306,7 @@ function smpro_inv_fix_htaccess($r) {
     $docroot = $r['docroot']; $user = (string)($r['user'] ?? '');
     if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
     // Confine + reject symlink BEFORE reading (a symlinked .htaccess would otherwise leak /etc/shadow into the backup).
-    // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created — realpath() returns
+    // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created - realpath() returns
     // false on a non-existent leaf, which used to make these repairs refuse a deleted .htaccess. The leaf's
     // own is_link guard (below) + smpro_inv_ht_safe_write's O_EXCL/rename keep the symlink-leak protection.
     if ($user === '' || !function_exists('smpro_path_safe')) return ['ok'=>false,'msg'=>'.htaccess repair unavailable (no account context)'];
@@ -1317,17 +1317,17 @@ function smpro_inv_fix_htaccess($r) {
     if (is_link($ht)) return ['ok'=>false,'msg'=>'.htaccess is a symlink — refusing to touch it'];
     $base = '/' . ($r['subpath'] !== '' ? trim($r['subpath'], '/') . '/' : '');
     $full = (string)@file_get_contents($ht);
-    // SURGICAL: replace ONLY the WordPress block — preserve the cPanel PHP handler, any security-plugin rules, etc.
+    // SURGICAL: replace ONLY the WordPress block - preserve the cPanel PHP handler, any security-plugin rules, etc.
     $wp = "# BEGIN WordPress\n<IfModule mod_rewrite.c>\nRewriteEngine On\nRewriteBase " . $base . "\nRewriteRule ^index\\.php$ - [L]\nRewriteCond %{REQUEST_FILENAME} !-f\nRewriteCond %{REQUEST_FILENAME} !-d\nRewriteRule . " . $base . "index.php [L]\n</IfModule>\n# END WordPress";
     if (preg_match('/# BEGIN WordPress.*?# END WordPress/s', $full)) { $new = preg_replace('/# BEGIN WordPress.*?# END WordPress/s', $wp, $full, 1); }
     else {
-        // m3 FIX — only PREPEND a WordPress front-controller block on an ACTUAL WordPress site; on Laravel/Joomla/etc.
+        // m3 FIX - only PREPEND a WordPress front-controller block on an ACTUAL WordPress site; on Laravel/Joomla/etc.
         // a WP rewrite block breaks routing. (Replacing an existing BEGIN WordPress block above is always safe.)
         $home = (string)($r['home'] ?? dirname($docroot));
         $isWp = is_file($docroot . '/wp-config.php') || is_file($home . '/wp-config.php')
              || is_file($docroot . '/wp-load.php')   || is_file($docroot . '/wp-login.php');
         if (!$isWp) return ['ok'=>false,'msg'=>'refused: not a WordPress site — will not inject a WordPress rewrite block (would break routing)'];
-        $new = $wp . "\n\n" . $full;                                   // no WP block → prepend it, keep the rest
+        $new = $wp . "\n\n" . $full;                                   // no WP block -> prepend it, keep the rest
     }
     if ($new === $full) return ['ok'=>false,'msg'=>'.htaccess already correct (RewriteBase ' . $base . ')'];
     $imm = smpro_inv_imm($ht);
@@ -1344,12 +1344,12 @@ function smpro_inv_has_force_https($docroot) {
     $c = (string)@file_get_contents($ht);
     return (bool)(preg_match('/RewriteRule\b[^\n]*https:\/\/[^\n]*\[[^\]]*R/i', $c) || preg_match('/Redirect(Match)?\b[^\n]*\bhttps:\/\//i', $c));
 }
-/** Comment OUT a force-HTTPS redirect block in .htaccess — the real fix when the site is already https in the DB
+/** Comment OUT a force-HTTPS redirect block in .htaccess - the real fix when the site is already https in the DB
  *  but still loops (a force-https rule + an SSL-terminating proxy bounce). Reversible (full backup). */
 function smpro_inv_fix_neutralize_https($r) {
     $docroot = $r['docroot']; $user = (string)($r['user'] ?? '');
     if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
-    // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created — realpath() returns
+    // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created - realpath() returns
     // false on a non-existent leaf, which used to make these repairs refuse a deleted .htaccess. The leaf's
     // own is_link guard (below) + smpro_inv_ht_safe_write's O_EXCL/rename keep the symlink-leak protection.
     if ($user === '' || !function_exists('smpro_path_safe')) return ['ok'=>false,'msg'=>'.htaccess repair unavailable (no account context)'];
@@ -1367,7 +1367,7 @@ function smpro_inv_fix_neutralize_https($r) {
             }
             $out[] = '# [smpro] ' . $ln; $changed++; continue;
         }
-        // M4 FIX — only comment whole-HOST scheme forcers (source "/" or a root catch-all regex), NOT content
+        // M4 FIX - only comment whole-HOST scheme forcers (source "/" or a root catch-all regex), NOT content
         // redirects like `Redirect 301 /promo https://host/sale`, which target a specific path and must be kept.
         if (stripos($ln, 'http://') === false
             && (preg_match('#^\s*Redirect\s+(?:permanent\s+|\d{3}\s+)?/\s+https://#i', $ln)
@@ -1395,13 +1395,13 @@ function smpro_inv_htaccess_syntax_err(array $serverlogs) {
     return false;
 }
 
-/** SCENARIO: .htaccess has an Apache-level syntax error (any platform) — back up the broken file and
+/** SCENARIO: .htaccess has an Apache-level syntax error (any platform) - back up the broken file and
  *  write a safe minimal stub so Apache stops rejecting every request. For WordPress, the stub includes
- *  the correct rewrite block; for all other platforms it is a blank placeholder. Reversible (undo → backup). */
+ *  the correct rewrite block; for all other platforms it is a blank placeholder. Reversible (undo -> backup). */
 function smpro_inv_fix_htaccess_syntax($r) {
     $docroot = $r['docroot']; $user = (string)($r['user'] ?? '');
     if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
-    // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created — realpath() returns
+    // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created - realpath() returns
     // false on a non-existent leaf, which used to make these repairs refuse a deleted .htaccess. The leaf's
     // own is_link guard (below) + smpro_inv_ht_safe_write's O_EXCL/rename keep the symlink-leak protection.
     if ($user === '' || !function_exists('smpro_path_safe')) return ['ok'=>false,'msg'=>'.htaccess repair unavailable (no account context)'];
@@ -1426,7 +1426,7 @@ function smpro_inv_fix_htaccess_syntax($r) {
 }
 
 /** SCENARIO: a WordPress drop-in file (object-cache.php / db.php / advanced-cache.php) is crashing the site.
- *  Rename to disable — WordPress silently falls back to its native handler. Reversible. */
+ *  Rename to disable - WordPress silently falls back to its native handler. Reversible. */
 function smpro_inv_fix_disable_dropin($r, $path) {
     $docroot = $r['docroot']; $path = rtrim((string)$path, '/'); $base = basename($path);
     if (!in_array($base, ['object-cache.php','db.php','advanced-cache.php'], true)) return ['ok'=>false,'msg'=>'refused: ' . $base . ' is not a supported drop-in'];
@@ -1462,7 +1462,7 @@ function smpro_inv_fix_restart_phpfpm($r) {
     return ['ok'=>false,'msg'=>'PHP-FPM restart script not found — restart manually via WHM → Service Manager → PHP-FPM'];
 }
 
-/** SCENARIO: "Permission denied" errors — wrong uid/mode on PHP files (common after a bad upload or chown mishap).
+/** SCENARIO: "Permission denied" errors - wrong uid/mode on PHP files (common after a bad upload or chown mishap).
  *  Applies standard cPanel permissions (dirs=755, PHP files=644) and restores correct ownership. Safe: excludes cache/uploads. */
 function smpro_inv_fix_permissions($r) {
     $docroot = $r['docroot'];
@@ -1480,7 +1480,7 @@ function smpro_inv_fix_permissions($r) {
 }
 
 /** SCENARIO: Stale Laravel bootstrap/config/routes cache after a deployment causes a PHP fatal on every request.
- *  Clears bootstrap/cache/*.php — Laravel regenerates them automatically on the next request. */
+ *  Clears bootstrap/cache/*.php - Laravel regenerates them automatically on the next request. */
 function smpro_inv_fix_laravel_cache($r, $cacheDir = '') {
     $docroot = $r['docroot'];
     if ($cacheDir === '') {
@@ -1518,14 +1518,14 @@ function smpro_inv_fixes($res) {
         $out[] = ['action'=>$f['fix_action'] ?: 'disable_plugin','path'=>$f['fix_target'],'label'=>'Disable ' . basename($f['fix_target']),'why'=>$f['kind']];
     }
     if (!empty($res['htaccess']['issues'])) $out[] = ['action'=>'fix_htaccess','path'=>$docroot . '/.htaccess','label'=>'Repair .htaccess','why'=>implode('; ', $res['htaccess']['issues'])];
-    // REDIRECT LOOP (too many redirects): deterministic fixes, safest first. fix_wp_url (http→https) is the most
+    // REDIRECT LOOP (too many redirects): deterministic fixes, safest first. fix_wp_url (http->https) is the most
     // common cure; .htaccess repair clears a stray/duplicate redirect; an SSL-forcing plugin is the last resort.
     if (!empty($res['http']['loop'])) {
         $w = $res['wp'] ?? [];
         if (!empty($w['siteurl']) && stripos((string)$w['siteurl'], 'http://') === 0 && !smpro_inv_fixes_has($out, 'fix_wp_url'))
             $out[] = ['action'=>'fix_wp_url','path'=>$docroot,'label'=>'Set WordPress Site URL to HTTPS','why'=>'siteurl/home is http://'];
         // the real cure when the site is ALREADY https but still loops: an on-server force-HTTPS redirect rule.
-        // M3 FIX — only offer this when the site is NOT behind a Cloudflare/CDN proxy AND the redirect chain shows a
+        // M3 FIX - only offer this when the site is NOT behind a Cloudflare/CDN proxy AND the redirect chain shows a
         // real plaintext (http://) hop. A Cloudflare Flexible-SSL loop is OFF-server: removing the origin's HTTPS
         // enforcement would degrade security without owning the loop (the correct fix there is CF SSL mode = Full).
         $dnsProxied = !empty($res['dns']['proxied']);
@@ -1534,7 +1534,7 @@ function smpro_inv_fixes($res) {
             $out[] = ['action'=>'neutralize_https','path'=>$docroot . '/.htaccess','label'=>'Disable the force-HTTPS redirect in .htaccess','why'=>'on-server force-HTTPS rule loops with an SSL-terminating front-end (no CDN proxy detected)'];
         if (!smpro_inv_fixes_has($out, 'fix_htaccess'))
             $out[] = ['action'=>'fix_htaccess','path'=>$docroot . '/.htaccess','label'=>'Repair .htaccess rewrite block','why'=>'restore a clean WordPress rewrite block'];
-        // LAST resort — an SSL-forcing plugin double-redirecting. Safe: "Fix it" applies fixes one-by-one and stops
+        // LAST resort - an SSL-forcing plugin double-redirecting. Safe: "Fix it" applies fixes one-by-one and stops
         // at the first that works, so a plugin is disabled only if the URL/.htaccess fixes did not break the loop.
         foreach ((glob($docroot . '/wp-content/plugins/*{ssl,https,force-ssl}*', GLOB_BRACE) ?: []) as $pp) {
             if (is_dir($pp)) $out[] = ['action'=>'disable_plugin','path'=>$pp,'label'=>'Disable SSL plugin ' . basename($pp),'why'=>'an SSL-forcing plugin can double-redirect with the server HTTPS rule'];
@@ -1544,7 +1544,7 @@ function smpro_inv_fixes($res) {
     if (!smpro_inv_fixes_has($out, 'fix_htaccess') && !smpro_inv_fixes_has($out, 'fix_htaccess_syntax')
         && !empty($res['serverlogs']) && smpro_inv_htaccess_syntax_err($res['serverlogs']))
         $out[] = ['action'=>'fix_htaccess_syntax','path'=>$docroot,'label'=>'Replace broken .htaccess (Apache syntax error)','why'=>'Server logs show an Apache/LiteSpeed .htaccess syntax error — the server rejects every request until the file is replaced.'];
-    // PHP-FPM POOL DOWN: HTTP 502/503 + connect-failure in server logs → restart PHP-FPM.
+    // PHP-FPM POOL DOWN: HTTP 502/503 + connect-failure in server logs -> restart PHP-FPM.
     if (!smpro_inv_fixes_has($out, 'restart_phpfpm') && in_array((int)($res['http']['code'] ?? 0), [502,503], true)) {
         $hasFpmErr = false;
         foreach (($res['serverlogs'] ?? []) as $l) { $ll = strtolower((string)$l);
@@ -1554,7 +1554,7 @@ function smpro_inv_fixes($res) {
         }
         if ($hasFpmErr) $out[] = ['action'=>'restart_phpfpm','path'=>$docroot,'label'=>'Restart PHP-FPM','why'=>'HTTP ' . $res['http']['code'] . ' + "connect() failed" in server logs — the PHP-FPM pool appears to be down.'];
     }
-    // PERMISSION DENIED: wrong uid/mode on PHP files → normalise 755/644 + ownership.
+    // PERMISSION DENIED: wrong uid/mode on PHP files -> normalise 755/644 + ownership.
     if (!smpro_inv_fixes_has($out, 'fix_permissions')) {
         $hasPermErr = false;
         foreach (($res['logtail'] ?? []) as $l) { if (strpos(strtolower((string)$l), 'permission denied') !== false) { $hasPermErr = true; break; } }
@@ -1571,7 +1571,7 @@ function smpro_inv_fixes($res) {
             if ($isCulprit) { $out[] = ['action'=>'disable_dropin','path'=>$dp,'label'=>'Disable WordPress drop-in ' . $di,'why'=>$di . ' is throwing PHP fatal errors — disabling lets WordPress use its native fallback.']; break; }
         }
     }
-    // LARAVEL STALE CACHE: stale bootstrap/cache/*.php after a deployment → clear so Laravel regenerates.
+    // LARAVEL STALE CACHE: stale bootstrap/cache/*.php after a deployment -> clear so Laravel regenerates.
     if (!smpro_inv_fixes_has($out, 'clear_laravel_cache') && !empty($res['fatals'])
         && strtolower((string)($res['detect']['platform'] ?? '')) === 'laravel') {
         $approot = is_file(dirname($docroot) . '/artisan') ? dirname($docroot) : $docroot;
@@ -1584,7 +1584,7 @@ function smpro_inv_fixes($res) {
 /** Dedup helper: is an action already queued? */
 function smpro_inv_fixes_has(array $out, $action) { foreach ($out as $o) if (($o['action'] ?? '') === $action) return true; return false; }
 /** BASE RULE for Site Doctor: BEFORE any fix, clear immutable/hardening locks on the files a fix may need to
- *  edit — otherwise PHP Harden / emergency-harden / a security plugin's lock makes the write fail silently and
+ *  edit - otherwise PHP Harden / emergency-harden / a security plugin's lock makes the write fail silently and
  *  the "fix" does nothing (exactly the reported symptom). Returns how many locked targets were cleared. */
 function smpro_inv_unharden_base($res) {
     $d = rtrim((string)($res['docroot'] ?? ''), '/'); if ($d === '' || strpos($d, '/home/') !== 0) return 0;
@@ -1617,7 +1617,7 @@ function smpro_inv_write_htaccess($r, $content) {
 function smpro_inv_ai_plan($target) {
     $res = smpro_inv_run($target); if (empty($res['ok'])) return ['ok'=>false,'msg'=>$res['msg'] ?? 'resolve failed'];
     if (!function_exists('smpro_ai_available') || !smpro_ai_available()) {
-        // No AI → fall back to the deterministic multi-fix.
+        // No AI -> fall back to the deterministic multi-fix.
         return smpro_inv_ai_fix($target);
     }
     $docroot = $res['docroot'];
@@ -1692,7 +1692,7 @@ function smpro_inv_ai_plan($target) {
 }
 
 /** "Fix it" button: DETERMINISTIC scenario fixes only (no AI). Applies the known fixes in order,
- *  re-checks the site, and flags escalate=true (→ hand off to AI Fix) if it's still failing. */
+ *  re-checks the site, and flags escalate=true (-> hand off to AI Fix) if it's still failing. */
 function smpro_inv_fixit($target) {
     $res = smpro_inv_run($target); if (empty($res['ok'])) return ['ok'=>false,'msg'=>$res['msg'] ?? 'resolve failed'];
     $fixes = $res['fixes'] ?? []; $steps = []; $any = false;
@@ -1707,7 +1707,7 @@ function smpro_inv_fixit($target) {
         return ($hops >= 10) ? 310 : $code;                  // 310 = still looping
     };
     $after = 0;
-    // Apply fixes INCREMENTALLY and stop at the first that brings the site up — least-disruptive fix wins, so a
+    // Apply fixes INCREMENTALLY and stop at the first that brings the site up - least-disruptive fix wins, so a
     // security plugin is only disabled if the gentler URL/.htaccess fixes did not break the loop.
     foreach ($fixes as $f) {
         $x = smpro_inv_fix($f['action'], $target, $f['path']);
@@ -1717,7 +1717,7 @@ function smpro_inv_fixit($target) {
     }
     if (!$after) $after = $check();
     $upAfter = ($after >= 200 && $after < 400);
-    $escalate = !$upAfter;                                   // still failing → AI Fix should take over
+    $escalate = !$upAfter;                                   // still failing -> AI Fix should take over
     if (!$fixes) $steps[] = 'No known deterministic scenario matched.';
     $afterTxt = ($after === 310) ? 'still looping' : ($after ?: '?');
     smpro_audit('sitedoctor_fixit', ['user'=>$res['user'],'applied'=>count($fixes),'http_before'=>$res['http']['code'],'http_after'=>$after]);
@@ -1729,7 +1729,7 @@ function smpro_inv_fixit($target) {
 /** When there's no safe auto-fix, read the ACTUAL errors and return a precise AI diagnosis + steps. */
 function smpro_inv_ai_verdict($res, $intro) {
     $up = ($res['http']['code'] >= 200 && $res['http']['code'] < 400);
-    // Build evidence — annotate errors that are ALREADY RESOLVED (culprit component already disabled).
+    // Build evidence - annotate errors that are ALREADY RESOLVED (culprit component already disabled).
     $ev = "Site " . ($res['domain'] ?: $res['user']) . " currently returns HTTP " . $res['http']['code'] . ($up ? " (UP / responding)" : " (FAILING)") . ". Account " . $res['user'] . ", PHP " . ($res['phpver'] ?: '?') . ", docroot " . $res['docroot'] . ".\n";
     $liveCount = 0;
     if (!empty($res['fatals'])) { $ev .= "\nPHP fatal/parse errors (newest first):\n"; foreach ($res['fatals'] as $f) {
@@ -1741,7 +1741,7 @@ function smpro_inv_ai_verdict($res, $intro) {
     if (!empty($res['serverlogs'])) { $ev .= "\nServer logs mentioning this site (apache/litespeed/suexec/domlog/modsec):\n"; foreach (array_slice($res['serverlogs'], 0, 20) as $l) $ev .= "  " . $l . "\n"; }
     if (!empty($res['htaccess']['issues'])) $ev .= "\n.htaccess issues: " . implode('; ', $res['htaccess']['issues']) . "\n";
     if (!empty($res['recent'])) { $ev .= "\nRecently changed files:\n"; foreach (array_slice($res['recent'], 0, 8) as $c) $ev .= "  " . $c['time'] . " " . $c['path'] . "\n"; }
-    // If the site is UP and nothing live remains, don't push a fix — say it's working.
+    // If the site is UP and nothing live remains, don't push a fix - say it's working.
     if ($up && $liveCount === 0 && empty($res['htaccess']['issues'])) {
         return ['ok'=>false,'no_fix'=>1,'msg'=>'Good news — the site is currently UP (HTTP ' . $res['http']['code'] . ').','verdict'=>'The errors in the log are historical / already resolved (the broken component was disabled). No action needed right now. If a specific page still fails, open it and re-run on that exact URL.'];
     }
@@ -1762,7 +1762,7 @@ function smpro_inv_ai_verdict($res, $intro) {
 function smpro_inv_ai_fix($target) {
     $res = smpro_inv_run($target); if (empty($res['ok'])) return ['ok'=>false,'msg'=>$res['msg'] ?? 'resolve failed'];
     $docroot = $res['docroot'];
-    // 1) Deterministic fixes — apply ALL of them in order (un-harden FIRST, then disable culprit, then .htaccess),
+    // 1) Deterministic fixes - apply ALL of them in order (un-harden FIRST, then disable culprit, then .htaccess),
     //    all in one click, no AI needed. Each is reversible.
     $fixes = $res['fixes'] ?? [];
     if ($fixes) {
@@ -1775,7 +1775,7 @@ function smpro_inv_ai_fix($target) {
         }
         return ['ok'=>$any,'auto'=>1,'multi'=>count($fixes),'undo_ids'=>$ids,'msg'=>implode("\n", $msgs)];
     }
-    // 2) Ambiguous: no clear deterministic culprit → let the AI pick from recently-changed plugins/themes.
+    // 2) Ambiguous: no clear deterministic culprit -> let the AI pick from recently-changed plugins/themes.
     if (!function_exists('smpro_ai_available') || !smpro_ai_available()) return ['ok'=>false,'msg'=>($res['status'] === 'up' ? 'Site is responding — nothing to fix.' : 'No clear automatic fix found. Check the diagnosis below.')];
     $cand = [];
     foreach (($res['recent'] ?? []) as $c) {
@@ -1817,7 +1817,7 @@ function smpro_inv_undo($id) {
         smpro_audit('sitedoctor_undo', ['kind'=>'wpurl','ok'=>true]);
         return ['ok'=>true,'msg'=>'Restored WordPress siteurl/home.'];
     }
-    if (($e['kind'] ?? '') === 'created') {   // generated artifact (e.g. .webp) → delete it
+    if (($e['kind'] ?? '') === 'created') {   // generated artifact (e.g. .webp) -> delete it
         $art = (string)($e['to'] ?? '');
         $dr = @realpath(dirname((string)($e['from'] ?? ''))); $ra = @realpath($art);
         if ($art === '' || $ra === false) { $m[$hit]['status'] = 'undone'; $m[$hit]['undone_ts'] = time(); @file_put_contents(smpro_inv_manifest_path(), json_encode($m, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX); return ['ok'=>true,'msg'=>'Already removed.']; }
@@ -1828,10 +1828,10 @@ function smpro_inv_undo($id) {
         smpro_audit('sitedoctor_undo', ['target'=>basename($art),'kind'=>'created','ok'=>true]);
         return ['ok'=>true,'msg'=>'Removed ' . basename($art) . '.'];
     }
-    if (($e['kind'] ?? '') === 'file') {   // .htaccess repair / asset optimize → restore the backed-up file
+    if (($e['kind'] ?? '') === 'file') {   // .htaccess repair / asset optimize -> restore the backed-up file
         if (empty($e['backup']) || !is_file($e['backup']) || is_link($e['backup'])) return ['ok'=>false,'msg'=>'backup file missing'];
         // SECURITY: never copy() back through a symlink the account may have planted at the original path
-        // since the fix (→ arbitrary root write). Confine the parent to the account and write via O_EXCL temp+rename.
+        // since the fix (-> arbitrary root write). Confine the parent to the account and write via O_EXCL temp+rename.
         $user = (string)($e['user'] ?? '');
         $from = (string)($e['from'] ?? '');
         $base = basename($from);
@@ -1874,7 +1874,7 @@ function smpro_inv_undo($id) {
  *
  * Standing rule: nothing on a customer site is cleaned, stripped or deleted without the original being kept
  * first. A cleaned file cannot be un-cleaned, and the file being changed is often also the evidence of how the
- * account was entered. On 2026-09-15 three shops had 12,590-byte index.php files that were malware with the
+ * account was entered. On one server three shops had 12,590-byte index.php files that were malware with the
  * shop's own 453-byte bootstrap appended at the end - deleting them would have taken three shops down, and
  * stripping them without a copy would have destroyed the only record of what the attacker ran. A fourth site
  * had been truncated to zero bytes by someone else's cleanup with no backup anywhere; it served the panel's

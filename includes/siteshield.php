@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/siteshield.php — Site Shield: one domain, closed to hosting / cloud / VPN networks, scanner tools and
+ * includes/siteshield.php - Site Shield: one domain, closed to hosting / cloud / VPN networks, scanner tools and
  * secret-file probes, open to everybody else.
  *
  * WHY. A server carried a hundred old store copies under one development hostname. Not one customer visited them;

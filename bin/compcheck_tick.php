@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/compcheck_tick.php — every ten minutes: run the scheduled Compromise Check when its slot is due.
+ * bin/compcheck_tick.php - every ten minutes: run the scheduled Compromise Check when its slot is due.
  * The plan (when, what, whom to tell) lives in smpro_cx_sched_cfg(); the cron line is only the heartbeat.
  */
 define('SMPRO_BOOT', 1);

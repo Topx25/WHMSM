@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/fwblock.php — Recommended block-lists (shared attacker addresses → csf.deny).
+ * includes/fwblock.php - Recommended block-lists (shared attacker addresses -> csf.deny).
  *
  * The mirror image of fwallow.php, and deliberately the same shape: a catalogue of sources, a live fetch, a
  * review, a tagged apply, and an undo that removes only what we added. Nothing here ever blocks anything on its
@@ -9,7 +9,7 @@
  * Why a shared list at all: every server running this plugin is being hit by the same rented machines. One server
  * learns about an address only after it has already been attacked; a list pooled across servers lets the others
  * refuse it first. Why it is NOT automatic: a shared list is the one feature where somebody else's mistake becomes
- * your outage — a residential address that a hundred customers share, a mail provider, an office NAT. So this
+ * your outage - a residential address that a hundred customers share, a mail provider, an office NAT. So this
  * carries the same guards the rest of the firewall does, and two more of its own:
  *
  *   - the verified-crawler shield runs over every single address before it is denied, so a poisoned or careless
@@ -18,7 +18,7 @@
  *
  * THE SCOPE IS NARROW ON PURPOSE: illegitimate bots that tried to break in, and nothing else. Concretely, an
  * address qualifies only if its network is a datacenter / cloud / hosting provider. That single rule removes
- * every case where a shared list turns into somebody's outage — a residential address a hundred customers share
+ * every case where a shared list turns into somebody's outage - a residential address a hundred customers share
  * behind one CGNAT, an office NAT, a mobile carrier, a mail provider. Nobody signs in to a control panel from a
  * rented server, so a rented server failing logins is a machine, and a machine is safe to pool. A person's
  * address never is, however badly it behaved here: it is this server's business, not the pool's.
@@ -36,7 +36,7 @@ if (!defined('SMPRO_FWB_DENY'))  define('SMPRO_FWB_DENY',  '/etc/csf/csf.deny');
  *
  * 'community' is the pool: addresses that independent servers running this plugin have blocked, served signed by
  * the licence host that already talks to every installation. A source declares the minimum number of DIFFERENT
- * servers that must have blocked an address before it appears — one server's mistake is not evidence.
+ * servers that must have blocked an address before it appears - one server's mistake is not evidence.
  */
 function smpro_fw_block_sources(): array {
     return [
@@ -61,7 +61,7 @@ function smpro_fw_block_sources(): array {
  * Is this address a machine's, rather than a person's? The pool only ever carries machines.
  *
  * Answered from network intelligence (provider / ASN), the same source the firewall page uses for its
- * cloud/hosting mark. When the intelligence is UNAVAILABLE the answer is NO — an address we cannot classify is
+ * cloud/hosting mark. When the intelligence is UNAVAILABLE the answer is NO - an address we cannot classify is
  * treated as a person's and left alone. Failing the other way would pool exactly the addresses we know least
  * about, which is the opposite of careful.
  */
@@ -94,7 +94,7 @@ function smpro_fw_block_set_ignore(string $key, bool $ignore): bool {
     if ($ignore) $c['ignored'][] = $key;
     return smpro_fw_block_cfg_save($c);
 }
-/** Is this server sharing what it blocks? OFF unless the operator turned it on — see smpro_fw_block_contribution(). */
+/** Is this server sharing what it blocks? OFF unless the operator turned it on - see smpro_fw_block_contribution(). */
 function smpro_fw_block_contributing(): bool { return smpro_fw_block_cfg()['contribute']; }
 function smpro_fw_block_set_contributing(bool $on): bool { $c = smpro_fw_block_cfg(); $c['contribute'] = $on; return smpro_fw_block_cfg_save($c); }
 
@@ -116,7 +116,7 @@ function smpro_fw_block_fetch_raw(array $src): array {
         if (is_array($r)) $docs[] = $r;
     }
     foreach ((array)($src['fetch'] ?? []) as $url) {
-        // https only, and only a URL this build carries as a constant — nothing from a request ever reaches here.
+        // https only, and only a URL this build carries as a constant - nothing from a request ever reaches here.
         $u = (string)$url;
         if (stripos($u, 'https://') !== 0 || filter_var($u, FILTER_VALIDATE_URL) === false) continue;
         $body = (string)@shell_exec('timeout 25 curl -fsSL --max-redirs 3 --max-time 20 -A '
@@ -157,7 +157,7 @@ function smpro_fw_block_fetch(string $key): array {
     }
     return $rows;
 }
-/** What is on disk. Never hits the network — the page renders from this. */
+/** What is on disk. Never hits the network - the page renders from this. */
 function smpro_fw_block_rows(string $key): array {
     $f = smpro_fw_block_cache_file($key);
     if (!@is_file($f)) return [];
@@ -177,11 +177,11 @@ function smpro_fw_block_synced_at(string $key): int {
  *
  * This is the review step. Each address is sorted into exactly one bucket and the page shows the counts, so the
  * operator presses Add knowing what it means rather than finding out from csf.deny afterwards.
- *   blocked  — already denied here; nothing to do
- *   allowed  — on this server's allow-list: skipped, because the operator's own decision outranks the pool
- *   crawler  — forward-confirmed as a real crawler: refused outright, whatever the feed says
- *   human    — not a datacenter network, so out of scope: this list is illegitimate BOTS only
- *   add      — what would be added
+ *   blocked  - already denied here; nothing to do
+ *   allowed  - on this server's allow-list: skipped, because the operator's own decision outranks the pool
+ *   crawler  - forward-confirmed as a real crawler: refused outright, whatever the feed says
+ *   human    - not a datacenter network, so out of scope: this list is illegitimate BOTS only
+ *   add      - what would be added
  */
 function smpro_fw_block_review(string $key, int $budget = 0): array {
     $rows = smpro_fw_block_rows($key);
@@ -289,13 +289,13 @@ function smpro_fw_block_status(string $key): array {
  * Exactly what this server would send to the pool, built so it can be SHOWN before it is sent.
  *
  * The rule: attacker addresses and what they attacked. Nothing that identifies this server, its customers or
- * their sites — no hostname, no domain, no account name, no log line, no licence key in the payload beyond what
+ * their sites - no hostname, no domain, no account name, no log line, no licence key in the payload beyond what
  * the transport already needs to authenticate. There is nothing here to redact because nothing identifying is
  * collected in the first place, which is the only version of that promise that survives contact with a bug.
  *
  * Addresses on this server's own allow-list are excluded: telling the pool to block what we ourselves trust
  * would be exporting a mistake. So are addresses on residential, business, mobile or otherwise non-datacenter
- * networks, and so is anything that turns out to be a real crawler — the pool carries illegitimate BOTS that
+ * networks, and so is anything that turns out to be a real crawler - the pool carries illegitimate BOTS that
  * tried to break in, and nothing else. Sharing a person's address would push one server's judgement about one
  * human onto every other server, where nobody can see the evidence or argue with it.
  */
@@ -315,7 +315,7 @@ function smpro_fw_block_contribution(int $max = 2000): array {
         if (!smpro_fw_block_is_machine($ip)) continue;                 // a person's address is this server's business
         if (function_exists('smpro_bg_crawler_shield') && !empty(smpro_bg_crawler_shield($ip)['crawler'])) continue;
         $why = strtolower((string)($m[2] ?? ''));
-        // The KIND only, from words that appear in a firewall comment — never the comment itself, which on a
+        // The KIND only, from words that appear in a firewall comment - never the comment itself, which on a
         // cPanel server names the account and the domain that was attacked.
         $kind = 'other';
         if (strpos($why, 'ssh') !== false)                                   $kind = 'ssh';
@@ -330,7 +330,7 @@ function smpro_fw_block_contribution(int $max = 2000): array {
 }
 
 /**
- * Send it. Only ever called from an explicit press, and refused unless sharing has been switched on — the same
+ * Send it. Only ever called from an explicit press, and refused unless sharing has been switched on - the same
  * two-step the rest of this page uses: review first, then act.
  */
 function smpro_fw_block_contribute(): array {

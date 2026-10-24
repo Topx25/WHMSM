@@ -1,10 +1,10 @@
 <?php
 /**
- * Safety Monitor Pro — when a release request may be approved without a human.
+ * Safety Monitor Pro - when a release request may be approved without a human.
  *
  * Accounts lock their own files unattended; only RELEASING protection reaches the operator. That queue is the
  * right default and the wrong experience for a host with hundreds of customers, so this lets the operator say in
- * advance which releases they are content to have granted for them — for instance, a one-hour release asked for
+ * advance which releases they are content to have granted for them - for instance, a one-hour release asked for
  * from a country they already trust in the firewall.
  *
  * THE PART THAT DECIDES WHETHER THIS IS SAFE AT ALL.
@@ -13,7 +13,7 @@
  * The request is a file the ACCOUNT writes in its own home, so every field in it is attacker-controlled the moment
  * the account is breached: an address written there could simply be an address from an allowed country, and the
  * approval gate would be worth nothing precisely when it matters. So the address is NEVER read from the request.
- * Root establishes it from the server's own cPanel login records — data the account cannot write — and a request
+ * Root establishes it from the server's own cPanel login records - data the account cannot write - and a request
  * whose address cannot be established that way is never auto-approved. It waits for a person, which is what would
  * have happened anyway.
  *
@@ -81,7 +81,7 @@ function smpro_spr_save(array $r, $by = '') {
  * Where this account last signed in to cPanel from, according to the SERVER.
  *
  * Read from cPanel's own login log, which root owns and the account cannot write. This is the whole reason a
- * location rule can be trusted here. Returns '' when it cannot be established — and that is a real answer, not a
+ * location rule can be trusted here. Returns '' when it cannot be established - and that is a real answer, not a
  * failure to paper over: an unknown location must never satisfy a rule about locations.
  */
 /**
@@ -123,7 +123,7 @@ function smpro_spr_login_ip($user, $withinHours = 24, $sessionLog = '/usr/local/
         return $f;
     };
 
-    // 1. session_log — where cPanel writes a SUCCESSFUL password login on current builds:
+    // 1. session_log - where cPanel writes a SUCCESSFUL password login on current builds:
     //    "[date] info [cpaneld] 1.2.3.4 NEW user:token address=1.2.3.4,app=cpaneld,creator=user,method=handle_form_login,path=form,possessed=0"
     //    login_log on those builds carries only FAILED attempts, so reading it alone never finds anyone (verified on a
     //    production 11.138 server: 33,000 login_log lines, not one success). creator must be the account itself and
@@ -143,7 +143,7 @@ function smpro_spr_login_ip($user, $withinHours = 24, $sessionLog = '/usr/local/
     }
     if ($best !== '') return $best;
 
-    // 2. login_log — older builds wrote "SUCCESS" lines here. Kept as the fallback; only successes count, since a
+    // 2. login_log - older builds wrote "SUCCESS" lines here. Kept as the fallback; only successes count, since a
     //    failed attempt from anywhere would otherwise set an account's apparent location.
     foreach ($files($loginLog) as $f) {
         if (!@is_readable($f)) continue;
@@ -174,8 +174,8 @@ function smpro_spr_decide($user, array $ask) {
     if ($perm && !$r['auto_permanent']) return ['auto' => false, 'why' => 'permanent releases are always decided by hand', 'ip' => '', 'cc' => ''];
     if (!$perm && !$r['auto_hour'])     return ['auto' => false, 'why' => 'automatic approval is switched off', 'ip' => '', 'cc' => ''];
 
-    // The item limit is about how much of a site a single release exposes. A permanent release has no items —
-    // it is the whole account — so the limit says nothing about it and must not be read as approval.
+    // The item limit is about how much of a site a single release exposes. A permanent release has no items -
+    // it is the whole account - so the limit says nothing about it and must not be read as approval.
     $items = count((array)($ask['items'] ?? []));
     if (!$perm && $r['max_items'] > 0 && $items > $r['max_items']) {
         return ['auto' => false, 'why' => 'the request covers ' . $items . ' items, more than the limit of ' . $r['max_items'], 'ip' => '', 'cc' => ''];

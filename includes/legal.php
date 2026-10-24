@@ -1,12 +1,12 @@
 <?php
 /**
- * legal.php — Terms & Conditions + Privacy Policy (GDPR) + Refund/Withdrawal.
+ * legal.php - Terms & Conditions + Privacy Policy (GDPR) + Refund/Withdrawal.
  *   - Shown as a one-time ACCEPTANCE gate the first time the plugin is opened.
  *   - Always available as the "Terms & Legal" page (last item under Settings).
  * Acceptance is recorded at SMPRO_VARLIB/legal_accepted.json {version, ts, actor, ip}.
  * Bump smpro_legal_version() whenever the text materially changes to re-prompt acceptance.
  *
- * NOTE: this is a practical, EU/US-aware template — NOT legal advice. The Provider should fill in the
+ * NOTE: this is a practical, EU/US-aware template - NOT legal advice. The Provider should fill in the
  * company details below (registered address, governing law) and have the final text reviewed and adapted
  * by qualified counsel for its jurisdiction before relying on it.
  */
@@ -24,7 +24,7 @@ function smpro_legal_company() {
         'effective' => '2026-07-03',
     ];
 }
-/** Document version — change to re-trigger first-run acceptance for everyone. */
+/** Document version - change to re-trigger first-run acceptance for everyone. */
 function smpro_legal_version() { return '2026-07-03'; }
 
 /* ----- acceptance state ----- */
@@ -185,13 +185,13 @@ function smpro_legal_css() {
       . '</style>';
 }
 
-/** First-run / re-acceptance gate — a self-contained full page (no sidebar) with an Agree action. */
+/** First-run / re-acceptance gate - a self-contained full page (no sidebar) with an Agree action. */
 function smpro_legal_render_gate() {
     $c = smpro_legal_company();
     $csrf = function_exists('smpro_csrf_generate') ? smpro_csrf_generate('legal') : '';
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
     echo '<title>' . smpro_h($c['product']) . ' — Terms</title>';
-    // self-contained theme (the gate renders before the normal layout/theme CSS) — light default + dark mode
+    // self-contained theme (the gate renders before the normal layout/theme CSS) - light default + dark mode
     echo '<style>:root{--bg:#f4f6fb;--card:#fff;--ink:#0f1b33;--brand:#3b5bdb;--brand-bg:#eef2ff;--line:#e3e8f2;--muted:#6b7686;--good:#1f9d55;--warn:#b76b00;--dang:#d93b3b}'
        . '@media(prefers-color-scheme:dark){:root{--bg:#0f1320;--card:#171c2b;--ink:#e6ebf5;--line:#283048;--muted:#9aa6c0;--brand-bg:#1c2540}}</style>';
     echo smpro_legal_css();

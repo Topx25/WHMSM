@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/learned-defense.php — Learned Defense: lessons the server took from confirmed incidents, the hunt they
+ * modules/learned-defense.php - Learned Defense: lessons the server took from confirmed incidents, the hunt they
  * drive, processes a file scan cannot see, and the root-only store of what was moved. Engine: includes/learn.php.
  *
  * The page is read top to bottom the way an operator decides: how bad is it now (the strip, every tile a door to its

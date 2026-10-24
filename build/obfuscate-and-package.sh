@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# obfuscate-and-package.sh — reproducible YAK Pro obfuscated release build of Safety Monitor Pro.
+# obfuscate-and-package.sh - reproducible YAK Pro obfuscated release build of Safety Monitor Pro.
 #
 # Produces packaging/smpro-<VERSION>.tar.gz with the SAME layout the license server serves:
 #   smpro-<VER>/install.sh
@@ -9,8 +9,8 @@
 #
 # What it does:
 #   1. obfuscates every .php with YAK Pro (string-scramble + control-flow; names PRESERVED because the
-#      plugin dispatches by string — see smpro.cnf), 2. STRIPS the leaked "Obfuscated by YAK Pro" banner
-#      (only the custom "protected build" comment remains — no obfuscator name shipped), 3. copies the
+#      plugin dispatches by string - see smpro.cnf), 2. STRIPS the leaked "Obfuscated by YAK Pro" banner
+#      (only the custom "protected build" comment remains - no obfuscator name shipped), 3. copies the
 #      bash wrapper index.cgi as-is, 4. verifies (php -l on every file, no "yak" leak, gate is obfuscated),
 #      5. packages with install.sh/README from the previous release.
 #
@@ -21,17 +21,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"                       # plugin source root (smprov1_build)
 YAK="${YAK:-$ROOT/../smpro_tools/yakpro-po}"
 CNF="${CNF:-$ROOT/../smpro_tools/smpro.cnf}"
-# Read the FULL SMPRO_VERSION value (incl. any -betaN.N suffix), not just the numeric X.Y.Z — the update/downgrade
+# Read the FULL SMPRO_VERSION value (incl. any -betaN.N suffix), not just the numeric X.Y.Z - the update/downgrade
 # guard uses version_compare which understands beta suffixes, so betas must keep theirs end-to-end.
 VER="$(sed -nE "s/.*SMPRO_VERSION',[[:space:]]*'([^']+)'.*/\1/p" "$ROOT/includes/defines.php" | head -1)"
 [ -n "$VER" ] || { echo "ERROR: could not read SMPRO_VERSION"; exit 1; }
 [ -f "$YAK/yakpro-po.php" ] || { echo "ERROR: yakpro-po not found at $YAK"; exit 1; }
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
-#  RELEASE GATE 0 — the hermetic test lab MUST be GREEN against the EXACT source being packaged.
+#  RELEASE GATE 0 - the hermetic test lab MUST be GREEN against the EXACT source being packaged.
 #  Principle: "every fixed bug becomes automatic protection in every build." A signed release tarball
 #  cannot be born unless the full lab passes. The lab runs on the TEST box (ea-php82 + sandbox + the
-#  physical production lockout) — it cannot run here on Windows and it cannot run on production, so the gate
+#  physical production lockout) - it cannot run here on Windows and it cannot run on production, so the gate
 #  ships the source to the lab and runs it there. Hard by default; emergency override is loud + recorded.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 GATE_HOST="${SMPRO_LAB_HOST:-167.233.29.168}"
@@ -46,16 +46,16 @@ run_release_gate() {
   echo "── RELEASE GATE: syncing source to lab ($GATE_HOST) + running full hermetic suite ──"
   # 0. EMPTY the lab source first. tar extraction OVERLAYS: it writes what the archive holds and leaves
   #    everything else in place, so any file that ever landed there stays forever. That bit us on 2026-08-23,
-  #    when three test files from a different working copy sat in the directory and failed every build — but the
+  #    when three test files from a different working copy sat in the directory and failed every build - but the
   #    dangerous direction is the opposite one: a stale MODULE left behind is tested and reported green while the
   #    tarball being packaged never contained it. The gate must prove the source it is about to ship, and only
   #    that, so the directory is rebuilt from nothing on every run.
   #    The path is checked before the delete: it must be an absolute path under /opt/smpro-testlab, so a mistyped
   #    or empty SMPRO_LAB_SRC can never turn this into a wipe of something else. Note /opt/smpro-testlab/samples
-  #    sits OUTSIDE src and is deliberately preserved — it holds large fixtures that are expensive to re-fetch.
+  #    sits OUTSIDE src and is deliberately preserved - it holds large fixtures that are expensive to re-fetch.
   case "$GATE_SRC" in
     /opt/smpro-testlab/src|/opt/smpro-testlab/src/*) : ;;
-    *) echo "GATE ERROR: refusing to clean '$GATE_SRC' — it is not under /opt/smpro-testlab/src."; return 1 ;;
+    *) echo "GATE ERROR: refusing to clean '$GATE_SRC' - it is not under /opt/smpro-testlab/src."; return 1 ;;
   esac
   if ! "${GATE_SSH[@]}" "root@$GATE_HOST" "rm -rf -- '$GATE_SRC' && mkdir -p '$GATE_SRC'"; then
     echo "GATE ERROR: could not prepare a clean source directory on the lab ($GATE_HOST:$GATE_SRC)."
@@ -68,7 +68,7 @@ run_release_gate() {
     return 1
   fi
   # 1b. PROVE the lab received the whole tree before trusting anything it says about it.
-  #     On 2026-08-30 a run reported 35 failures out of 94 assertions — out of 1693 — because the suite started
+  #     On 2026-08-30 a run reported 35 failures out of 94 assertions - out of 1693 - because the suite started
   #     against a tree that was still arriving. That reads exactly like a broken build, and the same source came
   #     back green seconds later. A partial tree is not a red build; it is nothing having been tested, and the two
   #     must never print the same. Compared as path+size over every file, so a truncated file is caught too, not
@@ -87,7 +87,7 @@ run_release_gate() {
 
   # 2. run the lab; exit 0 == GREEN (run.php: exit non-zero on any fail/crash/timeout/plan-mismatch)
   # The suite's OWN exit code is carried back in a sentinel line rather than read from ssh. ssh reports its own
-  # failures as 255, so a dropped connection arrived here indistinguishable from a test run that failed — and the
+  # failures as 255, so a dropped connection arrived here indistinguishable from a test run that failed - and the
   # gate announced "the test lab is RED", sending the reader to hunt for a broken test that did not exist. A run
   # that could not happen and a run that failed are different facts and now print differently. stderr is kept for
   # the same reason: it holds the sentence saying which of the two occurred.
@@ -124,7 +124,7 @@ WORK="$ROOT/_obf"; SRC="$WORK/src"; STAGE="$WORK/stage"; PKG="$WORK/pkg"
 echo "Building obfuscated release smpro-$VER"
 rm -rf "$WORK"; mkdir -p "$SRC" "$PKG"
 
-# 1. stage the php-bearing trees (index.cgi is bash → copied later, not obfuscated)
+# 1. stage the php-bearing trees (index.cgi is bash -> copied later, not obfuscated)
 # The account-side detection file is derived from includes/phstack.php. Regenerated here so a release can never
 # carry a copy that drifted from the source it was generated from.
 if [ -f "$ROOT/build/gen-cpuser-stack.php" ]; then
@@ -154,7 +154,7 @@ done < <(find "$OBF" -name '*.php' -print0)
 cp "$ROOT/index.cgi" "$OBF/"
 mkdir -p "$OBF/assets" "$OBF/lang"
 
-# 4b. signed integrity manifest — hashes the FINAL shipped files + signs with the OFFLINE key.
+# 4b. signed integrity manifest - hashes the FINAL shipped files + signs with the OFFLINE key.
 #     The plugin verifies it in-process with the embedded public key (Protected Mode on tamper).
 PRIV="${PRIV:-$HOME/smpro_keys/smpro_update_private.pem}"
 [ -f "$PRIV" ] || { echo "ERROR: private key not found: $PRIV"; exit 6; }
@@ -167,7 +167,7 @@ while IFS= read -r -d '' f; do
   php -l "$f" >/dev/null 2>&1 || { echo "LINT FAIL: $f"; php -l "$f"; exit 3; }
 done < <(find "$OBF" -name '*.php' -print0)
 
-# Match the ACTUAL banner words — NOT bare "yak" (random goto labels like "evyak" are false positives).
+# Match the ACTUAL banner words - NOT bare "yak" (random goto labels like "evyak" are false positives).
 echo ">> no obfuscator-name leak"
 if grep -rlE 'YAK Pro|yakpro-po|Obfuscated by' "$OBF" >/dev/null 2>&1; then
   echo "!! obfuscator banner found:"; grep -rlE 'YAK Pro|yakpro-po|Obfuscated by' "$OBF"; exit 4
@@ -186,7 +186,7 @@ fi
 
 # Constructs that reach a variable by its NAME AT RUNTIME. The obfuscator renames variables but leaves the
 # strings naming them untouched, so compact()/extract()/$$var keep asking for names that no longer exist. They
-# do not error — compact() just returns an empty array — so the built plugin renders blank rows while the test
+# do not error - compact() just returns an empty array - so the built plugin renders blank rows while the test
 # suite, which runs on the source, stays green. This shipped: Database Health counted five problems and showed
 # five empty boxes. Comments are stripped by obfuscation, so a hit here is a hit in real code.
 echo ">> no name-at-runtime variable access in the obfuscated output"
@@ -209,7 +209,7 @@ for f in "$ROOT/index.cgi" "$ROOT/packaging/install.sh" "$ROOT/packaging/uninsta
   [ -f "$f" ] || continue
   if grep -q $'\r' "$f"; then echo "FAIL: $f has CR line endings - run dos2unix / save as LF"; exit 9; fi
 done
-# JS SYNTAX GATE — every inline <script> in modules/ and includes/ must parse (beta294 shipped a page whose whole
+# JS SYNTAX GATE - every inline <script> in modules/ and includes/ must parse (beta294 shipped a page whose whole
 # script was dead because of one bare line break inside a string; nothing at build time noticed).
 if command -v node >/dev/null 2>&1; then
   node "$ROOT/build/jscheck.js" "$ROOT" || { echo "BUILD ABORTED: an inline script does not parse (see above)"; exit 8; }
@@ -218,7 +218,7 @@ else
 fi
 echo ">> no hardcoded identities / market defaults in shipped source"
 # Pick an interpreter that actually EXECUTES: on Windows, "python3" can be a Store alias that prints an install
-# hint and exits non-zero — which, read as a gate failure, would announce a leak that nobody planted. So each
+# hint and exits non-zero - which, read as a gate failure, would announce a leak that nobody planted. So each
 # candidate must run a no-op first, and the gate's own exit code is the ONLY thing that means "leak" (6).
 PYBIN=""
 for c in python3 python; do
@@ -238,7 +238,7 @@ if [ -d "$ROOT/cpuser" ]; then
   find "$ROOT/cpuser" -maxdepth 1 -type f ! -name '*.php' -exec cp -f {} "$DEST/smpro/cpuser/" \;
 fi
 # Ship install.sh / README.md / uninstall.sh from SOURCE CONTROL (never from a prior tarball) so the root-run
-# installer always matches the current source — otherwise security fixes to the installer silently never ship,
+# installer always matches the current source - otherwise security fixes to the installer silently never ship,
 # and each release inherits the previous (stale) installer. Hard-fail if a source file is missing.
 for f in install.sh README.md uninstall.sh; do
   [ -f "$ROOT/packaging/$f" ] || { echo "ERROR: packaging/$f missing from source — cannot build"; exit 7; }
@@ -257,9 +257,9 @@ else
   echo "WARNING: release NOT signed (sign-release.sh or private key missing) — sign before publishing!"
 fi
 
-# 8. GATE RECEIPT — provenance that THIS exact tarball passed the lab + obf-lint. The promote step
+# 8. GATE RECEIPT - provenance that THIS exact tarball passed the lab + obf-lint. The promote step
 #    (build/gate-check.sh) refuses to publish any tarball whose receipt is missing, not-green, or whose
-#    sha256 does not match — so a hand-rolled or untested tarball can never reach customers.
+#    sha256 does not match - so a hand-rolled or untested tarball can never reach customers.
 SHA="$(sha256sum "$ROOT/packaging/smpro-$VER.tar.gz" | awk '{print $1}')"
 cat > "$ROOT/packaging/smpro-$VER.gate.json" << JSON
 {

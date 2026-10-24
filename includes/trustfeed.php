@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/trustfeed.php — the trusted-bots list, pulled from the licence server.
+ * includes/trustfeed.php - the trusted-bots list, pulled from the licence server.
  *
  * The licence server fetches the official range files (Google, Bing, DuckDuckGo, OpenAI, Perplexity, Meta,
  * Cloudflare, UptimeRobot, the Gmail and Microsoft 365 SPF blocks), checks each against its last good copy, signs

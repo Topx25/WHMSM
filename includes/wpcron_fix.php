@@ -1,13 +1,13 @@
 <?php
 /**
- * Safety Monitor Pro — switching off WordPress's visitor-triggered cron.
+ * Safety Monitor Pro - switching off WordPress's visitor-triggered cron.
  *
  * WordPress starts its own scheduled work from ordinary page views unless told not to. On a site that also has a
  * real cron entry that is a second source of the same runs, and on a busy site it is by far the larger one: every
  * visitor can start another. Setting DISABLE_WP_CRON leaves the schedule as the only thing that starts it.
  *
  * This edits a customer's wp-config.php, which is a PHP file the whole site is loaded through. A broken edit does
- * not degrade anything — it takes the site down completely, and it does so for every visitor at once. So on top
+ * not degrade anything - it takes the site down completely, and it does so for every visitor at once. So on top
  * of the copy-verify-compare contract used for schedules, this one adds the check that matters here: the result
  * is PARSED before it is accepted, and the original is put straight back if it does not parse. A site is never
  * left holding a file this wrote unless PHP itself has confirmed it can read it.
@@ -59,7 +59,7 @@ function smpro_wpc_parses(string $text): array {
 
 /**
  * Add (or correct) DISABLE_WP_CRON.
- * Returns ['ok','changed','was','backup','error'] — 'was' is what the file said before.
+ * Returns ['ok','changed','was','backup','error'] - 'was' is what the file said before.
  */
 function smpro_wpc_disable(string $docroot, bool $dryRun = false): array {
     $file = rtrim($docroot, '/') . '/wp-config.php';
@@ -111,7 +111,7 @@ function smpro_wpc_disable(string $docroot, bool $dryRun = false): array {
     if (@file_put_contents($file, $new) === false) return ['ok' => false, 'backup' => $backup, 'error' => 'The file could not be written.'];
     clearstatcache();
 
-    // Read back what is actually on disk now — not what was meant to be there — and undo it unless PHP agrees it
+    // Read back what is actually on disk now - not what was meant to be there - and undo it unless PHP agrees it
     // is loadable AND the setting is really in effect.
     $onDisk = (string)@file_get_contents($file);
     $after  = smpro_wpc_parses($onDisk);

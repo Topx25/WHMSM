@@ -1,17 +1,17 @@
 <?php
 /**
- * modules/intrusion-monitor.php — Intrusion Monitor (UI).
+ * modules/intrusion-monitor.php - Intrusion Monitor (UI).
  *
  * Detects, tracks and reports web-attack attempts AS THEY HAPPEN, attributed to the
  * exact DOMAIN each attempt targeted. The detection ENGINE lives in includes/intrusion.php
  * (shared with the notify cron, so alerts fire even with no page open).
  *
- * Tabs:  live      → auto-refreshing feed of the most recent attacks (poll, no reload)
- *        domains   → attempts aggregated BY DOMAIN (counts, attack types, top attackers)
- *        breaches  → likely successful compromises (attack 200 + recent docroot change)
- *        campaigns → coordinated attacks (one IP → many domains, many IPs → one domain)
- *        reports   → generate / view / export (CSV) / delete full saved reports
- *        settings  → Cloudflare/CSF blocking, auto-response, allowlist, alert thresholds
+ * Tabs:  live      -> auto-refreshing feed of the most recent attacks (poll, no reload)
+ *        domains   -> attempts aggregated BY DOMAIN (counts, attack types, top attackers)
+ *        breaches  -> likely successful compromises (attack 200 + recent docroot change)
+ *        campaigns -> coordinated attacks (one IP -> many domains, many IPs -> one domain)
+ *        reports   -> generate / view / export (CSV) / delete full saved reports
+ *        settings  -> Cloudflare/CSF blocking, auto-response, allowlist, alert thresholds
  *
  * Read on GET; all state-changing actions are POST + CSRF + root + audit. IP blocking
  * (CSF + Cloudflare edge) never touches the admin's own IP, the server, or allowlisted IPs.
@@ -75,10 +75,10 @@ th{background:var(--bg);text-transform:uppercase;font-size:10px;color:#475569}
 define('SMPRO_IM_ABUSE_CACHE', SMPRO_VARLIB . '/im_abuse_cache.json');
 
 /**
- * Block a whole /24 subnet in CSF. The single-IP deny path (smpro_im_block_ip → smpro_csf_deny_add) validates
+ * Block a whole /24 subnet in CSF. The single-IP deny path (smpro_im_block_ip -> smpro_csf_deny_add) validates
  * with FILTER_VALIDATE_IP and REFUSES a CIDR, so a subnet block goes straight to the csf binary (CSF accepts a
- * CIDR in csf.deny). Strict /24 only, and it reuses the SAME refusal guards the single-IP block applies —
- * server IP / private-local / allowlisted / Cloudflare edge — evaluated over the whole range (a /24 deny hits
+ * CIDR in csf.deny). Strict /24 only, and it reuses the SAME refusal guards the single-IP block applies -
+ * server IP / private-local / allowlisted / Cloudflare edge - evaluated over the whole range (a /24 deny hits
  * all 256 addresses), PLUS the home-region guard (never black-hole a home-region residential /24). Never weakens a gate.
  */
 function smpro_im_block_subnet24($cidr) {
@@ -89,12 +89,12 @@ function smpro_im_block_subnet24($cidr) {
     if (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($net))      return ['ok'=>false,'msg'=>'refused: private/local range'];
     if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($net))   return ['ok'=>false,'msg'=>'refused: Cloudflare edge range — a deny would cut inbound traffic to every site'];
     if (function_exists('smpro_im_allowlisted') && smpro_im_allowlisted($net))       return ['ok'=>false,'msg'=>'refused: allowlisted'];
-    // The server's own IP anywhere inside this /24 → denying the range would black-hole the box.
+    // The server's own IP anywhere inside this /24 -> denying the range would black-hole the box.
     if (function_exists('smpro_server_ips') && function_exists('smpro_in_cidr_match')) {
         foreach (array_keys(smpro_server_ips()) as $sip) if (smpro_in_cidr_match($sip, $cidr)) return ['ok'=>false,'msg'=>'refused: this server\'s IP is inside the /24'];
     } elseif (function_exists('smpro_is_server_ip') && smpro_is_server_ip($net))     return ['ok'=>false,'msg'=>'refused: server IP'];
     // Home-region protection (same policy as smpro_im_region_status): never deny an entire home-region residential
-    // /24 — that is 256 likely-real customers. Block the individual attacker IPs instead.
+    // /24 - that is 256 likely-real customers. Block the individual attacker IPs instead.
     if (function_exists('smpro_im_region_status') && smpro_im_region_status($net) === 'core_protected')
                                                                                     return ['ok'=>false,'msg'=>'refused: home-region (' . smpro_im_home_regions_short() . ') residential /24 — block the individual attacker IPs instead'];
     $c = function_exists('smpro_in_cfg') ? smpro_in_cfg() : [];
@@ -103,7 +103,7 @@ function smpro_im_block_subnet24($cidr) {
     if ($csf === '')                                                                return ['ok'=>false,'msg'=>'CSF firewall not installed — cannot block a subnet'];
     $testing = function_exists('smpro_csf_testing') && smpro_csf_testing();
     // Route through the firewall that is ACTUALLY enforcing (CSF may be installed but disabled while something
-    // else owns the rules — writing to csf.deny then blocks nothing while reporting success).
+    // else owns the rules - writing to csf.deny then blocks nothing while reporting success).
     // ONE block path (helpers.php, boot-loaded): engine detection + Cloudflare refusal. The raw `csf -d` fallback that
     // used to follow was dead code (the helper is always present) and skipped those guards when it did run.
     $r = smpro_fw_block_ip($cidr, 'smpro Intrusion Monitor subnet');
@@ -126,7 +126,7 @@ function smpro_im_abuse_scores(array $ips, $liveBudget = 12, $ttl = 43200) {
         $ip = (string)$ip;
         if (!filter_var($ip, FILTER_VALIDATE_IP) || array_key_exists($ip, $out)) continue;
         $ent = $cache[$ip] ?? null;
-        if (is_array($ent) && ($now - (int)($ent['ts'] ?? 0)) < $ttl) {                 // fresh cache hit → no network
+        if (is_array($ent) && ($now - (int)($ent['ts'] ?? 0)) < $ttl) {                 // fresh cache hit -> no network
             if (($ent['score'] ?? '') !== '') $out[$ip] = (int)$ent['score'];
             continue;
         }
@@ -144,9 +144,9 @@ function smpro_im_abuse_scores(array $ips, $liveBudget = 12, $ttl = 43200) {
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
 
 /* Every im_action is an AJAX/JSON endpoint. Send the JSON content-type UP FRONT (before the
- * CSRF/root gates run) so any early smpro_fail() — expired token, license hiccup, non-root —
+ * CSRF/root gates run) so any early smpro_fail() - expired token, license hiccup, non-root -
  * is returned as parseable JSON, not an HTML page (which made the UI show the misleading
- * "Request failed — check you are on the Security Monitor page"). Scoped to known actions so an
+ * "Request failed - check you are on the Security Monitor page"). Scoped to known actions so an
  * unknown value still falls through to the normal HTML page render. */
 $__im_ajax_actions = ['block','allow','unblock','gen_report','delete_report','save_settings','update_geoip','ip_lookup','ai_review','emergency_save','emergency_run','emergency_undo','token'];
 if ($reqMethod === 'POST' && in_array($_POST['im_action'] ?? '', $__im_ajax_actions, true)) {
@@ -154,7 +154,7 @@ if ($reqMethod === 'POST' && in_array($_POST['im_action'] ?? '', $__im_ajax_acti
     header('Content-Type: application/json');
 }
 
-/* Fresh CSRF token for THIS page's im_action fetches — lets a long-open Live-attacks / AI-review page
+/* Fresh CSRF token for THIS page's im_action fetches - lets a long-open Live-attacks / AI-review page
  * recover from an EXPIRED token (1h TTL) without a full reload. Root-gated (authenticated WHM session);
  * no CSRF required (it mints one) and no state change. The token is actor-bound and only readable
  * same-origin, so it can't be exfiltrated cross-site. */
@@ -186,7 +186,7 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'allow') {
     echo json_encode(['ok'=>$allOk,'results'=>$res], JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 /* Unblock, from the IP modal. It existed nowhere on that dialog: once an address was blocked the only button
- * left was Add to Allowlist — a permanent exemption — so "I blocked the wrong one" had no cheap way back and the
+ * left was Add to Allowlist - a permanent exemption - so "I blocked the wrong one" had no cheap way back and the
  * expensive one was the tempting one. Removing a block is the reversible correction; allow-listing is not. */
 if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'unblock') {
     smpro_require_valid_csrf('im_action'); smpro_require_root();
@@ -238,7 +238,7 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'save_settings') {
         'login_guard_net_fails' => max(2, min(100000,(int)($_POST['login_guard_net_fails'] ?? ($cur['login_guard_net_fails'] ?? 10)))),
         'protect_arab'      => !empty($_POST['protect_arab']),
         // Only overwrite when actually submitted (a stale cached page without these fields must not wipe them).
-        'protect_regions'   => array_key_exists('protect_regions', $_POST) ? smpro_im_parse_ccs((string)$_POST['protect_regions']) : (array)($cur['protect_regions'] ?? ['EG','SA']),
+        'protect_regions'   => array_key_exists('protect_regions', $_POST) ? smpro_im_parse_ccs((string)$_POST['protect_regions']) : (array)($cur['protect_regions'] ?? []),
         'caution_regions'   => array_key_exists('caution_regions', $_POST) ? smpro_im_parse_ccs((string)$_POST['caution_regions']) : (array)($cur['caution_regions'] ?? []),
         'ai_block'          => !empty($_POST['ai_block']),
         'thr_domain_attacks'=> max(5, min(100000, (int)($_POST['thr_domain_attacks'] ?? $cur['thr_domain_attacks']))),
@@ -265,10 +265,10 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'update_geoip') {
     echo json_encode(['ok'=>(!empty($rc['ok'])||!empty($ra['ok'])),'country'=>$rc,'asn'=>$ra], JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
-/* Global IP profile — aggregates GeoIP + CSF block status + allowlist + attack DB + saved reports. */
+/* Global IP profile - aggregates GeoIP + CSF block status + allowlist + attack DB + saved reports. */
 if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'ip_lookup') {
-    // Must be set BEFORE the guards below. Without it a REFUSED request answers in HTML — header() is a no-op
-    // under this SAPI — so the dialog's r.json() rejects and it falls back to the generic "could not load"
+    // Must be set BEFORE the guards below. Without it a REFUSED request answers in HTML - header() is a no-op
+    // under this SAPI - so the dialog's r.json() rejects and it falls back to the generic "could not load"
     // message. The renderer already knows how to say "reload the page to refresh your session" for an expired
     // token, but only if the refusal reaches it as JSON. That is why a page left open past its token looked
     // broken rather than stale, and why carefully guarding the body below was not enough on its own.
@@ -296,7 +296,7 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'ip_lookup') {
             'code'     => (string)($e['code'] ?? ''),
         ], array_slice($sum['recent'] ?? [], 0, 25));
         unset($sum['recent']);
-        // login/auth attempts across ALL services (SSH/mail/FTP/cPanel) — so a brute-forcer isn't blank
+        // login/auth attempts across ALL services (SSH/mail/FTP/cPanel) - so a brute-forcer isn't blank
         $logins = function_exists('smpro_ip_auth_attempts') ? array_slice(smpro_ip_auth_attempts($ip, 0, 0, 60), 0, 40) : [];
         $lsum = ['failed'=>0,'success'=>0,'services'=>[]];
         foreach ($logins as $lg) { if (($lg['result']??'')==='failed') $lsum['failed']++; elseif (($lg['result']??'')==='success') $lsum['success']++; $s=$lg['source']??'?'; $lsum['services'][$s]=($lsum['services'][$s]??0)+1; }
@@ -399,9 +399,9 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'emergency_undo') {
     echo json_encode(['ok'=>$ok], JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
-/* LIVE feed (GET, JSON) — polled by the page; also indexes into SQLite history. */
+/* LIVE feed (GET, JSON) - polled by the page; also indexes into SQLite history. */
 if (($_GET['im_live'] ?? '') === '1') {
-    smpro_require_root();                                // these GET feeds return attacker IPs/domains — root-only
+    smpro_require_root();                                // these GET feeds return attacker IPs/domains - root-only
     header('Content-Type: application/json');
     $mins = max(1, min(1440, (int)($_GET['mins'] ?? 120)));
     $events = smpro_im_ingest_recent(SMPRO_IM_LIVE_BYTES, $mins);
@@ -417,7 +417,7 @@ if (($_GET['im_live'] ?? '') === '1') {
     echo json_encode(['ok'=>true,'count'=>count($events),'rows'=>$rows,'now'=>date('H:i:s')], JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 if (($_GET['im_export'] ?? '') !== '') {
-    smpro_require_root();                                // report exports contain attacker IPs/accounts — root-only
+    smpro_require_root();                                // report exports contain attacker IPs/accounts - root-only
     $id = preg_replace('/[^0-9A-Za-z_]/', '', (string)($_GET['report'] ?? ''));
     $rep = smpro_im_json_load(smpro_im_report_path($id));
     if (!$rep) { http_response_code(404); echo 'report not found'; exit; }
@@ -482,7 +482,7 @@ smpro_layout_header('Intrusion Monitor');
 <?php endif; ?>
 
 <?php
-// Honesty banner: ModSecurity present but its rule engine is Off / DetectionOnly on some/all vhosts → it LOGS
+// Honesty banner: ModSecurity present but its rule engine is Off / DetectionOnly on some/all vhosts -> it LOGS
 // attacks but does NOT block them. cPanel sets SecRuleEngine per-vhost, so we report how many contexts are off.
 $mse = function_exists('smpro_im_modsec_engine_state') ? smpro_im_modsec_engine_state() : ['off'=>0,'detection'=>0,'on'=>0];
 $mseNoBlock = (int)($mse['off'] ?? 0) + (int)($mse['detection'] ?? 0);
@@ -868,7 +868,7 @@ function imHideActBtns(ips,action){var e=(window.CSS&&CSS.escape)?CSS.escape:fun
 function imClearSel(){document.querySelectorAll('.im-chk:checked').forEach(function(c){c.checked=false;});
   ['imSelAll','imSelAllDom','imSelAllCamp','imSelAllAtk'].forEach(function(id){var x=document.getElementById(id);if(x)x.checked=false;});
   if(window.imSyncBulk)window.imSyncBulk();}
-// Pull a fresh im_action CSRF token (root session) and update IM_CSRF — used to auto-recover an expired token.
+// Pull a fresh im_action CSRF token (root session) and update IM_CSRF - used to auto-recover an expired token.
 function imRefreshToken(){var fd=new URLSearchParams();fd.set('im_action','token');
   return fetch('index.cgi?page=intrusion-monitor',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString(),cache:'no-store'})
     .then(function(r){return r.json();}).then(function(j){if(j&&j.ok&&j.token){IM_CSRF=j.token;return true;}return false;}).catch(function(){return false;});}
@@ -918,7 +918,7 @@ document.addEventListener('click',function(e){var b=e.target.closest('.la-act.al
 (function(){var body=document.getElementById('imLiveBody');if(!body)return;
   var auto=document.getElementById('imAuto'),meta=document.getElementById('imLiveMeta'),grp=document.getElementById('imGroupBy');
   var domFilter=new URLSearchParams(location.search).get('dom')||'';
-  window.imSel=window.imSel||{};   // persistent selection set (IP => 1) — survives auto-refresh + group switches
+  window.imSel=window.imSel||{};   // persistent selection set (IP => 1) - survives auto-refresh + group switches
   var lastRows=[];
   function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function sev(s){s=(s||'').toLowerCase();return s.indexOf('crit')>=0?'crit':(s.indexOf('err')>=0?'high':'med');}
@@ -1088,7 +1088,7 @@ document.addEventListener('click',function(e){var b=e.target.closest('.la-act.al
       p.innerHTML=html;
       var ap=document.getElementById('imAiApply');if(ap&&blk.length)ap.addEventListener('click',function(){if(window.imBlock)imBlock(blk);});
       // per-row .la-act Block/Allow buttons are handled by the existing global delegate (confirm modal +
-      // hide-on-success ✓ chip). Region protection only gates AUTO blocks — explicit clicks always act.
+      // hide-on-success ✓ chip). Region protection only gates AUTO blocks - explicit clicks always act.
     }).catch(function(){b.disabled=false;b.innerHTML=ot;p.innerHTML='<b style="color:var(--dang)">AI request failed.</b>';});
   });
 })();

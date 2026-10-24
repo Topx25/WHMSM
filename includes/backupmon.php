@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/backupmon.php — the backup auto-retry cron, owned here so cron_sync can put it back after an update.
+ * includes/backupmon.php - the backup auto-retry cron, owned here so cron_sync can put it back after an update.
  * The page used to write /etc/cron.d directly (bypassing the shared installer and its test guard) and nothing
  * re-created it; the on/off state is now a flag file, and the cron line is derived from it.
  */

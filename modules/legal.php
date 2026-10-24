@@ -1,5 +1,5 @@
 <?php
-/** legal.php — the "Terms & Legal" page (last item under Settings). Read-only view of the full
+/** legal.php - the "Terms & Legal" page (last item under Settings). Read-only view of the full
  *  Terms & Conditions + Privacy Policy + Refund/Withdrawal, plus this server's acceptance record. */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 

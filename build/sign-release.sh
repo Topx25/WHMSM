@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# sign-release.sh — OFFLINE signing of a Safety Monitor Pro release tarball.
+# sign-release.sh - OFFLINE signing of a Safety Monitor Pro release tarball.
 #
 # Point 3 of the security hardening: the plugin verifies an RSA-SHA256 signature over the EXACT
 # tarball bytes against a public key embedded in includes/update.php (SMPRO_UPD_PUBKEY) before it
@@ -40,7 +40,7 @@ echo "Wrote   : $SIG ($(wc -c < "$SIG") base64 bytes)"
 
 # ---- self-verify against the public key (the SAME bytes embedded in update.php) ----
 if [ -f "$PUB" ]; then
-  # decode to a real (seekable) file — openssl -signature cannot read a non-seekable pipe/stdin
+  # decode to a real (seekable) file - openssl -signature cannot read a non-seekable pipe/stdin
   VTMP="$(mktemp)"; base64 -d "$SIG" > "$VTMP"
   if openssl dgst -sha256 -verify "$PUB" -signature "$VTMP" "$TGZ" >/dev/null 2>&1; then
     echo "Verify  : OK (signature matches public key — the plugin will accept this release)"

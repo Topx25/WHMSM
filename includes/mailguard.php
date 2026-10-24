@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/mailguard.php — living beside MailGuard (the outgoing-mail protection product) on the same server.
+ * includes/mailguard.php - living beside MailGuard (the outgoing-mail protection product) on the same server.
  *
  * WHY THIS FILE EXISTS. Both products enforce from ONE sender-block list (/etc/smpro_blocked_senders): MailGuard reads
  * and writes it, and places its own Exim rule that consults it. Until now this plugin only knew MailGuard was "present"
@@ -104,7 +104,7 @@ function smpro_mg_status(): ?array {
     return $s;
 }
 /** Folders and scripts MailGuard attributed outgoing mail to, from its enforcement record (last $days days), with the
- *  message counts it recorded. Read-only; paths are reported only when they exist. [[path, messages, actions], …] */
+ *  message counts it recorded. Read-only; paths are reported only when they exist. [[path, messages, actions], ...] */
 function smpro_mg_script_origins(int $days = 60): array {
     if (!smpro_mg_present()) return [];
     $out = [];

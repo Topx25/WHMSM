@@ -1,10 +1,10 @@
 <?php
 /**
- * update.php — in-plugin self-update against the license server.
- *   smpro_upd_check()  — ask /api/version for the latest build (vs SMPRO_VERSION).
- *   smpro_upd_apply()  — pull /api/update (license + fingerprint gated), verify SHA, swap files,
+ * update.php - in-plugin self-update against the license server.
+ *   smpro_upd_check()  - ask /api/version for the latest build (vs SMPRO_VERSION).
+ *   smpro_upd_apply()  - pull /api/update (license + fingerprint gated), verify SHA, swap files,
  *                        re-register AppConfig. Runs as root (WHM CGI), so it can rewrite its own dir.
- *   smpro_upd_auto()   — called from the notify cron; auto-applies when enabled + a newer build exists.
+ *   smpro_upd_auto()   - called from the notify cron; auto-applies when enabled + a newer build exists.
  * Reuses license.php: smpro_lic_api(), smpro_lic_payload(), smpro_lic_key(), smpro_lic_ua(), SMPRO_LIC_BASE.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -14,7 +14,7 @@ define('SMPRO_UPD_CFG',  SMPRO_VARLIB . '/update.json');
 define('SMPRO_UPD_LOCK', SMPRO_UPD_DIR . '/.lock');
 
 // Pinned RSA public key for RELEASE SIGNING. Release tarballs are signed at publish time with the
-// matching PRIVATE key, which is kept OFFLINE (build machine only — never on the license server). The
+// matching PRIVATE key, which is kept OFFLINE (build machine only - never on the license server). The
 // plugin verifies the signature over the exact tarball bytes before applying any update, so even a fully
 // compromised license server cannot push a malicious update (it has no private key to forge a signature).
 define('SMPRO_UPD_PUBKEY',
@@ -78,14 +78,14 @@ function smpro_upd_check() {
  * $force   : true = bypass the downgrade guard (an explicit operator push, still signature-verified). */
 function smpro_upd_apply($version = '', $force = false) {
     @is_dir(SMPRO_UPD_DIR) || @mkdir(SMPRO_UPD_DIR, 0700, true);
-    // single-flight lock — atomic, so a cron poll + a manual UI click can't both extract over each other
-    // (the old is_file()+mtime check was TOCTOU-racy → two parallel tar extractions = corrupt install).
+    // single-flight lock - atomic, so a cron poll + a manual UI click can't both extract over each other
+    // (the old is_file()+mtime check was TOCTOU-racy -> two parallel tar extractions = corrupt install).
     $lockFp = @fopen(SMPRO_UPD_LOCK, 'c');
     if (!$lockFp || !@flock($lockFp, LOCK_EX | LOCK_NB)) { if ($lockFp) fclose($lockFp); return ['ok' => false, 'message' => 'An update is already running.']; }
     @chmod(SMPRO_UPD_LOCK, 0600);
 
     // NOTE: do NOT @unlink() the lock file here. Unlinking a file another caller may already hold open (or is
-    // about to fopen) is the classic flock race — A unlinks inode I1 while B still holds I1 and C fopen('c')s a
+    // about to fopen) is the classic flock race - A unlinks inode I1 while B still holds I1 and C fopen('c')s a
     // fresh inode I2 at the same path, so B and C each hold a lock on a DIFFERENT inode and both extract over the
     // live dir at once. Leaving the 0600 lock file in place (persistent) makes fopen('c')+flock single-flight sound.
     $cleanup = function () use ($lockFp) { @flock($lockFp, LOCK_UN); @fclose($lockFp); };
@@ -96,7 +96,7 @@ function smpro_upd_apply($version = '', $force = false) {
     if ((smpro_upd_cfg()['channel'] ?? 'stable') === 'beta') $payload['channel'] = 'beta';   // opt-in beta channel
     $version = preg_replace('/[^0-9.]/', '', (string)$version);
     if ($version !== '') $payload['version'] = $version;     // ask /api/update for this SPECIFIC build
-    // body carries the license key — write it to a 0600 temp file (--data-binary @file) so it never reaches argv
+    // body carries the license key - write it to a 0600 temp file (--data-binary @file) so it never reaches argv
     $body = json_encode($payload, JSON_UNESCAPED_SLASHES);
     $bodyFile = @tempnam(@sys_get_temp_dir() ?: '/tmp', 'smpu');
     if ($bodyFile === false) $bodyFile = SMPRO_UPD_DIR . '/.req.' . getmypid();
@@ -125,14 +125,14 @@ function smpro_upd_apply($version = '', $force = false) {
     if ($want !== '' && hash_file('sha256', $tgz) !== $want) { $cleanup(); return ['ok' => false, 'message' => 'Integrity check failed (SHA mismatch).']; }
     // AUTHENTICITY: verify the RSA signature over the exact tarball bytes against the pinned OFFLINE-signing
     // public key. SHA alone is not enough (a compromised server can recompute it); the signature cannot be
-    // forged without the offline private key — this is what blocks a malicious push from a hacked server.
+    // forged without the offline private key - this is what blocks a malicious push from a hacked server.
     $sig = $sigB64 !== '' ? base64_decode($sigB64, true) : false;
     $pk  = function_exists('openssl_pkey_get_public') ? @openssl_pkey_get_public(SMPRO_UPD_PUBKEY) : false;
     if ($sig === false || !$pk || @openssl_verify((string)@file_get_contents($tgz), $sig, $pk, OPENSSL_ALGO_SHA256) !== 1) {
         $cleanup(); return ['ok' => false, 'message' => 'Update signature invalid — refusing to apply (the package is unsigned or tampered).'];
     }
     // DOWNGRADE GUARD: never apply an OLDER build automatically (defeats a rollback-to-known-vulnerable
-    // signed package). Bypassed only on an explicit operator push ($force) — still signature-verified.
+    // signed package). Bypassed only on an explicit operator push ($force) - still signature-verified.
     if (!$force && $ver !== '' && defined('SMPRO_VERSION') && version_compare($ver, SMPRO_VERSION, '<')) {
         $cleanup(); return ['ok' => false, 'message' => 'Refusing to downgrade to ' . $ver . ' (current ' . SMPRO_VERSION . ').'];
     }
@@ -149,7 +149,7 @@ function smpro_upd_apply($version = '', $force = false) {
     // AUTHENTICATED downgrade guard: the X-Smpro-Version header used above is NOT signed and can be spoofed by
     // a hostile/compromised update server. The version recorded inside integrity.json lives INSIDE the tarball
     // whose bytes we just RSA-verified, so it is bound to the offline signature and cannot be forged. Re-check
-    // the downgrade guard against THIS authenticated version — this is what actually blocks a signed-rollback.
+    // the downgrade guard against THIS authenticated version - this is what actually blocks a signed-rollback.
     $authVer = '';
     $ij = @json_decode((string)@file_get_contents($payload . '/integrity.json'), true);
     if (is_array($ij) && isset($ij['version'])) $authVer = preg_replace('/[^0-9A-Za-z.-]/', '', (string)$ij['version']);   // keep -betaN suffix (version_compare handles it); strips only unsafe chars
@@ -169,7 +169,7 @@ function smpro_upd_apply($version = '', $force = false) {
     // EDITION GUARD. The cPanel-user edition (Safety Lock) is a superset: its includes/ carries spqueue.php and the
     // file-lock helpers its root worker needs. Overlaying a WHM-only build on top of it keeps the worker's cron and
     // the customers' page but removes the helpers, so every Protect request queues forever while the page says
-    // "protected" — that is exactly what happened on 2026-09-06 when the two products shared one update channel.
+    // "protected" - that is exactly what happened when the two products shared one update channel.
     // A payload that lacks the edition's marker must never be applied over an install that has it.
     if (is_file($dest . '/includes/spqueue.php') && !is_file($payload . '/includes/spqueue.php')) {
         smpro_upd_rrmdir($ex); @unlink($tgz); @unlink($hdr); $cleanup();
@@ -178,7 +178,7 @@ function smpro_upd_apply($version = '', $force = false) {
         return ['ok' => false, 'message' => 'Refused: ' . $ver . ' is the WHM-only build, but this install is the cPanel-user edition (Safety Lock). Applying it would break the account-side worker. Nothing was changed.'];
     }
 
-    // backup the current install (restorable) — inside the plugin's own data dir, not /root
+    // backup the current install (restorable) - inside the plugin's own data dir, not /root
     $bk = SMPRO_VARLIB . '/backups/selfupdate_' . date('Ymd_His');
     @mkdir($bk, 0700, true);
     @shell_exec('cp -a ' . escapeshellarg($dest) . '/. ' . escapeshellarg($bk) . '/ 2>/dev/null');
@@ -216,7 +216,7 @@ function smpro_upd_apply($version = '', $force = false) {
         }
         if ($gone && function_exists('smpro_audit')) @smpro_audit('update_pruned', ['removed' => $gone]);
     }
-    // re-register AppConfig (in case the conf/url changed) — harmless if unchanged
+    // re-register AppConfig (in case the conf/url changed) - harmless if unchanged
     smpro_upd_register();
 
     smpro_upd_rrmdir($ex); @unlink($tgz); @unlink($hdr); $cleanup();
@@ -265,7 +265,7 @@ function smpro_upd_ensure_registered() {
     // which registers the app but produces NO clickable WHM menu link. Treat "no entryurl" as needs-reregister so a
     // box that updated through that path (e.g. via the license channel) gets its link back automatically.
     $ok = is_file($conf) && stripos((string)@file_get_contents($conf), 'entryurl') !== false;
-    if ($ok) return;                                                      // complete menu entry present → nothing to do
+    if ($ok) return;                                                      // complete menu entry present -> nothing to do
     $rs = SMPRO_BASE . '/bin/register.sh';
     if (is_file($rs)) @shell_exec('bash ' . escapeshellarg($rs) . ' >/dev/null 2>&1');
     else smpro_upd_register();
@@ -274,7 +274,7 @@ function smpro_upd_ensure_registered() {
 function smpro_upd_register() {
     $reg = '/usr/local/cpanel/bin/register_appconfig';
     if (!is_executable($reg)) return;
-    // Single source of truth: prefer bin/register.sh — it writes the COMPLETE appconfig (incl. entryurl=) to
+    // Single source of truth: prefer bin/register.sh - it writes the COMPLETE appconfig (incl. entryurl=) to
     // /var/cpanel/apps AND rebuilds the WHM chrome. The inline fallback below MUST mirror it; a conf MISSING
     // entryurl= registers the app but produces NO clickable WHM menu link (the root cause of "the plugin link
     // doesn't appear in WHM" after a self-update, which writes the conf via this path rather than register.sh).
@@ -302,7 +302,7 @@ function smpro_plugin_uninstall($purge = false) {
     // 1) unregister the WHM AppConfig entry (the menu item)
     $unreg = '/usr/local/cpanel/bin/unregister_appconfig';
     if (is_executable($unreg)) { @shell_exec($unreg . ' ' . escapeshellarg(SMPRO_SLUG) . ' 2>/dev/null'); $done[] = 'Unregistered the WHM menu entry'; }
-    // 2) remove every cron job this plugin installed (glob — covers hub/update/login-guard/notify/etc.)
+    // 2) remove every cron job this plugin installed (glob - covers hub/update/login-guard/notify/etc.)
     $crons = 0; foreach (glob('/etc/cron.d/' . SMPRO_SLUG . '-*') ?: [] as $c) { if (@unlink($c)) $crons++; }
     if ($crons) $done[] = "Removed $crons cron job(s)";
     // 3) optionally purge data + logs (license state lives here too)
@@ -342,7 +342,7 @@ function smpro_upd_auto() {
     $chk = smpro_upd_check();                                          // refreshes "latest" + records last_check
     if (empty($chk['ok'])) return;
     // 0) FORCE UPDATE (operator, SIGNED): a signed `upd_force` directive in the license verdict force-applies the
-    //    CURRENT channel build, bypassing ONLY the version_compare downgrade guard — the RSA package signature is
+    //    CURRENT channel build, bypassing ONLY the version_compare downgrade guard - the RSA package signature is
     //    STILL enforced, so this can never apply unsigned/forged code, only a genuinely-signed build the operator
     //    points the channel at. Because it rides the SIGNED payload (not the unsigned command channel), a TLS relay
     //    or replayed command can't trigger it. One-shot: deduped on the directive value (a nonce the operator bumps).
@@ -353,10 +353,10 @@ function smpro_upd_auto() {
             $c['upd_force_done'] = $fv; smpro_upd_cfg_save($c);
             $r = smpro_upd_apply('', true);   // '' = the channel's latest signed build; true = bypass version_compare only
             if (function_exists('smpro_audit')) smpro_audit('update_forced', ['directive' => $fv, 'ok' => !empty($r['ok']), 'msg' => (string)($r['message'] ?? '')]);
-            if (!empty($r['ok'])) return;     // files swapped → stop this cycle
+            if (!empty($r['ok'])) return;     // files swapped -> stop this cycle
         }
     }
-    // 1) per-server commands queued by the operator (update / restart / revoke) → execute + ack each
+    // 1) per-server commands queued by the operator (update / restart / revoke) -> execute + ack each
     if (!empty($chk['commands']) && is_array($chk['commands'])) {
         // dedup: never re-run a command id we already processed (the command channel is unsigned, so a replayed
         // /api/version response can't make us re-execute register/rebuild/update churn). Capped ring of recent ids.
@@ -378,22 +378,22 @@ function smpro_upd_auto() {
             if ($name === 'update') {
                 // The /api/version command list is NOT signed, so it must not be able to waive the downgrade
                 // guard ($force stays false). A forged 'update' command can therefore only move FORWARD to a
-                // genuinely-signed newer build — never roll the fleet back onto a signed-but-vulnerable one.
+                // genuinely-signed newer build - never roll the fleet back onto a signed-but-vulnerable one.
                 $r = smpro_upd_apply(preg_replace('/[^0-9.]/', '', $args), false);
                 $ok = !empty($r['ok']); $res = (string)($r['message'] ?? ($r['to'] ?? 'applied'));
             } elseif ($name === 'restart') {
                 if (function_exists('smpro_upd_register')) smpro_upd_register();
                 $ok = true; $res = 're-registered WHM entry';
             } elseif ($name === 'revoke') {
-                if (function_exists('smpro_lic_check')) @smpro_lic_check();   // server already suspended → refresh to lock
+                if (function_exists('smpro_lic_check')) @smpro_lic_check();   // server already suspended -> refresh to lock
                 $ok = true; $res = 'acknowledged (suspended server-side)';
             } else { $ok = true; $res = 'unknown command ignored'; }
             smpro_upd_ack($id, $ok, $res);
-            if ($name === 'update' && $ok) return;   // files swapped → stop this cycle
+            if ($name === 'update' && $ok) return;   // files swapped -> stop this cycle
         }
         return;
     }
-    // 1b) NEW BUILD AVAILABLE, auto-update OFF → tell the admin (once per version) instead of it only
+    // 1b) NEW BUILD AVAILABLE, auto-update OFF -> tell the admin (once per version) instead of it only
     //     showing on the Updates page. Also persist the release notes so the changelog survives the check.
     if (!empty($chk['available'])) {
         $lv = (string)($chk['latest'] ?? '');
@@ -419,7 +419,7 @@ function smpro_upd_ack($id, $ok, $result = '') {
 }
 
 /* Self-install a dedicated daily cron that runs the update check (and auto-applies if enabled),
- * independent of the notify cron. Idempotent — safe to call on every Updates-page view. */
+ * independent of the notify cron. Idempotent - safe to call on every Updates-page view. */
 /** cron_sync entry. */
 function smpro_upd_cron_sync(): bool { if (defined('SMPRO_TEST_SRC')) return true; smpro_upd_install_cron(); return true; }
 function smpro_upd_install_cron() {
@@ -447,7 +447,7 @@ function smpro_upd_rrmdir($d) { if (!is_dir($d)) return; foreach (scandir($d) ?:
  * Keep only the newest $keep self-update backups.
  * Every update leaves a full copy of the install, and nothing used to remove them: measured at 252 directories
  * / 1.8 GB on a beta-channel server after seven weeks, which is a real problem on a small VPS.
- * Deliberately narrow — it only ever removes a directory that sits DIRECTLY in the backups dir and whose name
+ * Deliberately narrow - it only ever removes a directory that sits DIRECTLY in the backups dir and whose name
  * matches the exact stamp smpro_upd_apply() itself writes. Anything else put there by hand is left alone.
  */
 function smpro_upd_prune_backups($keep = 3) {

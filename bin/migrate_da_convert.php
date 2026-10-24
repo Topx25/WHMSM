@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/migrate_da_convert.php — detached worker: DirectAdmin archive → cpmove archive.
+ * bin/migrate_da_convert.php - detached worker: DirectAdmin archive -> cpmove archive.
  *
  * The whole pipeline in one job, because every stage of it is measured in minutes on a real backup and none of
  * it belongs in a page request. It refuses before it starts if the disk cannot hold the result, writes progress
@@ -8,7 +8,7 @@
  *
  * Usage: migrate_da_convert.php --archive=/path/to/user.admin.name.tar.gz [--work=/path]
  */
-define('SMPRO_BOOT', 1);   // MUST precede the requires — every include exits('forbidden') without it
+define('SMPRO_BOOT', 1);   // MUST precede the requires - every include exits('forbidden') without it
 
 $base = dirname(__DIR__);
 require $base . '/includes/defines.php';
@@ -48,7 +48,7 @@ jstep('Checking there is room to do this');
 $sp = smpro_mig_da_space_check($archive, dirname($work));
 if (empty($sp['ok'])) jfail($sp['why']);
 
-/* 2. Identify it — a converter pointed at the wrong format must stop, not improvise. */
+/* 2. Identify it - a converter pointed at the wrong format must stop, not improvise. */
 jstep('Identifying the archive');
 $det = smpro_mig_detect($archive);
 if ($det['format'] !== 'directadmin') jfail($det['why']);

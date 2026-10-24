@@ -1,10 +1,10 @@
 <?php
 /**
- * digest.php — "Grouped alerts" / quiet mode. Instead of one message per event (noise), routine
+ * digest.php - "Grouped alerts" / quiet mode. Instead of one message per event (noise), routine
  * alerts are queued and delivered as ONE aggregated digest every interval the admin chooses.
  * Exceptions that ALWAYS send immediately (never batched):
- *   - server load (load_high) and the mandatory license_expiry — hard-coded,
- *   - whatever the AI classifies as "maximum danger" (active compromise/malware/breach/emergency…),
+ *   - server load (load_high) and the mandatory license_expiry - hard-coded,
+ *   - whatever the AI classifies as "maximum danger" (active compromise/malware/breach/emergency...),
  *   - any alert whose severity is 'critical' (safety net).
  * The notify cron flushes the queue when the interval elapses.
  */
@@ -41,10 +41,10 @@ function smpro_dg_critical_types() {
 function smpro_dg_hold($type, array $meta = []) {
     $cfg = smpro_dg_cfg();
     if (empty($cfg['enabled'])) return false;
-    if (in_array($type, smpro_dg_always_immediate(), true)) return false;     // load / license → immediate
-    if (($meta['severity'] ?? '') === 'critical') return false;               // critical severity → immediate
-    if (in_array($type, smpro_dg_critical_types(), true)) return false;       // AI "maximum danger" → immediate
-    return true;                                                              // routine → batch
+    if (in_array($type, smpro_dg_always_immediate(), true)) return false;     // load / license -> immediate
+    if (($meta['severity'] ?? '') === 'critical') return false;               // critical severity -> immediate
+    if (in_array($type, smpro_dg_critical_types(), true)) return false;       // AI "maximum danger" -> immediate
+    return true;                                                              // routine -> batch
 }
 
 function smpro_dg_queue($type, $subject, $body, array $meta = []) {

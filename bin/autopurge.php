@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/autopurge.php — Auto-Purge Scheduler worker. Installed as /etc/cron.d/smpro-autopurge ONLY while a
+ * bin/autopurge.php - Auto-Purge Scheduler worker. Installed as /etc/cron.d/smpro-autopurge ONLY while a
  * cadence is chosen. Fixed mode fires on the interval; smart mode fires hourly (:07) and lets smpro_mnt_decide()
  * choose. `--run-now` performs one immediate purge (the UI "Run now" button, launched detached).
  */
@@ -12,7 +12,7 @@ foreach (['defines', 'helpers', 'secret', 'license', 'intrusion', 'notify', 'mai
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require $f;
 }
-// GLOBAL GATE first — admin-disabled / tamper-lock / license-dormant / sync-stop => do nothing (parity with
+// GLOBAL GATE first - admin-disabled / tamper-lock / license-dormant / sync-stop => do nothing (parity with
 // bin/cooler_tick.php line 12). Without this a dormant/tamper-locked/Disabled server would still auto-delete.
 if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) exit;
 

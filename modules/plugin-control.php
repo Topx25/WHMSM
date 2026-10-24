@@ -1,9 +1,9 @@
 <?php
 /**
- * modules/plugin-control.php — master Enable / Dry-Run / Disable switch for the whole plugin.
+ * modules/plugin-control.php - master Enable / Dry-Run / Disable switch for the whole plugin.
  *   Enabled  : normal operation (monitor + take automatic actions).
  *   Dry-Run  : monitor + alert, but DO NOT take any automatic action (auto-block, auto-fix, throttle, auto-update).
- *   Disabled : the plugin stops — pages show a notice and the background worker does nothing.
+ *   Disabled : the plugin stops - pages show a notice and the background worker does nothing.
  * Disabling can carry a scheduled re-enable date/time (auto turns back on then). State: SMPRO_VARLIB/control.json.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -22,7 +22,7 @@ if ($reqMethod === 'POST' && ($_POST['pc_action'] ?? '') === 'save') {
     $oldMode = (string)($c['mode'] ?? 'enabled');
     $c['mode'] = $mode; $c['reenable_at'] = $reAt; $c['updated_at'] = time(); $c['actor'] = smpro_current_actor();
     smpro_ctl_save($c);
-    // Alert when the master switch changes — a guard being stood down must never be silent. Force-sent.
+    // Alert when the master switch changes - a guard being stood down must never be silent. Force-sent.
     if ($mode !== $oldMode && function_exists('smpro_notify')) {
         $label = ['enabled' => 'ENABLED (full protection)', 'dryrun' => 'DRY-RUN (detect only, no auto-actions)', 'disabled' => 'DISABLED (no protection)'][$mode] ?? $mode;
         smpro_notify('plugin_mode_change', 'SM Pro protection mode → ' . $mode,
@@ -55,7 +55,7 @@ if ($reqMethod === 'POST' && ($_POST['pc_action'] ?? '') === 'cpuser') {
  *
  * The switch is a file rather than a config key because the thing that reads it is a shell script run from the
  * updater, and a shell script asking a PHP config loader for one boolean is a dependency that breaks in exactly
- * the situation this must survive — a half-finished update.
+ * the situation this must survive - a half-finished update.
  *
  * The registration script is then run immediately instead of waiting for the next update, and its OUTPUT is
  * returned. It is the only thing that actually knows whether cPanel accepted the entry, and an operator who
@@ -150,7 +150,7 @@ $badge = ['enabled'=>['#16a34a','&#9679; Enabled — full operation'],'dryrun'=>
 </div>
 
 <?php
-/* Diagnostics — at-a-glance self-test of optional integrations, so a degraded feature is visible here instead of
+/* Diagnostics - at-a-glance self-test of optional integrations, so a degraded feature is visible here instead of
    being discovered only when a page looks empty. Read-only status + one-click install (reuses the env_install endpoint). */
 $diagCaps = function_exists('smpro_capabilities') ? smpro_capabilities() : [];
 $diagMgr  = function_exists('smpro_pkg_mgr') ? smpro_pkg_mgr() : '';
@@ -201,8 +201,9 @@ foreach (glob('/usr/local/cpanel/base/frontend/*', GLOB_ONLYDIR) ?: [] as $t) {
 </div>
 
 <?php
-/* Account-side plugins — what the customer sees inside cPanel. Nothing else in WHM reports this, and a second
+/* Account-side plugins - what the customer sees inside cPanel. Nothing else in WHM reports this, and a second
    lock manager already installed is the one thing that must be known before shipping our own. */
+if (!function_exists('smpro_cps_scan') && is_file(SMPRO_INCLUDES . '/cpsidescan.php')) require_once SMPRO_INCLUDES . '/cpsidescan.php';
 $cps = function_exists('smpro_cps_scan') ? smpro_cps_scan() : ['plugins' => [], 'ok' => false, 'why' => 'The scan is unavailable in this build.'];
 $cpsOthers = array_values(array_filter($cps['plugins'], fn($p) => empty($p['ours'])));
 ?>
@@ -225,7 +226,7 @@ $cpsOthers = array_values(array_filter($cps['plugins'], fn($p) => empty($p['ours
       <div class="pc-diagtx">
         <b><?= smpro_h($p['name']) ?></b>
         <div class="meta"><?= smpro_h(smpro_cps_describe($p)) ?></div>
-        <div class="meta pc-dhint" style="font-family:ui-monospace,Consolas,monospace"><?= smpro_h($p['path']) ?><?= $p['runnable'] ? ' &middot; ' . smpro_h(implode(', ', array_slice($p['runnable'], 0, 6))) : '' ?></div>
+        <div class="meta pc-dhint" style="font-family:ui-monospace,Consolas,monospace"><?= smpro_h($p['dir'] !== '' ? $p['dir'] : (string)$p['url']) ?><?= $p['theme'] !== '' ? ' &middot; theme ' . smpro_h($p['theme']) : '' ?><?= $p['files'] ? ' &middot; ' . (int)$p['files'] . ' file(s)' : '' ?></div>
         <?php foreach ($p['admin_bins'] as $b): ?>
           <div class="meta pc-dhint" style="font-family:ui-monospace,Consolas,monospace">root helper: <?= smpro_h($b['path']) ?> (<?= smpro_h($b['mode']) ?><?= $b['conf'] !== '' ? ', ' . smpro_h($b['conf']) : '' ?>)</div>
         <?php endforeach; ?>
@@ -338,7 +339,7 @@ $cpsOthers = array_values(array_filter($cps['plugins'], fn($p) => empty($p['ours
       .then(function(j){
         msg.textContent=(j&&j.msg)||'No answer from the server.';
         msg.style.color=(j&&j.ok)?'var(--good)':'var(--dang)';
-        // The detail is the installer's own words — shown on failure, because that is where the reason is.
+        // The detail is the installer's own words - shown on failure, because that is where the reason is.
         if(j&&!j.ok&&j.detail){var d=document.createElement('pre');d.style.cssText='white-space:pre-wrap;font-size:11px;margin:6px 0 0;color:var(--muted)';d.textContent=j.detail;msg.appendChild(d);}
         setTimeout(function(){location.reload();}, (j&&j.ok)?1200:6000);
       })

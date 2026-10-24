@@ -1,11 +1,11 @@
 <?php
 /**
- * tgbot.php — Telegram control bot. Poll getUpdates (from a 1-min cron), authorize ONLY the admin
+ * tgbot.php - Telegram control bot. Poll getUpdates (from a 1-min cron), authorize ONLY the admin
  * chat id(s), dispatch commands, log every one. Reuses the Notifications Telegram token + chat id.
  * Commands: /help /status /health /attacks /blocked /sites /report /scan /services
  *           /block <ip> /unblock <ip> /allow <ip> /harden <account>
  *           /restart <service> /update /emergency on|off
- * Control commands are restricted to the configured admin chat — never act on an unknown sender.
+ * Control commands are restricted to the configured admin chat - never act on an unknown sender.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
@@ -93,7 +93,7 @@ function smpro_tg_poll(): void {
         if ($text === '' || $text[0] !== '/') continue;
         // Authorize by SENDER id, or by chat id ONLY in a private 1:1 chat. In a group/supergroup the chat id
         // is shared by every member, so a chat-id match alone must NOT let an arbitrary member run root control
-        // commands — require the sender to be explicitly allow-listed there.
+        // commands - require the sender to be explicitly allow-listed there.
         $isPrivate = ((string)($msg['chat']['type'] ?? '') === 'private') || ($chat !== '' && $chat === $from);
         $authorized = in_array($from, $cfg['allowed'], true) || ($isPrivate && in_array($chat, $cfg['allowed'], true));
         if (!$authorized) {
@@ -122,7 +122,7 @@ function smpro_tg_services(): array {
         'mysql'    => ['mariadb', 'mysql', 'mysqld'],
         'exim'     => ['exim'],
         'dovecot'  => ['dovecot'],
-        'dns'      => ['pdns', 'named', 'nsd', 'pdns-recursor'],   // smart: PowerDNS / BIND / NSD — whichever is the active resolver
+        'dns'      => ['pdns', 'named', 'nsd', 'pdns-recursor'],   // smart: PowerDNS / BIND / NSD - whichever is the active resolver
         'ftp'      => ['pure-ftpd', 'proftpd'],
         'lfd'      => ['lfd'],
         'cpanel'   => ['cpanel'],
@@ -179,7 +179,7 @@ function smpro_tg_watch_services(): void {
         $was = (string)($prev[$name] ?? '');
         $down = in_array($act, ['failed', 'inactive', 'deactivating'], true);
         $wasUp = $was === 'active';
-        if ($down && $wasUp) {                              // just went down → alert once
+        if ($down && $wasUp) {                              // just went down -> alert once
             $reason = smpro_tg_unit_reason($unit);
             smpro_tg_send($cfg['token'], $cfg['admin'],
                 "🔴 <b>Service down: " . htmlspecialchars($name) . "</b> (" . htmlspecialchars($unit) . ")\n"

@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/network.php — Network Traffic (live + historical totals).
+ * modules/network.php - Network Traffic (live + historical totals).
  * Live upload/download rate per interface (sampled from /proc/net/dev), total
  * traffic since boot, and historical upload/download totals per period
  * (this hour / today / last 24h / this month / last 30 days / all-time) read
@@ -95,7 +95,7 @@ function smpro_net_split_addr($a) {
     return $p === false ? [$a, ''] : [substr($a, 0, $p), substr($a, $p + 1)];
 }
 /**
- * Who is connected to this server RIGHT NOW, grouped by remote IP — the "who is hammering the box"
+ * Who is connected to this server RIGHT NOW, grouped by remote IP - the "who is hammering the box"
  * view. One `ss` call, aggregated in PHP. Country is resolved only for the few rows we display and
  * only from the local/offline DB ($cap=false), so a big box with thousands of connections stays fast.
  */
@@ -146,11 +146,11 @@ if (isset($_GET['live'])) { header('Content-Type: application/json'); echo json_
 /* ---------------- render ---------------- */
 $L = smpro_net_live();
 $defIf = smpro_net_default_iface();
-// vnstat + per-account bandwidth are heavy root-CLI probes (walks every account's bw DB) — keep them OFF
+// vnstat + per-account bandwidth are heavy root-CLI probes (walks every account's bw DB) - keep them OFF
 // every render via a read-through cache so a page view costs at most one probe per TTL window.
 $vn = smpro_cache_through('net_vnstat_' . preg_replace('/[^a-z0-9]/i', '', $defIf), 300, fn() => smpro_net_vnstat($defIf));
 $bw = smpro_cache_through('net_bw', 300, fn() => smpro_net_bandwidth(30));
-// live connection picture — cheap (one ss call), but cache briefly so rapid reloads don't re-probe
+// live connection picture - cheap (one ss call), but cache briefly so rapid reloads don't re-probe
 $talk = smpro_cache_through('net_talkers', 20, fn() => smpro_net_talkers(15));
 $periods = [
     'hour'  => ['This hour', '&#8986;'],

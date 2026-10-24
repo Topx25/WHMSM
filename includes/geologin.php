@@ -1,9 +1,9 @@
 <?php
 /**
- * includes/geologin.php — Country Login Lock: an account may only be signed into from countries you allow.
+ * includes/geologin.php - Country Login Lock: an account may only be signed into from countries you allow.
  *
  * The threat this closes is the one that has actually happened here: a correct password, used by somebody who is
- * not the customer. Nothing about the login looks wrong — the password IS right — so no brute-force rule fires,
+ * not the customer. Nothing about the login looks wrong - the password IS right - so no brute-force rule fires,
  * no failed-login counter moves, and the first sign of trouble is a defaced site. What IS wrong is the place it
  * came from, and that is knowable at the moment it happens.
  *
@@ -11,7 +11,7 @@
  * once already (CSF's CC_ALLOW_FILTER, which also killed every WhatsApp webhook). So this deliberately does not
  * do that, in three ways:
  *
- *   1. LOGIN PORTS ONLY. Rules are written as port-scoped CSF entries — cPanel, WHM, webmail, mail, FTP, SSH.
+ *   1. LOGIN PORTS ONLY. Rules are written as port-scoped CSF entries - cPanel, WHM, webmail, mail, FTP, SSH.
  *      Ports 80 and 443 are NEVER touched, so a website stays reachable from every country on earth. A visitor
  *      from a country that may not log in can still read the site, buy from it, and submit its forms.
  *   2. REACTIVE, NOT PRE-EMPTIVE. No country is denied in advance. A rule is written only when a login is
@@ -61,7 +61,7 @@ function smpro_gl_defaults(): array {
         // Extra login ports this server uses: an SSH daemon moved off 22, an SMTP submission port that is not
         // 465/587. A door the lock does not know about is a door it leaves open, so the operator names them here.
         'custom_ports' => [],
-        'per_account'=> [],         // account => [cc, …] — overrides the list above for that account only
+        'per_account'=> [],         // account => [cc, ...] - overrides the list above for that account only
         'on_success' => 'block',    // a correct password from a country not allowed: block | alert
         // End what is already open, not just the next attempt. A correct password from a country you do
         // not allow means somebody is inside NOW; closing the port behind them leaves them working.
@@ -284,7 +284,7 @@ function smpro_gl_block(string $ip, string $cc, string $account, array $cfg): ar
             'msg' => $live ? (count($add) . ' login port(s) closed for ' . $ip) : ('rules written for ' . $ip . ' but NOT live in the firewall - CSF did not apply them (check DENY_IP_LIMIT and csf -r)')];
 }
 
-/** Remove every rule this feature wrote — all of them, or just one address. Nothing else is touched. */
+/** Remove every rule this feature wrote - all of them, or just one address. Nothing else is touched. */
 function smpro_gl_unblock(string $ip = ''): array {
     $fromSet = smpro_gl_use_set() ? smpro_gs_del($ip) : 0;
     if (!@is_file(SMPRO_GL_DENY) || !@is_writable(SMPRO_GL_DENY)) return ['ok' => $fromSet > 0, 'removed' => $fromSet, 'msg' => $fromSet ? ($fromSet . ' address(es) removed from the kernel set') : 'csf.deny is not writable'];
@@ -333,7 +333,7 @@ function smpro_gl_active_live(int $max = 500): array {
 /* ----------------------------- the sweep ----------------------------- */
 
 /**
- * Read the login log and decide. Returns what it found and what it did — and in dry run, what it WOULD do.
+ * Read the login log and decide. Returns what it found and what it did - and in dry run, what it WOULD do.
  *
  * An address whose country cannot be determined is never acted on. Geo data is wrong often enough that treating
  * "unknown" as "not allowed" would lock out real customers on the strength of a missing database file.
@@ -352,7 +352,7 @@ function smpro_gl_run(bool $force_dryrun = false): array {
 
     // Successes and failures live in DIFFERENT files on current cPanel. A granted session is a NEW line in
     // session_log; login_log carries the refusals. Reading only login_log, as this did, meant the lock could
-    // never see the one event it exists to act on — a correct password used from a country that is not allowed.
+    // never see the one event it exists to act on - a correct password used from a country that is not allowed.
     if (!function_exists('smpro_lf_success')) { $lf = __DIR__ . '/loginfeed.php'; if (@is_file($lf)) require_once $lf; }
     $feed = function_exists('smpro_lf_success') ? smpro_lf_success($cut, 4000) : ['ok' => false, 'events' => [], 'msg' => 'login feed unavailable'];
 
@@ -593,7 +593,7 @@ function smpro_gl_kill_panel_sessions(string $ip): array {
             //
             // TWO formats live here: older cPanel wrote key=value lines, current cPanel writes a single JSON
             // object. Reading only the first meant eviction ended 0 sessions on a current server while reporting
-            // that it had worked — the block went up, and whoever was already signed in stayed signed in behind
+            // that it had worked - the block went up, and whoever was already signed in stayed signed in behind
             // it, on the session that mattered.
             $found = '';
             if (preg_match('/^ip_address=(\S+)/m', $body, $m)) {
@@ -609,7 +609,7 @@ function smpro_gl_kill_panel_sessions(string $ip): array {
         }
     }
     // "0 sessions ended" is only good news if the files could actually be understood. If none of them could be,
-    // say that instead — it is the difference between nobody being signed in and not having looked.
+    // say that instead - it is the difference between nobody being signed in and not having looked.
     $why = '';
     if ($n === 0 && $seen > 0 && $parsed === 0 && !$legacy)
         $why = ' — WARNING: none of the ' . $seen . ' session file(s) were in a format this build understands, so nothing was checked';

@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/security-health.php — interactive security posture scan + safe apply.
+ * modules/security-health.php - interactive security posture scan + safe apply.
  * Each check shows Risk / Recommended action / Validation / Evidence.
  * Fixable checks expose an "Apply Fix" (POST+CSRF+root): config is backed up,
  * SSH changes are validated with `sshd -t` BEFORE reload (no lock-out) and
@@ -85,13 +85,13 @@ function smpro_sh_apply_mycnf($key, $val) {
     if (!$up) { @copy($bak, $f); smpro_sh_run('systemctl restart ' . $svc, 60); return [false, 'Database did not come up — config REVERTED and DB restarted. Backup: ' . $bak]; }
     return [true, "$key set to $val; $svc restarted and is up. Backup: $bak"];
 }
-/** Full path to sshd — the WHM CGI PATH usually lacks /usr/sbin, so a bare `sshd -t`
+/** Full path to sshd - the WHM CGI PATH usually lacks /usr/sbin, so a bare `sshd -t`
  *  returns "command not found", which the old code mistook for an invalid config. */
 function smpro_sh_sshd_bin() {
     foreach (['/usr/sbin/sshd', '/usr/local/sbin/sshd', '/sbin/sshd'] as $p) if (@is_executable($p)) return $p;
     return 'sshd';
 }
-/** Effective sshd setting via `sshd -T` — resolves Include drop-ins (first match wins),
+/** Effective sshd setting via `sshd -T` - resolves Include drop-ins (first match wins),
  *  which a plain grep of /etc/ssh/sshd_config cannot see. Returns null if unavailable. */
 function smpro_sh_sshd_effective($key) {
     static $map = null;
@@ -109,9 +109,9 @@ function smpro_sh_sshd_effective($key) {
 }
 /** Apply an sshd_config directive safely (validate before reload, revert on error).
  *  Modern OSes `Include /etc/ssh/sshd_config.d/*.conf` at the TOP of sshd_config and
- *  sshd uses FIRST-match-wins — a vendor/cloud-init drop-in silently overrides anything
+ *  sshd uses FIRST-match-wins - a vendor/cloud-init drop-in silently overrides anything
  *  written to the main file. When the Include is active we write our own 00- drop-in
- *  (sorts first → always wins); otherwise we edit the main file as before. */
+ *  (sorts first -> always wins); otherwise we edit the main file as before. */
 function smpro_sh_apply_sshd($key, $val) {
     $main = '/etc/ssh/sshd_config';
     $dropDir = '/etc/ssh/sshd_config.d';
@@ -140,7 +140,7 @@ function smpro_sh_apply_sshd($key, $val) {
         if (!$set) $out[] = "$key $val";
         @file_put_contents($f, implode("\n", $out) . "\n");
     }
-    // Validate with the EXIT CODE — sshd -t prints non-fatal deprecation warnings to
+    // Validate with the EXIT CODE - sshd -t prints non-fatal deprecation warnings to
     // stderr, so "any output = invalid" wrongly reverted perfectly valid changes.
     $rc = 1; $msg = [];
     @exec('timeout 10 ' . smpro_sh_sshd_bin() . ' -t 2>&1', $msg, $rc);
@@ -202,7 +202,7 @@ if ($reqMethod === 'POST' && (($_POST['sh_undo'] ?? '') !== '' || ($_POST['sh_ap
 /** A PHP ini setting as reported by every interpreter that ACTUALLY serves websites, keyed by version.
  *  A bare `php` resolves to cPanel's own bundled build (/usr/local/bin/php). That interpreter serves no
  *  customer site and is not what MultiPHP INI Editor hardens, so reading it answered the wrong question on
- *  every cPanel server — it could report a hardened box as unhardened, or an unhardened box as fine, purely
+ *  every cPanel server - it could report a hardened box as unhardened, or an unhardened box as fine, purely
  *  by coincidence. Falls back to whatever `php` exists only when no EA-PHP is installed. Empty array = no
  *  interpreter could be read, which the caller must render as "unknown", never as a pass. */
 function smpro_sh_php_ini_all(string $key): array {
@@ -225,7 +225,7 @@ function smpro_sh_php_ini_all(string $key): array {
 
 /** Effective MySQL/MariaDB variable, asked of the RUNNING server. Authoritative where a file grep is not:
  *  /etc/my.cnf on a cPanel box is usually just `!includedir /etc/my.cnf.d`, so reading only the top-level file
- *  reports "not set" for settings that ARE set in an included file — exactly the mistake `sshd -T` exists to
+ *  reports "not set" for settings that ARE set in an included file - exactly the mistake `sshd -T` exists to
  *  avoid above. Returns null when the server cannot be queried, so the caller can say "unknown" rather than
  *  render a false all-clear. */
 function smpro_sh_mysql_var(string $name): ?string {
@@ -272,7 +272,7 @@ function smpro_sh_all() {
     $ver = trim(smpro_sh_run('mysql --version'));
     $myconf = is_readable('/etc/my.cnf') ? '/etc/my.cnf' : (is_readable('/etc/mysql/my.cnf') ? '/etc/mysql/my.cnf' : '/etc/my.cnf');
     // Ask the running server first; fall back to the config files (include-aware) only if it cannot be queried.
-    // A third state — "could not determine" — is kept distinct from "not set" so an unreadable server can never
+    // A third state - "could not determine" - is kept distinct from "not set" so an unreadable server can never
     // be rendered as a clean result.
     $conf = is_readable($myconf) ? smpro_sh_mycnf_all($myconf) : '';
     $vBind = smpro_sh_mysql_var('bind_address');
@@ -334,7 +334,7 @@ function smpro_sh_all() {
     ];
     /* ---- cPanel / WHM ---- */
     $cpsrvd = smpro_sh_pf('cpsrvd'); $cpVer = trim((string)@file_get_contents('/usr/local/cpanel/version')); $cphulk = smpro_sh_pf('cphulkd');
-    // cPHulk ENABLED flag via the WHM API — authoritative, unlike the process check above:
+    // cPHulk ENABLED flag via the WHM API - authoritative, unlike the process check above:
     // a real production box had is_enabled:0 (protection OFF) despite thousands of failed SSH
     // logins. Fixed-literal command (no dynamic args), bounded with `timeout`; stderr dropped
     // so stdout stays pure JSON. Shape confirmed: {"data":{"is_enabled":1,"service":"cPHulk"}}.
@@ -343,7 +343,7 @@ function smpro_sh_all() {
     $hulkEnabled = function_exists('smpro_cphulk_enabled') ? smpro_cphulk_enabled() : null;
     $hulkEnabled = $hulkEnabled === null ? null : ($hulkEnabled ? 1 : 0);
     $hulkOff = $hulkEnabled !== null && (int)$hulkEnabled !== 1;
-    // DNS cluster peers — only meaningful when clustering is actually configured, so the check reports
+    // DNS cluster peers - only meaningful when clustering is actually configured, so the check reports
     // "not configured" on the majority of servers instead of inventing a finding.
     $dnsC = function_exists('smpro_dns_cluster_health') ? smpro_dns_cluster_health() : ['configured' => false, 'peers' => [], 'worst' => 'none'];
     $dnsLbl = ''; $dnsSev = 'info'; $dnsFind = ''; $dnsRec = ''; $dnsEv = '';
@@ -408,7 +408,7 @@ function smpro_sh_all() {
         smpro_sh_mk('LFD service', $lfd ? 'ok' : 'warning', $lfd ? 'LFD is active.' : 'LFD not active.', 'LFD auto-blocks brute-force/login failures.', $lfd ? 'No action needed.' : 'systemctl start lfd && systemctl enable lfd.'),
         smpro_sh_mk('CSF TESTING mode', (smpro_sh_cfg('/etc/csf/csf.conf', 'TESTING') === null) ? 'info' : ((trim((string)@shell_exec("grep -E '^TESTING' /etc/csf/csf.conf 2>/dev/null")) === 'TESTING = "1"') ? 'warning' : 'ok'), trim((string)@shell_exec("grep -E '^TESTING' /etc/csf/csf.conf 2>/dev/null")) ?: 'TESTING unknown', 'TESTING=1 means CSF rules are NOT enforced.', 'Set TESTING=0 in /etc/csf/csf.conf and run csf -r once verified.'),
     ];
-    // CSF hardening gaps — only emitted when CSF is actually installed (csf.conf present).
+    // CSF hardening gaps - only emitted when CSF is actually installed (csf.conf present).
     // Seen in the field: SYNFLOOD="0", RESTRICT_SYSLOG="0" and PORTFLOOD="" while every other
     // firewall check looked fine. Read-only: a single file read, parsed with anchored keys.
     if (is_file('/etc/csf/csf.conf')) {
@@ -442,7 +442,7 @@ function smpro_sh_all() {
     $imun = is_executable('/usr/bin/imunify360-agent'); $imunRun = $imun && smpro_sh_pf('imunify360');
     $tmpNoexec = (bool)preg_match('#\s/tmp\s.*noexec#', (string)@shell_exec('mount 2>/dev/null'));
     // Per-interpreter, because a server runs several EA-PHP versions and hardening is applied to each one
-    // separately — a single unhardened version is enough for an attacker, so the worst version sets the verdict.
+    // separately - a single unhardened version is enough for an attacker, so the worst version sets the verdict.
     $dfAll  = smpro_sh_php_ini_all('disable_functions');
     $expAll = smpro_sh_php_ini_all('expose_php');
     $dfWeak = [];   // versions that do not block command execution
@@ -455,11 +455,11 @@ function smpro_sh_all() {
                          : 'No PHP interpreter could be read.';
     $expose     = $expAll ? ($expOn ? 'expose_php is On in: ' . implode(', ', $expOn) : 'expose_php is Off in all ' . count($expAll) . ' interpreter(s).')
                           : 'No PHP interpreter could be read.';
-    // EOL EA-PHP versions — pure directory listing of /opt/cpanel (NO per-version `php -r`
+    // EOL EA-PHP versions - pure directory listing of /opt/cpanel (NO per-version `php -r`
     // render probes). Servers commonly carry a stack of old EA-PHP packages, all end-of-life.
     // Cutoff is DATE-DRIVEN, not a hardcoded version. php.net security-support end per branch; compared against
     // the clock so the line moves on its own. The old fixed "< 81" test kept calling an 8.1-only server green
-    // long after 8.1 stopped receiving security patches (31 Dec 2025) — the check aged into a false all-clear.
+    // long after 8.1 stopped receiving security patches (31 Dec 2025) - the check aged into a false all-clear.
     $phpEolDates = [
         '54'=>'2015-09-14','55'=>'2016-07-21','56'=>'2018-12-31','70'=>'2019-01-10','71'=>'2019-12-01',
         '72'=>'2020-11-30','73'=>'2021-12-06','74'=>'2022-11-28','80'=>'2023-11-26','81'=>'2025-12-31',
@@ -472,7 +472,7 @@ function smpro_sh_all() {
         if (!preg_match('/^ea-php(\d{2,3})$/', $eaB, $eaM)) continue;
         $eaV = $eaM[1];
         if (!isset($phpEolDates[$eaV])) {
-            // Branch newer than this table knows about → treat as supported. Only flag a genuinely old
+            // Branch newer than this table knows about -> treat as supported. Only flag a genuinely old
             // unknown version, so a future ea-php86 never gets called EOL just because we have no date for it.
             if ((int)$eaV < 81) $eolPhp[] = $eaB;
             continue;
@@ -483,7 +483,7 @@ function smpro_sh_all() {
     }
     $phpSupported = array_values(array_diff($eaPhp, $eolPhp));
     $eolSoonTxt   = $eolSoon ? ' Losing support within ~5 months: ' . implode(', ', $eolSoon) . '.' : '';
-    // Kernel symlink/hardlink protection — with these off, a local user can plant a symlink/hardlink to trick a
+    // Kernel symlink/hardlink protection - with these off, a local user can plant a symlink/hardlink to trick a
     // root process into following it onto a system file (classic local-privesc primitive). Enabled by default on
     // modern kernels; SM Pro's own root file-ops resolve realpaths + gate on owner, but this is defense-in-depth.
     $psym = trim(smpro_sh_run("cat /proc/sys/fs/protected_symlinks 2>/dev/null"));
@@ -534,7 +534,7 @@ function smpro_sh_all() {
     return $C;
 }
 
-// smpro_sh_all() runs php -i twice + recursive Apache-config greps + ss/sshd/mysql probes — too heavy for
+// smpro_sh_all() runs php -i twice + recursive Apache-config greps + ss/sshd/mysql probes - too heavy for
 // every render (incl. the post-Apply reload). Cache it; the apply handler busts the cache so a fix shows
 // its effect immediately on reload.
 $cats = smpro_cache_through('sh_scan', 120, fn() => smpro_sh_all());

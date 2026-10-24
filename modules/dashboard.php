@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/dashboard.php — LIVE dashboard.
+ * modules/dashboard.php - LIVE dashboard.
  * Initial render uses real values; JS then polls ?format=json every 2s and
  * updates the numbers in place (real-time, no page reload, light /proc reads).
  */
@@ -10,7 +10,7 @@ $m = smpro_collect_metrics();
 $attn = function_exists('smpro_dash_attention') ? smpro_dash_attention($m) : [];
 smpro_audit('dashboard_view', ['pressure' => $m['pressure']]);
 // Keep the Security & Health score honest: refresh the cached Server Tune-up hardening posture in the background
-// (throttled, detached — never scans inline) so the score reflects open hardening items, not just acute issues.
+// (throttled, detached - never scans inline) so the score reflects open hardening items, not just acute issues.
 if (function_exists('smpro_tun_posture_refresh_async')) { try { smpro_tun_posture_refresh_async(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }
 
 smpro_layout_header('Dashboard');
@@ -42,7 +42,7 @@ smpro_layout_header('Dashboard');
 <?php if (function_exists('smpro_score_render')) smpro_score_render($m, $attn); ?>
 
 <?php
-// Managed servers (Hub) — show every linked member's live status right on the main dashboard.
+// Managed servers (Hub) - show every linked member's live status right on the main dashboard.
 if (function_exists('smpro_hub_active') && smpro_hub_active() && function_exists('smpro_hub_fleet_cached')):
   $dfleet = smpro_hub_fleet_cached();
   if ($dfleet):
@@ -97,7 +97,7 @@ if (function_exists('smpro_hub_active') && smpro_hub_active() && function_exists
 </div>
 
 <?php
-// Service status — headline Running/Down tiles; the Down tile deep-links into the Service Manager drill-in.
+// Service status - headline Running/Down tiles; the Down tile deep-links into the Service Manager drill-in.
 if (function_exists('smpro_svc_scan_cached')):
   [$svcRows, $svcTs, $svcCached] = smpro_svc_scan_cached(60);
   $svcUp = 0; $svcInst = 0; $svcDown = 0;
@@ -319,7 +319,7 @@ if (function_exists('smpro_svc_scan_cached')):
   }
   drawSparks();          // paint whatever history we already have, before the first poll
   tick();                // refresh immediately on load (don't wait for the first interval)
-  setInterval(tick,5000);  // 5s (was 2s) — each poll is a full PHP-CLI request; 5s stays "live" while cutting server load ~60%
+  setInterval(tick,5000);  // 5s (was 2s) - each poll is a full PHP-CLI request; 5s stays "live" while cutting server load ~60%
   document.addEventListener('visibilitychange',function(){if(!document.hidden)tick();});
 })();
 </script>

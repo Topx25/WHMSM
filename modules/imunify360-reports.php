@@ -1,7 +1,7 @@
 <?php
 /**
- * modules/imunify360-reports.php — Imunify360 malware reports (read-only).
- * Reads Imunify360's own scan results via imunify360-agent (zero scan overhead —
+ * modules/imunify360-reports.php - Imunify360 malware reports (read-only).
+ * Reads Imunify360's own scan results via imunify360-agent (zero scan overhead -
  * Imunify already scans continuously). Shows currently-malicious files, detection
  * history, infected accounts and malware families. Filterable + CSV export.
  */
@@ -20,17 +20,17 @@ function smpro_im_family($sig) {
     if (preg_match('/SMW-[A-Z]+-\d+-(.+)$/', $sig, $m)) return $m[1]; return $sig;
 }
 /**
- * Read-only risk triage of a malicious-list row (presentation only — NEVER changes what gets deleted).
+ * Read-only risk triage of a malicious-list row (presentation only - NEVER changes what gets deleted).
  * In the field Imunify has flagged ~2,900 items where ~2/3 were minified/vendor JS libraries (echarts,
- * wordCloud.js, ace modes, *.min.js) — almost certainly false positives — drowning the genuine PHP
+ * wordCloud.js, ace modes, *.min.js) - almost certainly false positives - drowning the genuine PHP
  * webshells/backdoors. This ranks each row so the dangerous ones can be surfaced first:
- *   'high'   — a server-EXECUTABLE script (php/phtml/phar/php[3-7]/pht/pl/py/cgi/asp/aspx/sh), OR the
+ *   'high'   - a server-EXECUTABLE script (php/phtml/phar/php[3-7]/pht/pl/py/cgi/asp/aspx/sh), OR the
  *              Imunify signature/family names a shell/backdoor/injector/dropper/loader family.
- *   'low'    — client-side JS/CSS vendor/minified asset: ends .min.js/.min.css, or lives under
+ *   'low'    - client-side JS/CSS vendor/minified asset: ends .min.js/.min.css, or lives under
  *              node_modules / vendor / dist / assets / wp-includes/js / plugins (ext js/css/map/json).
  *              These are delivered to the browser and never executed server-side, so they cannot be a
- *              live webshell — very often false positives. Still shown, just de-prioritized.
- *   'medium' — everything else (review).
+ *              live webshell - very often false positives. Still shown, just de-prioritized.
+ *   'medium' - everything else (review).
  * $file = the row's `file` path; $type = the row's `type` signature id (confirmed field names on a live box,
  * e.g. SMW-BLKH-SA-CLOUDAV-php.bkdr.wpplugin.mal-WPPLUGIN1-0 for PHP backdoors vs
  * SMW-INJ-CLOUDAV-js.obf.redi-NP531-0 for the JS noise).
@@ -42,13 +42,13 @@ function smpro_im_triage($file, $type) {
     static $clientExt = ['js'=>1,'mjs'=>1,'cjs'=>1,'css'=>1,'map'=>1,'json'=>1];
     // Anything the web server itself will run is treated as likely-real.
     if (isset($execExt[$ext])) return 'high';
-    // A shell/backdoor/injector/dropper/loader family in the signature — but a .js/.css can NEVER be a
+    // A shell/backdoor/injector/dropper/loader family in the signature - but a .js/.css can NEVER be a
     // server-run shell, so a client-side asset never rides this clause up to HIGH (that is the whole point).
     // NB: match specific family words, not a bare "inj", so the SMW-INJ- prefix on the JS noise never trips it.
     if (!isset($clientExt[$ext]) &&
         preg_match('#(webshell|shell\b|\bbkdr|backdoor|b374k|\bc99\b|\br57\b|filesman|dropper|\bdrpr|loader|\brce\b|uploader|injector|\.inj\.|trojan|hacktool)#', $t))
         return 'high';
-    // Client-side vendor/minified JS/CSS noise → de-prioritized (never deleted differently, just labeled).
+    // Client-side vendor/minified JS/CSS noise -> de-prioritized (never deleted differently, just labeled).
     if (isset($clientExt[$ext])) {
         if (preg_match('#\.min\.(js|css)$#', $p)) return 'low';
         if (preg_match('#(/node_modules/|/vendor/|/dist/|/assets/|/wp-includes/js/|/plugins/)#', $p)) return 'low';
@@ -66,13 +66,13 @@ $fmt = (string)($_GET['format'] ?? '');
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
 
 /* ===================================================================
- * Action engine — server-wide hash hunt + REAL file deletion (backed up
+ * Action engine - server-wide hash hunt + REAL file deletion (backed up
  * outside the account, with a per-action report). Reuses the same backup
  * location & report schema as Forensics so deletions show up there too.
  * =================================================================== */
 define('SMPRO_IM_REPDIR', SMPRO_VARLIB . '/reports/detections');
 
-/** Write a per-action detection report (JSON) — same schema Forensics uses. */
+/** Write a per-action detection report (JSON) - same schema Forensics uses. */
 function smpro_im_report_write($d) {
     @is_dir(SMPRO_IM_REPDIR) || @mkdir(SMPRO_IM_REPDIR, 0700, true);
     $id = date('Ymd_His') . '_' . substr(hash('sha256', json_encode($d) . uniqid('', true)), 0, 8);
@@ -89,14 +89,14 @@ function smpro_im_report_load($id) {
 function smpro_im_acct_of($file) { return preg_match('#^/home/([^/]+)/#', (string)$file, $m) ? $m[1] : 'system'; }
 
 /**
- * CAMPAIGN CORRELATION — the same malware family landing on several accounts at once is not several
+ * CAMPAIGN CORRELATION - the same malware family landing on several accounts at once is not several
  * unrelated infections. It means ONE cause: a shared vulnerable plugin/theme, a leaked reseller or root
  * credential, or a server-level compromise. Cleaning the files one by one leaves that cause in place and
  * the campaign returns, which is why this is worth surfacing separately from the per-file list.
  *
  * Read-only, derived purely from rows already fetched. Groups by malware FAMILY (not the full signature id,
  * whose numeric part differs per detection) and reports only families spanning >= $minAccounts accounts.
- * Also reports the shared PATH TAIL when one exists — a common relative path across accounts is the single
+ * Also reports the shared PATH TAIL when one exists - a common relative path across accounts is the single
  * strongest hint at which plugin/component was the entry point.
  */
 function smpro_imu_malware_families(array $rows, int $minAccounts = 3): array {
@@ -113,7 +113,7 @@ function smpro_imu_malware_families(array $rows, int $minAccounts = 3): array {
         if (!isset($fam[$f])) $fam[$f] = ['family' => $f, 'accounts' => [], 'files' => 0, 'first' => 0, 'last' => 0, 'tails' => []];
         $fam[$f]['accounts'][$acct] = 1;
         $fam[$f]['files']++;
-        // 'created' is the field Imunify actually returns — every other consumer of these same rows uses it
+        // 'created' is the field Imunify actually returns - every other consumer of these same rows uses it
         // (sort, CSV, table). 'detected' does not exist, so first/last stayed 0 and the card's timeline
         // columns were always blank.
         $ts = (int)($r['created'] ?? $r['detected'] ?? 0);
@@ -160,7 +160,7 @@ function smpro_im_delete_file($file) {
     if (!is_file($file))
         return ['ok'=>false,'gone'=>true,'msg'=>'File is no longer on disk — Imunify already cleaned or quarantined it. Use “Clear from list” to remove this stale entry.'];
     $acct = $m[1];
-    // SECURITY: reject a symlink / a path resolving outside the account — else a customer could plant
+    // SECURITY: reject a symlink / a path resolving outside the account - else a customer could plant
     // /home/<acct>/x.php -> /root/.ssh/id_rsa and have this root-run copy() leak it + unlink() destroy it.
     $safe = function_exists('smpro_path_safe') ? smpro_path_safe($file, [smpro_user_home($acct)]) : $file;
     if ($safe === '') return ['ok'=>false,'msg'=>'Refused: target is a symlink or resolves outside the account.'];
@@ -185,7 +185,7 @@ function smpro_im_delete_file($file) {
             'report_url'=>'index.cgi?page=imunify360-reports&report=' . $rid . '&format=html'];
 }
 
-/** Standalone HTML deletion report (served via CGI format=html → download). */
+/** Standalone HTML deletion report (served via CGI format=html -> download). */
 function smpro_im_report_html($id) {
     $d = smpro_im_report_load($id);
     $h = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -262,7 +262,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['im_action'] ?? ''), ['im_clean', 
         echo json_encode(['ok' => true]); exit;
     }
     @ignore_user_abort(true); @set_time_limit(600);
-    // only ids Imunify itself lists as found and still on disk inside the owner's home — never a free-form id
+    // only ids Imunify itself lists as found and still on disk inside the owner's home - never a free-form id
     $want = array_flip(array_map('intval', explode(',', (string)($_POST['ids'] ?? ''))));
     $mj = smpro_im_json('malware malicious list --limit 2000', 40);
     $ok = []; $okFiles = []; foreach (smpro_imc_stuck(is_array($mj) ? ($mj['items'] ?? []) : [], 0) as $path => $ids) foreach ($ids as $i) if (isset($want[$i])) { $ok[] = $i; $okFiles[$path] = true; }
@@ -291,7 +291,7 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'clear_list') {
 /* ---------- fetch (read-only) ---------- */
 $malicious = []; $history = []; $accounts = 0; $totalHist = 0; $ver = ''; $strategy = '';
 if ($installed) {
-    // The two agent calls are 40s/50s shell probes — cache them off the render path (busted when a file is
+    // The two agent calls are 40s/50s shell probes - cache them off the render path (busted when a file is
     // deleted or the list is cleared, so the tables reflect the change on reload).
     $mj = smpro_cache_through('im_malicious', 180, fn() => smpro_im_json('malware malicious list --limit 2000', 40));
     if (is_array($mj)) { $malicious = $mj['items'] ?? []; }
@@ -307,19 +307,19 @@ $mFilter = function ($r) use ($user) { return $user === '' || ($r['username'] ??
 $hFilter = function ($r) use ($user, $fromTs) { if ($user !== '' && ($r['file_user'] ?? $r['file_owner'] ?? '') !== $user) return false; return (int)($r['ctime'] ?? 0) >= $fromTs; };
 $malF = array_values(array_filter($malicious, $mFilter));
 // WP Guard allowlist: never present this product's OWN verified files / already-neutralized quarantine as
-// "active threats" (and the delete action refuses them too — see smpro_im_delete_file).
+// "active threats" (and the delete action refuses them too - see smpro_im_delete_file).
 if (function_exists('smpro_wpguard_trusted')) $malF = array_values(array_filter($malF, fn($r) => !smpro_wpguard_trusted((string)($r['file'] ?? ''))));
 $histF = array_values(array_filter($history, $hFilter));
 // "Live" = still a real threat RIGHT NOW. Imunify keeps a file in its malicious list even after it has
-// been cleaned/quarantined/deleted from disk (those show a "stale" badge in the table below) — so the
+// been cleaned/quarantined/deleted from disk (those show a "stale" badge in the table below) - so the
 // headline counts must exclude them, or they read as still-infected when they are not.
 // Only "found" is a live threat: cleanup_done / cleanup_removed rows keep a file on disk (cleaned in place, or emptied) and are not.
 $imLive = function ($r) { if (($r['status'] ?? 'found') !== 'found') return false; if (($r['resource_type'] ?? '') === 'db') return true; $p = (string)($r['file'] ?? ''); return $p === '' || @is_file($p); };
 $malLive = array_values(array_filter($malF, $imLive));
 $staleCount = count($malF) - count($malLive);
-// Imunify item ids per file (a file can carry several detections) — what "Clean with Imunify" sends.
+// Imunify item ids per file (a file can carry several detections) - what "Clean with Imunify" sends.
 $imcIdsByPath = []; foreach ($malF as $r) if (($r['status'] ?? '') === 'found' && (int)($r['id'] ?? 0) > 0) $imcIdsByPath[(string)($r['file'] ?? '')][] = (int)$r['id'];
-// Read-only risk triage over the SAME rows the table renders (presentation only — see smpro_im_triage).
+// Read-only risk triage over the SAME rows the table renders (presentation only - see smpro_im_triage).
 $triHigh = $triMed = $triLow = 0;
 foreach ($malF as $r) { $tt = smpro_im_triage($r['file'] ?? '', $r['type'] ?? ''); if ($tt === 'high') $triHigh++; elseif ($tt === 'low') $triLow++; else $triMed++; }
 

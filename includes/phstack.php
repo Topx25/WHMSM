@@ -1,10 +1,10 @@
 <?php
 /**
- * Safety Monitor Pro — which application is installed in a web root, and which of its files matter.
+ * Safety Monitor Pro - which application is installed in a web root, and which of its files matter.
  *
  * This was inside the PHP Harden page. It moved here because a SECOND caller needs exactly the same answer: the
  * account-side plugin the site owner opens inside cPanel. Two copies of "is this WordPress, and which files are
- * the ones worth protecting" would drift within a release or two, and the drift would be invisible — both sides
+ * the ones worth protecting" would drift within a release or two, and the drift would be invisible - both sides
  * would keep working while quietly protecting different files.
  *
  * Everything here is plain filesystem reading, which is why it can be shared: it needs no privilege beyond being

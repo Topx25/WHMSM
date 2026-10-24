@@ -3,7 +3,7 @@
    beside the collector whose output they narrow: they decide what the page COUNTS, and a number nobody can
    reproduce outside the page is a number nobody can check. */
 /**
- * modules/account-audit.php — Account activity audit (read-only).
+ * modules/account-audit.php - Account activity audit (read-only).
  * Reads cPanel login_log + access_log, filtered by user/type/date range/log-lines.
  * Adds IP intelligence (country/provider/ASN via Team Cymru whois + cache),
  * CSV export, and 90-day saved reports. Target of the "Audit" relation from
@@ -22,7 +22,7 @@ define('SMPRO_AA_RETENTION', 90 * 86400);
 require_once __DIR__ . '/login-monitor.php';
 
 /* ===================================================================
- * WEB ACTIVITY tab — per-account analysis of Apache domlogs
+ * WEB ACTIVITY tab - per-account analysis of Apache domlogs
  * (uploads / downloads / file access / errors / visitors).
  * =================================================================== */
 function smpro_aa_domlogs_base() {
@@ -90,7 +90,7 @@ function smpro_aa_ip_web($ip) {
     if ($base === '' || !filter_var($ip, FILTER_VALIDATE_IP)) return null;
     static $own = null;
     if ($own === null) { $own = []; if (is_readable('/etc/userdomains')) foreach (file('/etc/userdomains', FILE_IGNORE_NEW_LINES) ?: [] as $l) if (preg_match('/^([^:]+):\s*(\S+)/', $l, $m)) $own[strtolower(trim($m[1]))] = trim($m[2]); }
-    // -F IP (no trailing space — matches the client field regardless of the exact separator); exclude the
+    // -F IP (no trailing space - matches the client field regardless of the exact separator); exclude the
     // big *-bytes_log files at grep level for speed on busy boxes; generous but bounded timeout.
     $cmd = 'timeout 60 nice -n ' . SMPRO_SCAN_NICE . ' ionice -c3 grep -rHaF --exclude=' . escapeshellarg('*-bytes_log') . ' ' . escapeshellarg($ip) . ' ' . escapeshellarg($base) . ' 2>/dev/null | grep -vE "bytes_log:|ftpxferlog|/ftp" | head -n 8000';
     $raw = (string)@shell_exec($cmd);
@@ -101,7 +101,7 @@ function smpro_aa_ip_web($ip) {
         if (strpos($file, $base) !== 0) continue;
         $dom = preg_replace('/-(ssl_log|bytes_log)$/', '', basename($file));
         $scheme = (substr(basename($file), -8) === '-ssl_log') ? 'https://' : 'http://';
-        // Parse the request/status/bytes from the "..." quote — position-independent, so a leading
+        // Parse the request/status/bytes from the "..." quote - position-independent, so a leading
         // %v vhost field (some cPanel LogFormats) no longer makes the whole line unparse.
         if (!preg_match('/\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+[^"]*"\s+(\d{3})\s+(\S+)/', $log, $m)) continue;
         // require the request to come FROM this IP: it must be the 1st field (combined) or 2nd (vhost-combined),
@@ -124,7 +124,7 @@ function smpro_aa_ip_web($ip) {
     $o['recent'] = array_reverse($o['recent']);
     return $o;
 }
-/** Every LOGIN / AUTH attempt one IP made across ALL services (SSH, mail, FTP, cPanel/WHM/webmail) —
+/** Every LOGIN / AUTH attempt one IP made across ALL services (SSH, mail, FTP, cPanel/WHM/webmail) -
  *  not just the cPanel access logs. This is what makes a "login-problem" IP (mail/SSH/FTP brute-force)
  *  actually show up in the report instead of appearing as "no activity". Bounded + recent-focused. */
 function smpro_aa_ip_auth($ip) {
@@ -144,7 +144,7 @@ function smpro_aa_ip_auth($ip) {
         [$file, $hint] = $src;
         if (!is_readable($file)) continue;
         if (microtime(true) - $budgetStart > 32) { $truncated = true; break; }   // hard wall-clock budget for a busy shared box
-        // read only the recent tail (fast on huge busy-box logs — seeks near EOF), grep the IP, keep the last matches
+        // read only the recent tail (fast on huge busy-box logs - seeks near EOF), grep the IP, keep the last matches
         $raw = (string)@shell_exec('timeout 12 sh -c ' . escapeshellarg('tail -n 250000 ' . escapeshellarg($file) . ' 2>/dev/null | grep -aF ' . $ipq . ' | tail -n 500') . ' 2>/dev/null');
         foreach (explode("\n", $raw) as $l) {
             $l = trim($l); if ($l === '' || strpos($l, $ip) === false) continue;
@@ -160,7 +160,7 @@ function smpro_aa_ip_auth($ip) {
             if (!$failed && !$success) {
                 // only keep auth-relevant lines (skip generic noise that merely mentions the IP)
                 if (!preg_match('/login|auth|password|sshd|ftpd|dovecot|LOGIN/i', $l)) continue;
-                $failed = true; // an auth-context line we can't classify → treat as an attempt
+                $failed = true; // an auth-context line we can't classify -> treat as an attempt
             }
             // targeted username
             $user = '';
@@ -461,7 +461,7 @@ th{background:var(--bg);font-size:10px;text-transform:uppercase;color:#475569}
 .brand{font-weight:700;color:#3b5bdb}
 @media print{body{padding:0}.noprint{display:none}}
 </style></head><body>";
-    // Period: when a bound was left open, show the actual oldest→newest detected in the events.
+    // Period: when a bound was left open, show the actual oldest->newest detected in the events.
     if (($meta['from'] ?? '') === '' || ($meta['to'] ?? '') === '') {
         $mn = 0; $mx = 0; foreach ($events as $e) { $t = (int)($e['ts'] ?? 0); if ($t) { $mn = $mn ? min($mn, $t) : $t; $mx = max($mx, $t); } }
         $periodStr = ($mn && $mx) ? (date('Y-m-d H:i', $mn) . ' → ' . date('Y-m-d H:i', $mx) . ' (full available range)') : 'full available range';
@@ -513,7 +513,7 @@ function smpro_aa_bf_rank($v) { return ['block' => 0, 'watch' => 1, 'normal' => 
  *
  * NUMBERS AND NAMES ONLY: how many addresses, how many attempts, how many accounts, which doors, over how long,
  * cloud or not, provider and country. No IP address, no account name, no log line ever goes out. The AI is asked
- * to judge a shape, and a shape is all it needs — which also means there is nothing here worth redacting.
+ * to judge a shape, and a shape is all it needs - which also means there is nothing here worth redacting.
  */
 function smpro_aa_bf_facts(array $nv): array {
     $as = smpro_aa_bf_assess($nv);
@@ -553,7 +553,7 @@ function smpro_aa_bf_facts_clean($n): ?array {
 }
 
 /**
- * Ask the AI to judge each network. It RECOMMENDS; it never blocks, allow-lists or ignores anything — the buttons
+ * Ask the AI to judge each network. It RECOMMENDS; it never blocks, allow-lists or ignores anything - the buttons
  * stay where they were and the operator presses them. A network the AI does not mention keeps the rules' verdict,
  * so a short or malformed answer degrades to what the page already said rather than to silence.
  */
@@ -884,7 +884,7 @@ $dlog   = (int)($_GET['loglines'] ?? 50000);
 if (!in_array($dlog, [20000,50000,100000,200000,500000], true)) $dlog = 50000;
 
 $today  = date('Y-m-d');
-// A BLANK date field = OPEN bound → cover the full available range (oldest…newest present in the
+// A BLANK date field = OPEN bound -> cover the full available range (oldest...newest present in the
 // scanned log window), instead of forcing the old last-7-days default. Only a valid date narrows it.
 $from   = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['from'] ?? '')) ? $_GET['from'] : '';
 $to     = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['to'] ?? '')) ? $_GET['to'] : '';
@@ -918,10 +918,10 @@ $laDays = (int)($_GET['days'] ?? 7); if (!in_array($laDays, [1, 7, 30], true)) $
 $laFromTs = time() - $laDays * 86400; $laToTs = time();
 $laFrom = date('Y-m-d', $laFromTs); $laTo = date('Y-m-d', $laToTs);
 
-/* ---------- POST: Login&Access actions (CSF block/allow/unblock, hide) — exits if matched ---------- */
+/* ---------- POST: Login&Access actions (CSF block/allow/unblock, hide) - exits if matched ---------- */
 smpro_la_handle_post();
 
-/* ---------- delete saved report(s) — AJAX, POST + CSRF, returns JSON ---------- */
+/* ---------- delete saved report(s) - AJAX, POST + CSRF, returns JSON ---------- */
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
 if ($reqMethod === 'POST' && ($_POST['aa_action'] ?? '') === 'delete_report') {
     smpro_require_valid_csrf('aa_delete');
@@ -942,8 +942,8 @@ if ($reqMethod === 'POST' && ($_POST['aa_action'] ?? '') === 'bf_ai') {
     smpro_require_valid_csrf('aa_delete'); smpro_require_root();
     header('Content-Type: application/json');
     // The page sends back the same numbers it is displaying, so the review costs no second parse of a 200k-line log.
-    // Those numbers are only ever used to ASK a question and to key the answer to a card already on screen — nothing
-    // is blocked, allow-listed or stored from them — so a tampered field can mislead nobody but its own sender.
+    // Those numbers are only ever used to ASK a question and to key the answer to a card already on screen - nothing
+    // is blocked, allow-listed or stored from them - so a tampered field can mislead nobody but its own sender.
     $in = json_decode((string)($_POST['nets'] ?? '[]'), true);
     $nets = [];
     foreach ((array)(is_array($in) ? $in : []) as $n) { $c = smpro_aa_bf_facts_clean($n); if ($c) $nets[] = $c; }
@@ -976,7 +976,7 @@ if ($reqMethod === 'POST' && in_array((string)($_POST['aa_action'] ?? ''), ['bf_
     smpro_aa_bf_ign_remove($key); smpro_audit('account_audit_bf_unignore', ['key'=>$key,'by'=>$by]); echo json_encode(['ok'=>true, 'msg'=>'Network shown again.']); exit;
 }
 
-/* ---------- block a foreign attacker IP (POST + CSRF) — home-region/local IPs are refused ---------- */
+/* ---------- block a foreign attacker IP (POST + CSRF) - home-region/local IPs are refused ---------- */
 if ($reqMethod === 'POST' && ($_POST['aa_action'] ?? '') === 'block_ip') {
     smpro_require_valid_csrf('aa_delete');
     smpro_require_root();
@@ -1098,8 +1098,8 @@ if ($aaTab === 'audit' || $aaTab === 'bruteforce') {
     foreach ($slice as &$e) $e['intel'] = smpro_aa_ip_intel($e['ip']);
     unset($e);
 
-    // Foreign-country (non-Arab) alerts — uses cached geo only (cheap). Red = a successful
-    // foreign login; Orange = an IP with >3 failed foreign attempts (brute-force → blockable).
+    // Foreign-country (non-Arab) alerts - uses cached geo only (cheap). Red = a successful
+    // foreign login; Orange = an IP with >3 failed foreign attempts (brute-force -> blockable).
     $aaForeignSucc = []; $aaFFail = [];
     foreach ($events as $e) {
         $k = $e['kind'] ?? '';
@@ -1123,8 +1123,8 @@ if ($aaTab === 'audit' || $aaTab === 'bruteforce') {
     usort($aaBrute, fn($a,$b) => $b['n'] <=> $a['n']);
 
     // Addresses belonging to a provider on the allow-list are taken out of the attacker list. They are in
-    // csf.allow precisely because they must never be blocked — a search crawler, an uptime monitor, the CDN in
-    // front of every site here — so listing them as attackers, next to a Block button that the server would
+    // csf.allow precisely because they must never be blocked - a search crawler, an uptime monitor, the CDN in
+    // front of every site here - so listing them as attackers, next to a Block button that the server would
     // refuse anyway, states the opposite of the decision already made about them. They are counted and named
     // rather than dropped without trace: a crawler failing to log in over and over is worth knowing about, it
     // is just not an intrusion.
@@ -1139,7 +1139,7 @@ if ($aaTab === 'audit' || $aaTab === 'bruteforce') {
     }
 
     // Group the offenders by the NETWORK they came from. A list of 289 addresses reads as 289 problems needing
-    // 289 decisions, but a scan run from one cloud provider is ONE actor renting many addresses — blocking them
+    // 289 decisions, but a scan run from one cloud provider is ONE actor renting many addresses - blocking them
     // one at a time is both unreadable and endless, and the pattern that identifies the campaign is invisible.
     // Now that the ASN comes from the local database (no network call, no per-page budget) every offender can be
     // placed, so the page can group by network and offer the decision at the size it is actually made.
@@ -1156,7 +1156,7 @@ if ($aaTab === 'audit' || $aaTab === 'bruteforce') {
             $aaNets[$key] = ['asn' => $asn, 'provider' => (string)($in['provider'] ?? ''),
                              'cc' => $bx['cc'], 'ips' => [], 'fails' => 0, 'users' => [], 'first' => 0, 'last' => 0, 'services' => [],
                              // A cloud or hosting network is an automated scanner sweeping the whole internet.
-                             // It is still an attack and still blockable — but it is not a lead about THIS
+                             // It is still an attack and still blockable - but it is not a lead about THIS
                              // server, so it is separated from traffic that came from somewhere a person is.
                              'bot' => function_exists('smpro_ip_is_datacenter') ? smpro_ip_is_datacenter($in) : false];
         }
@@ -1174,7 +1174,7 @@ if ($aaTab === 'audit' || $aaTab === 'bruteforce') {
         if ($p === '' || strtolower($p) === 'n/a') $_n['provider'] = $_n['asn'] !== '' ? $_n['asn'] : 'unidentified network';
     }
     unset($_n);
-    // Worst network first — by how many addresses it fielded, then by total attempts.
+    // Worst network first - by how many addresses it fielded, then by total attempts.
     uasort($aaNets, function ($a, $b) {
         $c = count($b['ips']) <=> count($a['ips']);
         return $c !== 0 ? $c : ($b['fails'] <=> $a['fails']);
@@ -1182,7 +1182,7 @@ if ($aaTab === 'audit' || $aaTab === 'bruteforce') {
     // Split, do not drop. Automated cloud scanners are folded away because they are the same background noise
     // every server on the internet receives, and burying the one attack that came from somewhere real underneath
     // two hundred of them is how the real one gets missed. They are still counted, still shown on request, and
-    // still blockable — the page says how many it folded, so "quiet" can never mean "not looked at".
+    // still blockable - the page says how many it folded, so "quiet" can never mean "not looked at".
     // Networks the operator chose to ignore in the Break-in Report are kept aside: not in the banner, not in
     // the lists, but on the report page under "Ignored" so the decision is visible and reversible.
     $aaNetsIgnored = []; $aaIgn = smpro_aa_bf_ign_all();
@@ -1588,8 +1588,8 @@ $aaNav = [['aa-events', '&#128203; Events'], ['aaSavedCard', '&#128190; Saved re
   <div class="card"><div class="lbl">Hidden technical</div><div class="val"><?= (int)$hiddenTech ?></div></div>
 </div>
 <?php
-  // Period line — when a date box is left blank we scan the FULL available window; show the ACTUAL
-  // oldest→newest timestamps detected (bounded by the log-lines setting), not an artificial 7-day span.
+  // Period line - when a date box is left blank we scan the FULL available window; show the ACTUAL
+  // oldest->newest timestamps detected (bounded by the log-lines setting), not an artificial 7-day span.
   $periodTxt = ($from !== '' || $to !== '')
       ? (($from !== '' ? smpro_h($from) : 'oldest') . ' → ' . ($to !== '' ? smpro_h($to) : 'latest'))
       : (($spanMin && $spanMax) ? (date('Y-m-d H:i', $spanMin) . ' → ' . date('Y-m-d H:i', $spanMax) . ' (full available range)') : 'full available range');

@@ -1,10 +1,10 @@
 <?php
 /**
- * Safety Monitor Pro — which third-party plugins appear inside your customers' cPanel.
+ * Safety Monitor Pro - which third-party plugins appear inside your customers' cPanel.
  *
  * Nothing in WHM answers this. An account-side plugin can sit in every customer's cPanel for years without the
  * server's owner ever seeing it listed anywhere, and it matters in two directions. Before shipping an account-side
- * plugin of our own we have to know whether one is already there — two tools managing the same file locks fight
+ * plugin of our own we have to know whether one is already there - two tools managing the same file locks fight
  * over the same immutable bits and each reports the other's work as tampering. And for an operator who inherited a
  * server they did not build, "what is my customer actually looking at, and what can it do as root?" is a fair
  * question with no answer today.
@@ -12,7 +12,7 @@
  * The detection is cPanel's own registration mechanism rather than a guess from directory names. A third-party
  * plugin registers itself by dropping `dynamicui_<name>.conf` into the theme's dynamicui directory; cPanel's own
  * built-in pages are not registered that way, they live in the theme's single shipped dynamicui.conf. Listing
- * directories instead produced 68 results on a stock server, of which every one was cPanel's own — a list that
+ * directories instead produced 68 results on a stock server, of which every one was cPanel's own - a list that
  * long is the same as no list at all, because nobody reads it.
  *
  * Each registration is paired with two things that decide how much it can do: the directory it serves from, and
@@ -51,7 +51,7 @@ function smpro_cps_label($raw) {
     return trim($s) !== '' ? trim($s) : '';
 }
 
-/** Root helpers: /usr/local/cpanel/bin/admin/<Vendor>/<Module> — the supported privilege path for a cPanel plugin. */
+/** Root helpers: /usr/local/cpanel/bin/admin/<Vendor>/<Module> - the supported privilege path for a cPanel plugin. */
 function smpro_cps_admin_bins() {
     $out = [];
     foreach (glob('/usr/local/cpanel/bin/admin/*', GLOB_ONLYDIR) ?: [] as $vendorDir) {
@@ -99,7 +99,7 @@ function smpro_cps_dir_size($dir, $maxFiles = 3000) {
  * Our own account-side plugin, so it is never listed as somebody else's.
  *
  * Read from SMPRO_CPS_SLUG rather than a list kept by hand: the working name is expected to change, and a
- * hand-kept list would keep matching the OLD name after a rename — at which point the plugin would start
+ * hand-kept list would keep matching the OLD name after a rename - at which point the plugin would start
  * reporting itself to the operator as a third party's software.
  */
 function smpro_cps_is_ours($name) {
@@ -195,7 +195,7 @@ function smpro_cps_scan() {
             'orphan_bins' => $orphans, 'unreadable' => $unreadable, 'why' => $why];
 }
 
-/** One readable line about a plugin — what it is, and how much it can do. */
+/** One readable line about a plugin - what it is, and how much it can do. */
 function smpro_cps_describe(array $p) {
     $s = $p['label'];
     if (strcasecmp($p['label'], $p['name']) !== 0) $s .= ' (' . $p['name'] . ')';

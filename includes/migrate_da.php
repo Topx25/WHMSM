@@ -1,20 +1,20 @@
 <?php
 /**
- * Safety Monitor Pro — DirectAdmin archive reader.
+ * Safety Monitor Pro - DirectAdmin archive reader.
  *
  * Stage one of the DirectAdmin route: understand the archive before anything is converted. Everything here is
- * READ-ONLY and derived from a real DirectAdmin 1.6x backup, not from documentation — the layout below was
+ * READ-ONLY and derived from a real DirectAdmin 1.6x backup, not from documentation - the layout below was
  * mapped from an actual `user.admin.<name>.tar.gz`:
  *
  *   backup/        user.conf, .shadow, crontab.conf, <db>.conf + <db>.sql, email_data/,
  *                  home.tar.gz (a nested archive of the home directory), and one directory per domain holding
  *                  domain.conf, the DNS zone, SSL material, ftp.passwd and email/ (passwd, aliases, quota,
  *                  vacation.conf, autoresponder.conf)
- *   domains/       the served content — public_html, private_html, public_ftp, logs, stats
+ *   domains/       the served content - public_html, private_html, public_ftp, logs, stats
  *   imap/          the mailboxes themselves
  *
- * The reader exists so the operator sees exactly what an archive holds — accounts, domains, databases,
- * mailboxes — and, just as importantly, what this could NOT read, BEFORE a restore is offered. A converter
+ * The reader exists so the operator sees exactly what an archive holds - accounts, domains, databases,
+ * mailboxes - and, just as importantly, what this could NOT read, BEFORE a restore is offered. A converter
  * that silently drops a mailbox is worse than one that refuses, because the loss surfaces days later.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -34,7 +34,7 @@ function smpro_mig_da_conf(string $file): array {
 
 /**
  * Extract just the metadata from a DirectAdmin archive into $dest.
- * home.tar.gz and the served content are deliberately excluded — on a real archive those are almost all of the
+ * home.tar.gz and the served content are deliberately excluded - on a real archive those are almost all of the
  * bytes (9.7 GB in the sample, of which the metadata was a few MB), and none of it is needed to describe the
  * account. The whole stream is still read because tar is sequential, so callers must treat this as a slow job.
  */
@@ -42,7 +42,7 @@ function smpro_mig_da_conf(string $file): array {
  * Refuse an archive that would write outside where it is unpacked.
  * A tar member named /etc/passwd or ../../root/.ssh/authorized_keys is extracted to exactly that path unless
  * something stops it, so a backup handed over by a departing customer is untrusted input like any other. tar's
- * own stripping is not relied on — the archive is inspected and rejected before a single byte is written.
+ * own stripping is not relied on - the archive is inspected and rejected before a single byte is written.
  */
 function smpro_mig_da_path_check(string $archive, int $timeout = 3600): array {
     $bad = smpro_run('tar tzf ' . escapeshellarg($archive) . ' 2>/dev/null | grep -E ' . escapeshellarg('(^/|(^|/)\.\.(/|$))') . ' | head -n 5',
@@ -176,7 +176,7 @@ function smpro_mig_da_describe(string $metaDir): array {
             'databases' => $databases, 'totals' => $totals, 'warnings' => $warn];
 }
 
-/** Read a DirectAdmin archive end to end: extract the metadata, then describe it. Slow — run it detached. */
+/** Read a DirectAdmin archive end to end: extract the metadata, then describe it. Slow - run it detached. */
 function smpro_mig_da_read(string $archive, string $workDir = ''): array {
     $work = $workDir !== '' ? $workDir : SMPRO_VARLIB . '/migrate_work/' . substr(sha1($archive), 0, 12);
     $x = smpro_mig_da_extract_meta($archive, $work);

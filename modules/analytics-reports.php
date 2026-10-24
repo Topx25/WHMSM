@@ -1,8 +1,8 @@
 <?php
 /**
- * modules/analytics-reports.php — Analytics / Change-Log dashboard (read-only).
+ * modules/analytics-reports.php - Analytics / Change-Log dashboard (read-only).
  * Admin/analyst view: every CHANGE made on the server (IP blocks, service
- * controls, security fixes, report actions) plus security events — across all
+ * controls, security fixes, report actions) plus security events - across all
  * sections, filterable by time period and change type, with CSV/HTML/PDF export.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -37,8 +37,8 @@ function smpro_ar_target($e) { $d = $e['details'] ?? []; foreach (['ip','svc','f
 function smpro_ar_result($e) { $d = $e['details'] ?? []; if (array_key_exists('ok',$d)) return $d['ok'] ? 'ok' : 'fail'; if (!empty($d['deleted'])) return 'ok'; return ''; }
 
 /* ---------- operational reports (spam / attacks / brute-force / imunify / backup) ---------- */
-// Run through `sh -c` so a pipeline that BEGINS with a brace group — `{ cat a; zcat b; } | grep | tail` from the
-// rotation-aware reader — is valid. Without the explicit shell, `timeout 14 { … }` is a sh syntax error, and
+// Run through `sh -c` so a pipeline that BEGINS with a brace group - `{ cat a; zcat b; } | grep | tail` from the
+// rotation-aware reader - is valid. Without the explicit shell, `timeout 14 { ... }` is a sh syntax error, and
 // EVERY counter silently returned 0 (a monitor reporting "all clear" unconditionally).
 
 /* ---------- filters ---------- */

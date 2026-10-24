@@ -1,8 +1,8 @@
 <?php
 /**
- * includes/fwallow.php — Recommended firewall allow-lists (trusted provider IP ranges → csf.allow).
+ * includes/fwallow.php - Recommended firewall allow-lists (trusted provider IP ranges -> csf.allow).
  * Optional + reversible + tagged. Supports a LIVE fetch of the current ranges (Cloudflare / UptimeRobot / Google /
- * Bing) and an opt-in BACKGROUND auto-update (cron) that keeps csf.allow in sync with the provider feed — so the
+ * Bing) and an opt-in BACKGROUND auto-update (cron) that keeps csf.allow in sync with the provider feed - so the
  * admin enables it once and never has to come back. Shared by modules/firewall-status.php + bin/fw_allow_sync.php.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -15,12 +15,12 @@ if (!defined('SMPRO_FW_LIVE'))   define('SMPRO_FW_LIVE',   SMPRO_VARLIB . '/fw_l
 /* ============================ LIVE firewall allow (works WITH or WITHOUT CSF) ============================
  * Historically every "allow an IP" path went only through `csf -a` / csf.allow, so on a box where CSF is NOT
  * installed/active (e.g. Imunify360 is the firewall) an allow did NOTHING to the live rules. This engine fixes
- * that: it routes an allow to whatever firewall is actually running — CSF allow-list and/or Imunify's own
- * whitelist — AND always inserts a top-of-INPUT ACCEPT into live iptables/ip6tables so the allow takes effect
+ * that: it routes an allow to whatever firewall is actually running - CSF allow-list and/or Imunify's own
+ * whitelist - AND always inserts a top-of-INPUT ACCEPT into live iptables/ip6tables so the allow takes effect
  * IMMEDIATELY (a rule at INPUT position 1 short-circuits the imunify360/LOCALINPUT drop chains, since those are
  * jumped from INPUT after it). It also records the IP so a reboot/firewall-reload can re-apply it. */
 function smpro_fw_has_imunify() { return trim((string)@shell_exec('command -v imunify360-agent 2>/dev/null')) !== ''; }
-/** Every DISTINCT iptables backend binary present for v4/v6 — covers both the nft default AND iptables-legacy,
+/** Every DISTINCT iptables backend binary present for v4/v6 - covers both the nft default AND iptables-legacy,
  *  because some boxes (this one) keep rules in the legacy tables. Deduped when `iptables` symlinks to iptables-nft. */
 function smpro_fw_ipt_bins($v6 = false) {
     $names = $v6 ? ['ip6tables', 'ip6tables-legacy', 'ip6tables-nft'] : ['iptables', 'iptables-legacy', 'iptables-nft'];
@@ -52,17 +52,17 @@ function smpro_fw_live_save($list) {
     $t = $f . '.tmp'; if (@file_put_contents($t, json_encode(array_values(array_unique($list)), JSON_PRETTY_PRINT), LOCK_EX) !== false) { @chmod($t, 0600); @rename($t, $f); }
 }
 /** Allow an IP/CIDR in the LIVE firewall right now, whatever firewall is running (CSF, Imunify, or neither).
- *  Idempotent + persistent. This is what the "Add IP → Allow" card calls so it works even with NO CSF installed. */
+ *  Idempotent + persistent. This is what the "Add IP -> Allow" card calls so it works even with NO CSF installed. */
 function smpro_fw_live_allow($ip, $comment = 'SM Pro admin allow') {
     $ip = trim((string)$ip);
     if (!smpro_fw_cidr_valid($ip)) return ['ok' => false, 'msg' => 'Enter a valid IP or CIDR.'];
     $did = []; $live = '';
-    // 1) csf.allow persistence + live iptables insert — smpro_csf_allow_add already does BOTH (and its live insert
+    // 1) csf.allow persistence + live iptables insert - smpro_csf_allow_add already does BOTH (and its live insert
     //    works even when CSF is absent, via smpro_fw_iptables_allow), so it covers the CSF and the no-CSF cases.
     if (function_exists('smpro_csf_allow_add')) { $r = @smpro_csf_allow_add($ip, $comment); if (!empty($r['ok'])) $did[] = 'CSF/csf.allow'; }
     $be = smpro_fw_ipt_all($ip, 'ACCEPT');                 // live ACCEPT at top of INPUT on EVERY backend (nft + legacy)
     if ($be) { $live = implode('/', array_unique($be)); $did[] = 'live iptables (' . $live . ')'; }
-    // 2) Imunify present → add to ITS whitelist so Imunify keeps it (and won't drop it on its next reload)
+    // 2) Imunify present -> add to ITS whitelist so Imunify keeps it (and won't drop it on its next reload)
     if (smpro_fw_has_imunify()) {
         $out = (string)@shell_exec('timeout 30 imunify360-agent whitelist ip add ' . escapeshellarg($ip) . ' --comment ' . escapeshellarg($comment) . ' 2>&1');
         if (stripos($out, 'usage:') !== false || stripos($out, 'invalid choice') !== false)   // CLI variant fallback
@@ -76,7 +76,7 @@ function smpro_fw_live_allow($ip, $comment = 'SM Pro admin allow') {
             'msg' => empty($did) ? ('Could not allow ' . $ip . ' — no firewall control available.')
                                  : ($ip . ' allowed via ' . implode(' + ', array_unique($did)) . ($live !== '' ? ' — inserted into live iptables, so it takes effect immediately (even with no CSF).' : '.'))];
 }
-/** Remove a live-allow IP (live rule + our store). Does not touch CSF/Imunify lists — remove those in their own UI. */
+/** Remove a live-allow IP (live rule + our store). Does not touch CSF/Imunify lists - remove those in their own UI. */
 function smpro_fw_live_remove($ip) {
     $ip = trim((string)$ip); if (!smpro_fw_cidr_valid($ip)) return ['ok' => false, 'msg' => 'Invalid IP.'];
     smpro_fw_ipt_all($ip, 'ACCEPT', true);                // delete the live ACCEPT on every backend
@@ -226,7 +226,7 @@ function smpro_fw_allow_fetch_raw($pv) {
         if (!preg_match('#^https://[A-Za-z0-9._~:/?\#\[\]@!$&\'()*+,;=%-]+$#', (string)$url)) continue;   // https only
         // -L is REQUIRED: Google now 302s googlebot.json to /static/crawling/ipranges/common-crawlers.json,
         // so without it curl returns a 279-byte HTML redirect page, json_decode fails, and the provider
-        // silently yields ZERO ranges — the list renders empty and Sync looks like it did nothing. Measured:
+        // silently yields ZERO ranges - the list renders empty and Sync looks like it did nothing. Measured:
         // without -L 0 prefixes, with -L 315 (Google) and 28 (Bing). Capped at 5 hops so a loop can't hang.
         $body = (string)@shell_exec('timeout 15 curl -fsSL --max-redirs 5 --max-time 12 -A ' . escapeshellarg('SMPro-fw/1.0') . ' ' . escapeshellarg($url) . ' 2>/dev/null');
         if ($body === '') continue;
@@ -321,10 +321,10 @@ function smpro_fw_allow_undo($key) {
     if (function_exists('smpro_audit')) smpro_audit('firewall_allow_provider', ['provider'=>$key, 'op'=>'remove', 'removed'=>$removed, 'actor'=>function_exists('smpro_current_actor')?smpro_current_actor():'root']);
     return ['ok'=>true, 'msg'=>$pv['name'] . ': removed ' . $removed . ' allow-list range(s). CSF reloaded.'];
 }
-/** Auto-update reconcile: fetch latest → add new tagged → drop OUR tagged entries no longer in the feed. */
+/** Auto-update reconcile: fetch latest -> add new tagged -> drop OUR tagged entries no longer in the feed. */
 function smpro_fw_allow_reconcile($key) {
     $pv = smpro_fw_allow_providers()[$key] ?? null; if (!$pv) return ['added'=>0,'removed'=>0,'err'=>'unknown provider'];
-    // Say WHY nothing happened. Returning a bare added=0 made the UI report "Synced — added 0, removed 0",
+    // Say WHY nothing happened. Returning a bare added=0 made the UI report "Synced - added 0, removed 0",
     // which reads as success on a server where CSF simply is not the firewall (or is not installed at all).
     $csf = smpro_fw_allow_csf_bin();
     if ($csf === '') return ['added'=>0,'removed'=>0,'err'=>'CSF is not installed on this server, so allow-list entries cannot be written. Ranges were still fetched and are listed above.'];
@@ -417,17 +417,17 @@ function smpro_fw_allow_autoupdate_run() {
 }
 
 /**
- * Which managed provider — if any — publishes this address.
+ * Which managed provider - if any - publishes this address.
  *
  * The allow-list feature puts these ranges in csf.allow so CSF never blocks them, but until this existed nothing
  * ELSE in the plugin knew about them: the reports still listed Googlebot and UptimeRobot among the attackers, and
  * the block path's own guard only consulted the plugin's small manual allowlist. So a crawler could be presented
- * as a threat, and an automatic response could be aimed at it — CSF would have refused the deny because the range
+ * as a threat, and an automatic response could be aimed at it - CSF would have refused the deny because the range
  * is allowed there, but the plugin would have recorded a block that never happened and shown it as done.
  *
- * Returns the provider key ('googlebot', 'cloudflare', …) or '' when the address is not one of theirs.
+ * Returns the provider key ('googlebot', 'cloudflare', ...) or '' when the address is not one of theirs.
  * The range set is loaded once per request; matching is CIDR, because a crawler address is almost never listed
- * on its own — it lives inside a published prefix.
+ * on its own - it lives inside a published prefix.
  */
 function smpro_fw_allow_covers($ip) {
     static $ranges = null;
@@ -447,7 +447,7 @@ function smpro_fw_allow_covers($ip) {
     return '';
 }
 
-/** Display name for whoever publishes this address, or '' — for labelling a row rather than calling it an attack. */
+/** Display name for whoever publishes this address, or '' - for labelling a row rather than calling it an attack. */
 function smpro_fw_allow_covers_name($ip) {
     $k = smpro_fw_allow_covers($ip);
     if ($k === '') return '';

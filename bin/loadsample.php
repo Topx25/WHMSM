@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/loadsample.php — every minute: one load sample into the 24-hour ring (includes/loadhist.php).
+ * bin/loadsample.php - every minute: one load sample into the 24-hour ring (includes/loadhist.php).
  * Read-only, sub-millisecond; NOT gated on the plugin being switched off, because the history of a quiet
  * hour is exactly what the next investigation asks for.
  */

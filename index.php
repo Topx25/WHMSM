@@ -1,11 +1,11 @@
 <?php
 /**
- * Safety Monitor Pro (smpro) — front controller / router.
+ * Safety Monitor Pro (smpro) - front controller / router.
  * GET = read-only. State-changing actions (later) = POST + CSRF.
  * Routes + sidebar are generated from a single registry: includes/menu.php
  */
 define('SMPRO_BOOT', 1);
-// Dev-mode bypass — honored ONLY with a valid OFFLINE-SIGNED token bound to THIS machine (machine-id|hostname),
+// Dev-mode bypass - honored ONLY with a valid OFFLINE-SIGNED token bound to THIS machine (machine-id|hostname),
 // verified here with the embedded offline public key. It is UNFORGEABLE without the offline private key, so a
 // stray file, a copied token, or a spoofed /var/cpanel/mainip can NOT enable it (the old public-IP marker could).
 // Fail-closed everywhere else: no token / bad signature => SMPRO_LIC_ENFORCE defaults to true (hard-gate).
@@ -73,9 +73,9 @@ require __DIR__ . '/includes/disk_tmp.php';       // A2 /tmp-expand (uses smpro_
 require __DIR__ . '/includes/disk_home.php';      // A2b move-account-home-to-another-partition (uses smpro_mnt_* + smpro_dom_*; background worker in bin/home_move.php)
 require __DIR__ . '/includes/disk_scan.php';      // A2c per-account cleanup scan helpers + background job (worker: bin/cleanscan.php)
 require __DIR__ . '/includes/clearcache.php';     // B  Site Doctor platform-aware cache clear (uses smpro_inv_*)
-require __DIR__ . '/includes/phstack.php';    // which app is in a web root + which files matter — shared with the account-side plugin
+require __DIR__ . '/includes/phstack.php';    // which app is in a web root + which files matter - shared with the account-side plugin
 require __DIR__ . '/includes/phlock.php';     // the ROOT-only half: read and set the immutable bit (cron needs it too)
-require __DIR__ . '/includes/ph_ignore.php';   // accounts force-unprotected on purpose — read by the intrusion cron tick, not only by the page
+require __DIR__ . '/includes/ph_ignore.php';   // accounts force-unprotected on purpose - read by the intrusion cron tick, not only by the page
 require __DIR__ . '/includes/spqueue.php';     // Safety Lock: the accounts' release requests, decided on the PHP Harden page
 require __DIR__ . '/includes/sprules.php';     // and the operator's automatic-approval rules for them
 // Without these two the PHP Harden page silently rendered without its pending-requests panel: the panel is
@@ -91,12 +91,12 @@ require __DIR__ . '/includes/svcmon.php';         // Service catalog + controls 
 require __DIR__ . '/includes/migrate.php';
 require __DIR__ . '/includes/migrate_da.php';
 require __DIR__ . '/includes/migrate_da_convert.php';
-require __DIR__ . '/includes/migrate_da_home.php';        // the bulk half: content, mail, dumps, packaging   // DirectAdmin -> cpmove translation   // DirectAdmin archive reader (stage one of that route)      // Restore & Migrate — drives cPanel's own transfer engine
+require __DIR__ . '/includes/migrate_da_home.php';        // the bulk half: content, mail, dumps, packaging   // DirectAdmin -> cpmove translation   // DirectAdmin archive reader (stage one of that route)      // Restore & Migrate - drives cPanel's own transfer engine
 require __DIR__ . '/includes/spincheck.php';        // processes holding a core while doing nothing
-require __DIR__ . '/includes/croncheck.php';       // stuck scheduled jobs — the usual cause of high load with idle CPUs
+require __DIR__ . '/includes/croncheck.php';       // stuck scheduled jobs - the usual cause of high load with idle CPUs
 require __DIR__ . '/includes/croncheck_fix.php';   // repairing one, with a verified copy first
 require __DIR__ . '/includes/wpcron_fix.php';      // switching off WordPress's visitor-triggered cron
-require __DIR__ . '/includes/insight.php';        // Dashboard "Daily insight" — rotating tip + live server-specific warnings
+require __DIR__ . '/includes/insight.php';        // Dashboard "Daily insight" - rotating tip + live server-specific warnings
 require __DIR__ . '/includes/phishscan.php';      // Spam & Phishing background phishing scan (detached worker + result polling)
 require __DIR__ . '/includes/reboot.php';         // Reboot readiness checks + scheduled auto-reboot (re-verifies safety at fire time)
 require __DIR__ . '/includes/diskio.php';         // Live per-disk I/O + temperature (shared by the Disk/Storage card's live poll)
@@ -129,7 +129,7 @@ if (!$__liteReq && $__selfhealDue) {
     if (function_exists('smpro_swapcycle_cron_sync')) { try { smpro_swapcycle_cron_sync(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // auto swap-cycle cron self-heal (OOM-safe)
     if (function_exists('smpro_fw_live_apply_all'))   { try { smpro_fw_live_apply_all(); }   catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // re-insert admin live-allow IPs into iptables (survive reboot/firewall flush; works with no CSF)
     if (function_exists('smpro_reboot_cron_sync'))    { try { smpro_reboot_cron_sync(); }    catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // scheduled-reboot cron self-heal (re-assert or clear the one-shot)
-    if (function_exists('smpro_bd_sample_cron_sync')) { try { smpro_bd_sample_cron_sync(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // hardware workload sampler (5-min peaks → the 7-day hardware-fit report)
+    if (function_exists('smpro_bd_sample_cron_sync')) { try { smpro_bd_sample_cron_sync(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // hardware workload sampler (5-min peaks -> the 7-day hardware-fit report)
     if (function_exists('smpro_login_guard_install_cron')) { try { smpro_login_guard_install_cron(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('login_guard_cron', $e); } }   // was run on EVERY request, including the 2-second poll
     if (function_exists('smpro_ds_home_cron_sync'))   { try { smpro_ds_home_cron_sync(); }   catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // account-move resume watchdog (installed only while a move is unfinished)
 }
@@ -137,7 +137,7 @@ if (!$__liteReq && $__selfhealDue) {
 // index.cgi invokes PHP as CLI, which does NOT auto-populate superglobals from
 // the CGI environment. Rebuild $_GET (and $_POST for forms later) ourselves.
 // parse_str() is NOT bounded by max_input_vars/post_max_size (those only cap the normal SAPI), so cap the raw
-// input first — keeps the CLI-rebuilt superglobals within the same envelope a normal PHP SAPI would enforce.
+// input first - keeps the CLI-rebuilt superglobals within the same envelope a normal PHP SAPI would enforce.
 if (empty($_GET) && ($qs = getenv('QUERY_STRING'))) {
     parse_str(substr((string)$qs, 0, 131072), $_GET);                 // 128KB query string ceiling
     if (count($_GET, COUNT_RECURSIVE) > 2000) $_GET = [];             // param-flood guard (CLI SAPI drops max_input_vars)
@@ -145,7 +145,7 @@ if (empty($_GET) && ($qs = getenv('QUERY_STRING'))) {
 if (($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD')) === 'POST' && empty($_POST)) {
     $__raw = (string)stream_get_contents(fopen('php://stdin', 'r'), 4194304);             // 4MB POST body ceiling
     // parse_str understands ONE encoding: application/x-www-form-urlencoded. Handed a multipart body it does not
-    // fail — it quietly yields nothing usable, so every field is missing, the handler that was addressed never
+    // fail - it quietly yields nothing usable, so every field is missing, the handler that was addressed never
     // runs, and the caller receives the whole page instead of its answer. That took a long time to find, because
     // the symptom (a dialog saying it could not load) looks like anything except an encoding mismatch. Nothing
     // here can read multipart, so a request that sends it is a bug at the caller and is now told so on arrival
@@ -163,7 +163,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD')) === 'POST' && empty
 
 // RULE: a state-changing action, once started on the server, must RUN TO COMPLETION even if the admin closes the
 // tab / navigates away mid-request. ignore_user_abort keeps the PHP process alive past a client disconnect for POST
-// actions (the truly long jobs — scans, /tmp expand, DB deep-scan — additionally run as detached workers). The
+// actions (the truly long jobs - scans, /tmp expand, DB deep-scan - additionally run as detached workers). The
 // results are then waiting when the admin re-opens the page. A companion hint is shown on every page (layout.php).
 if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET')) === 'POST') {
     @ignore_user_abort(true);
@@ -178,15 +178,15 @@ if (function_exists('smpro_integrity_gate')) { try { smpro_integrity_gate(); } c
 
 // ---- LICENSE GATE: when enforcement is on and the license is not valid, NOTHING in the
 // plugin opens. License activation traffic is always allowed; everything else is blocked
-// (JSON endpoints → error, page requests → forced to the License page + auto-redirect). ----
+// (JSON endpoints -> error, page requests -> forced to the License page + auto-redirect). ----
 $SMPRO_LIC_GATE = false;
 if (SMPRO_LIC_ENFORCE && function_exists('smpro_lic_is_valid')) {
     smpro_lic_ensure_fresh();   // warm async, or block-check if past the 10-min hard window
     $licReqPage = isset($_GET['page']) && in_array(strtolower((string)$_GET['page']), ['license', 'licence', 'licensing', 'activation'], true);
     $licReqApi  = ($_GET['license'] ?? '') !== '';                 // activate/check/deactivate endpoint
-    if (function_exists('smpro_lic_kill_tick')) smpro_lic_kill_tick();   // confirmed-tamper >48h → self-uninstall (no-op otherwise)
+    if (function_exists('smpro_lic_kill_tick')) smpro_lic_kill_tick();   // confirmed-tamper >48h -> self-uninstall (no-op otherwise)
     if (!smpro_lic_is_valid() && !$licReqPage && !$licReqApi) {
-        // Tamper is handled SILENTLY — no countdown / no "auto-remove" warning is ever shown to the customer
+        // Tamper is handled SILENTLY - no countdown / no "auto-remove" warning is ever shown to the customer
         // (the only alert goes to the admin via the license server). A tampered box just sees the neutral
         // "license could not be verified" message, exactly like a transport outage.
         $unreachable = function_exists('smpro_lic_is_unreachable') && smpro_lic_is_unreachable();
@@ -200,10 +200,10 @@ if (SMPRO_LIC_ENFORCE && function_exists('smpro_lic_is_valid')) {
         $SMPRO_LIC_GATE = true;      // layout adds a client-side redirect so the URL becomes ?page=license
         $GLOBALS['SMPRO_LIC_UNREACHABLE'] = $unreachable;
     }
-    // Fast, non-blocking endpoint-redirect check on page load (no network on web) — flips to full-stop instantly
+    // Fast, non-blocking endpoint-redirect check on page load (no network on web) - flips to full-stop instantly
     // the moment the panel is opened on a blackholed box, instead of waiting for the next cron.
     if (function_exists('smpro_lic_tlm_sync')) { try { smpro_lic_tlm_sync(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }
-    // Connection-loss ladder: advance the accumulator on page load too (read-only — no network/notify on web).
+    // Connection-loss ladder: advance the accumulator on page load too (read-only - no network/notify on web).
     if (function_exists('smpro_lic_sync_tick')) { try { smpro_lic_sync_tick(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }
 }
 
@@ -230,15 +230,15 @@ if (($_GET['hub_ajax'] ?? '') !== '') {
     if (in_array($act, ['init','approve'], true) && function_exists('smpro_hub_cpass_isset') && !smpro_hub_cpass_isset()) {
         echo json_encode(['ok'=>false,'msg'=>'Set a control password first (Multi-Server → control password) — it secures the end-to-end channel between paired servers. Use the SAME password on both servers.']); exit;
     }
-    // independent control password: gate PAIRING (init/approve) + actions (push) — the token alone is not enough
+    // independent control password: gate PAIRING (init/approve) + actions (push) - the token alone is not enough
     if (in_array($act, ['push','init','approve'], true) && function_exists('smpro_hub_cpass_isset') && smpro_hub_cpass_isset()) {
         if (!smpro_hub_cpass_unlocked()) { echo json_encode(['ok'=>false,'locked'=>true,'msg'=>'Enter the control password to pair or manage servers.']); exit; }
         smpro_hub_cpass_unlock();   // SLIDING idle timeout: refresh on each action so active work is never interrupted (re-locks after 15 min idle)
     }
-    // step-up authorization: performing an ACTION on a member requires proving the member's control password —
+    // step-up authorization: performing an ACTION on a member requires proving the member's control password -
     // first time, then again only when an UNDISCLOSED security rule fires (see smpro_hub_needs_verify). The UI
     // is never told WHICH rule triggered (just needverify) so the rule-set stays opaque to anyone watching.
-    // ONLY actions (push) are gated — read-only viewing (render/proxy/live) is open so the panel always opens,
+    // ONLY actions (push) are gated - read-only viewing (render/proxy/live) is open so the panel always opens,
     // and by the time the operator acts the member is already live, so the verify round-trip completes fast.
     if ($act === 'push' && function_exists('smpro_hub_needs_verify')) {
         $vsnap = null;
@@ -378,7 +378,7 @@ if (($_GET['update'] ?? '') !== '') {
     if ($act === 'check') { echo json_encode(smpro_upd_check(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
     if ($act === 'apply') { smpro_audit('self_update_manual', []); echo json_encode(smpro_upd_apply(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
     // FORCE: re-apply the current channel's latest signed build immediately, bypassing ONLY the version_compare
-    // downgrade guard ($force=true) — the RSA package signature is STILL enforced, so it can only ever install a
+    // downgrade guard ($force=true) - the RSA package signature is STILL enforced, so it can only ever install a
     // genuinely-signed build the channel serves, never unsigned/forged code. Used to recover a broken/partial
     // install, re-pull a re-published build, or move a server off an out-of-order version string. Backup + reversible.
     if ($act === 'force') { smpro_audit('self_update_force', []); echo json_encode(smpro_upd_apply('', true), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
@@ -437,9 +437,9 @@ if (($_GET['tgbot'] ?? '') !== '') {
 if (($_GET['cooler'] ?? '') !== '') {
     header('Content-Type: application/json');
     if (!empty($SMPRO_LIC_GATE)) { echo json_encode(['ok' => false, 'error' => 'License required', 'license_required' => true], JSON_UNESCAPED_UNICODE); exit; }   // even the read-only status/sources/report GETs must not serve on an unlicensed/tampered box
-    smpro_require_root();                                // status/sources expose the top-CPU process/PID list — root-only
+    smpro_require_root();                                // status/sources expose the top-CPU process/PID list - root-only
     $reqM = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
-    // read from $_POST first (the CGI populates $_POST/$_GET manually — $_REQUEST may be unreliable here)
+    // read from $_POST first (the CGI populates $_POST/$_GET manually - $_REQUEST may be unreliable here)
     $act  = preg_replace('/[^a-z]/', '', strtolower((string)($_POST['cool_action'] ?? $_GET['cool_action'] ?? 'status')));
     if ($act === 'status')  { echo json_encode(smpro_cool_status(), JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
     if ($act === 'sources') { echo json_encode(['ok' => true] + smpro_cool_sources(8), JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
@@ -482,7 +482,7 @@ if (($_GET['tuning'] ?? '') !== '') {
     if ($reqM !== 'POST') { echo json_encode(['ok' => false, 'msg' => 'POST required']); exit; }
     smpro_require_valid_csrf('tuning'); smpro_require_root();
     $act = preg_replace('/[^a-z]/', '', strtolower((string)($_POST['tun_action'] ?? '')));
-    // Any config-changing action makes the cached posture stale → bust it so the next render recomputes fresh.
+    // Any config-changing action makes the cached posture stale -> bust it so the next render recomputes fresh.
     if (function_exists('smpro_cache_bust') && in_array($act, ['restore', 'apply', 'install', 'aioptimize', 'aiapplyall', 'secadvisorapply'], true)) smpro_cache_bust('tun_scan');
     if ($act === 'backup')  { $b = smpro_tun_backup_all(); echo json_encode(['ok' => true, 'id' => $b['id'], 'files' => count($b['files'])]); exit; }
     if ($act === 'restore') { $id = preg_replace('/[^0-9_a-z]/', '', (string)($_POST['bk_id'] ?? '')); echo json_encode(smpro_tun_restore($id), JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
@@ -507,7 +507,7 @@ if (($_GET['tuning'] ?? '') !== '') {
     if ($act === 'aioptimizestatus' && function_exists('smpro_tun_job_read')) { echo json_encode(smpro_tun_job_read('aioptimize'), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
     if ($act === 'secadvisorstart' && function_exists('smpro_tun_job_start')) { echo json_encode(smpro_tun_job_start('secadvisor', []), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
     if ($act === 'secadvisorstatus' && function_exists('smpro_tun_job_read')) { echo json_encode(smpro_tun_job_read('secadvisor'), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
-    if ($act === 'aiapplyall' && function_exists('smpro_tun_ai_apply_all')) {   // bulk-apply the AI suggestions that map to safe appliers (auto-backup first) — synchronous
+    if ($act === 'aiapplyall' && function_exists('smpro_tun_ai_apply_all')) {   // bulk-apply the AI suggestions that map to safe appliers (auto-backup first) - synchronous
         $ids = array_values(array_filter(array_map(fn($t) => preg_replace('/[^a-z0-9_]/', '', strtolower($t)), preg_split('/[,\s]+/', (string)($_POST['ids'] ?? '')))));
         echo json_encode(smpro_tun_ai_apply_all($ids), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
     }
@@ -663,7 +663,7 @@ $page = isset($_GET['page']) ? preg_replace('/[^a-z0-9_\-]/', '', strtolower($_G
 $item = smpro_menu_resolve($page);
 
 if ($item === null) {
-    // Unknown route → safe fallback to dashboard.
+    // Unknown route -> safe fallback to dashboard.
     $item = smpro_menu_resolve('dashboard');
     $page = 'dashboard';
 }
@@ -676,7 +676,7 @@ if (function_exists('smpro_legal_accepted') && !smpro_legal_accepted()) {
 }
 
 // Feature gate: when licensed, a section whose required feature is not in the license is locked.
-// (License itself is never gated — it's the way back in.)
+// (License itself is never gated - it's the way back in.)
 if (SMPRO_LIC_ENFORCE && $page !== 'license' && function_exists('smpro_lic_section_allowed')
     && !smpro_lic_section_allowed($item['feature'] ?? '')) {
     smpro_render_locked($item);
@@ -685,11 +685,11 @@ if (SMPRO_LIC_ENFORCE && $page !== 'license' && function_exists('smpro_lic_secti
 
 // Master switch: when the plugin is DISABLED, every page shows a notice.
 // A NORMAL admin-disable leaves Plugin Control + License open as the way back. A confirmed TAMPER (endpoint
-// redirect / forged state) gets NO escape hatch — EVERY page is locked and no re-enable control is offered, since
+// redirect / forged state) gets NO escape hatch - EVERY page is locked and no re-enable control is offered, since
 // only a server-side reset can clear it (local re-enable is a no-op anyway while the marker is set).
 $smTamperLock = (function_exists('smpro_lic_tlm_at') && smpro_lic_tlm_at() > 0)
              || (function_exists('smpro_lic_tamper_at') && smpro_lic_tamper_at() > 0);
-// B2 FIX — the License page is ALWAYS a way back in (read-only status + support info + the surface a server-side
+// B2 FIX - the License page is ALWAYS a way back in (read-only status + support info + the surface a server-side
 // reset reaches), even under a tamper lock. Locking it made a false tamper flag unrecoverable in-panel. Plugin
 // Control stays a recovery page only for a NORMAL admin-disable, not under tamper (its re-enable is a no-op then).
 $smRecoveryPage = ($page === 'license') || (!$smTamperLock && $page === 'plugin-control');
@@ -719,10 +719,10 @@ if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled() && !$smRecover
     exit;
 }
 
-// Defense-in-depth (#3): an INDEPENDENT last-line guard right before a module renders — re-derives the verdict
+// Defense-in-depth (#3): an INDEPENDENT last-line guard right before a module renders - re-derives the verdict
 // from the signed tamper marker + the integrity check DIRECTLY (not via smpro_ctl_disabled / smpro_lic_is_valid),
 // so patching the central boolean alone does not let a module render on a tampered box.
-// B2 FIX — never lock the License page itself; it is the guaranteed recovery/status surface (see master switch above).
+// B2 FIX - never lock the License page itself; it is the guaranteed recovery/status surface (see master switch above).
 if ($page !== 'license'
     && ((function_exists('smpro_lic_tlm_at') && smpro_lic_tlm_at() > 0)
     || (function_exists('smpro_lic_integrity_ok') && !smpro_lic_integrity_ok()))) {
@@ -738,7 +738,7 @@ if ($page !== 'license'
 // Built modules load their file; unbuilt ones render the shared placeholder.
 $modulePath = SMPRO_MODULES . '/' . $item['id'] . '.php';
 
-// track most-used pages (for Dashboard shortcuts) — GET page views only, cheap json bump
+// track most-used pages (for Dashboard shortcuts) - GET page views only, cheap json bump
 if (function_exists('smpro_sc_track') && strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'GET') smpro_sc_track($item['id'] ?? $page);
 
 if (!empty($item['built']) && is_file($modulePath)) {

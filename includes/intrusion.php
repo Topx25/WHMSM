@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/intrusion.php — Intrusion detection ENGINE (shared by the Intrusion Monitor
+ * includes/intrusion.php - Intrusion detection ENGINE (shared by the Intrusion Monitor
  * module AND the notify cron, so detection + alerts run even with no page open).
  *
  * Capabilities:
@@ -11,7 +11,7 @@
  *   - Attacker intelligence + coordinated-campaign detection              [intel]
  *   - Real-time alert scan for the notify cron (push as it happens)       [alerts]
  *
- * Only function/const definitions here — no execution at include time.
+ * Only function/const definitions here - no execution at include time.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
@@ -22,7 +22,7 @@ define('SMPRO_IM_CAP',          20000);
 define('SMPRO_IN_DB',     SMPRO_VARLIB . '/intrusion.db');
 define('SMPRO_IN_CFG',    SMPRO_VARLIB . '/intrusion.json');     // settings (CF token, thresholds, auto-block)
 define('SMPRO_IN_STATE',  SMPRO_VARLIB . '/intrusion_state.json'); // alert cursor / state
-define('SMPRO_IM_QUAR',   SMPRO_VARLIB . '/quarantine');         // quarantined (cleaned) web-shells — restorable
+define('SMPRO_IM_QUAR',   SMPRO_VARLIB . '/quarantine');         // quarantined (cleaned) web-shells - restorable
 define('SMPRO_IM_EMLOG',  SMPRO_VARLIB . '/emergency.json');     // manifest of emergency actions (reversible)
 
 /* ============================ settings ============================ */
@@ -38,13 +38,7 @@ function smpro_in_cfg($reset = false) {
     if ($c !== null) return $c;
     $d = is_file(SMPRO_IN_CFG) ? json_decode((string)@file_get_contents(SMPRO_IN_CFG), true) : null;
     $d = is_array($d) ? $d : [];
-    // MIGRATION (in-memory): an EXISTING config saved by a version before caution regions were configurable had
-    // the fixed 22-country Arab caution tier. Preserve it so an UPDATE never suddenly drops the 3× auto-block
-    // headroom and firewalls a server's own other-Arab residential customers. Keyed on the file already having
-    // content but lacking the key — a FRESH install (empty $d) is untouched and ships market-neutral (empty).
-    if ($d && !array_key_exists('caution_regions', $d)) {
-        $d['caution_regions'] = ['AE','KW','QA','BH','OM','JO','LB','SY','IQ','YE','PS','DZ','MA','TN','LY','SD','MR','SO','DJ','KM'];
-    }
+    // The caution tier is whatever the operator saved; the product ships no region of its own.
     $c = $d + [
         'cf_token' => '', 'cf_account' => '',                 // Cloudflare API (account-level access rules)
         'abuseipdb_key' => '',
@@ -61,25 +55,25 @@ function smpro_in_cfg($reset = false) {
         'emergency_block_digest_hours' => 12,                  // routine scanner auto-blocks: one grouped INFO digest per N hours (not per run)
         'use_cloudflare' => true, 'use_csf' => true,
         'allowlist' => [],                                     // never block these IPs/CIDRs
-        'caution_regions' => [],                               // tier-2: residential IPs here need 3× the attack count before auto-block. Ships EMPTY (no market assumption); admin sets it (UI has an Arab-countries preset).
-        'protect_regions' => [],                               // home regions: RESIDENTIAL IPs here are never auto-blocked. Ships EMPTY — this is a resale product and must not assume a market; the operator sets it (the plugin suggests the server's own country).
+        'caution_regions' => [],                               // tier-2: residential IPs here need 3x the attack count before auto-block. Ships EMPTY (no market assumption); admin sets it (UI has an Arab-countries preset).
+        'protect_regions' => [],                               // home regions: RESIDENTIAL IPs here are never auto-blocked. Ships EMPTY - this is a resale product and must not assume a market; the operator sets it (the plugin suggests the server's own country).
         'protect_arab_threshold' => 1,                         // other Arab-country residential IPs: auto-block only when attack is clear & repeated (1=on)
-        'breach_exclude' => ['imunify-security', '/wp-content/cache/', '/wp-content/upgrade/', '/wp-content/uploads/cache/', 'wordfence-waf', '/mu-plugins/'],  // breach scan: ignore these (legit, auto-updating). Ships to every server, so keep it to widely-distributed names only — never a single-site one. Built-in security-plugin seeds are ALSO always applied — see smpro_im_breach_exclude_seed(). Files with a WP "Plugin Name:" header are never auto-quarantined.
+        'breach_exclude' => ['imunify-security', '/wp-content/cache/', '/wp-content/upgrade/', '/wp-content/uploads/cache/', 'wordfence-waf', '/mu-plugins/'],  // breach scan: ignore these (legit, auto-updating). Ships to every server, so keep it to widely-distributed names only - never a single-site one. Built-in security-plugin seeds are ALSO always applied - see smpro_im_breach_exclude_seed(). Files with a WP "Plugin Name:" header are never auto-quarantined.
         'thr_domain_attacks' => 150,                           // alert when a domain crosses N attacks in the window (busy shared server = high baseline noise)
         'thr_ip_domains' => 12,                                // alert when one IP hits N+ distinct domains (distributed scan)
         'thr_upload_cluster_events' => 8,                      // upload-cluster alert: N+ accepted-2xx Malicious-Upload POSTs to one endpoint...
-        'thr_upload_cluster_ips' => 4,                         // ...from M+ distinct IPs in the window (fires even when NO .php changed — the harajplastic gap)
+        'thr_upload_cluster_ips' => 4,                         // ...from M+ distinct IPs in the window (fires even when NO .php changed - the harajplastic gap)
         'alert_window_min' => 15,                              // detection window for the cron
         'login_guard' => true,                                 // 24/7 auto-block FOREIGN (non-Arab) login brute-force (cron)
         'login_guard_threshold' => 4,                          // block at this many failed logins (>3)
         'login_guard_window' => 30,                            // failed-login look-back window (minutes)
         'login_guard_cap' => 20,                               // max IPs blocked per cron run (safety)
         // Second rule: catch a scan spread across many addresses of one network, where no single address reaches
-        // the threshold above. Off by default — it blocks a whole set at once, which is the operator's call to
+        // the threshold above. Off by default - it blocks a whole set at once, which is the operator's call to
         // make, and the per-address rule already runs. The cap above still limits how many go per run.
         'login_guard_net' => false,                            // enable the network rule
-        'login_guard_net_ips' => 2,                            // …when a network fields at least this many addresses
-        'login_guard_net_fails' => 10,                         // …AND they total at least this many failed logins
+        'login_guard_net_ips' => 2,                            // ...when a network fields at least this many addresses
+        'login_guard_net_fails' => 10,                         // ...AND they total at least this many failed logins
         'honeytoken_users'      => [],                         // decoy cPanel accounts: ANY login to one = a leaked credential list
     ];
     // Decrypt secrets for callers; migrate any legacy PLAINTEXT value by re-storing it encrypted once.
@@ -88,15 +82,15 @@ function smpro_in_cfg($reset = false) {
         foreach (smpro_in_secret_keys() as $k) {
             $v = (string)($c[$k] ?? '');
             if ($v === '') continue;
-            if (smpro_secret_is_enc($v)) $c[$k] = smpro_secret_dec($v);   // stored encrypted → give callers plaintext
-            else $migrate = true;                                          // stored plaintext → needs re-encryption
+            if (smpro_secret_is_enc($v)) $c[$k] = smpro_secret_dec($v);   // stored encrypted -> give callers plaintext
+            else $migrate = true;                                          // stored plaintext -> needs re-encryption
         }
     }
     if ($migrate) smpro_in_cfg_write($c);                                  // rewrite to disk with secrets encrypted
     return $c;
 }
 /** Write the config to disk, encrypting secret fields at rest (does NOT mutate the in-memory copy). */
-/** Forget the in-request config cache — called after every write, and by tests that rewrite the file directly. */
+/** Forget the in-request config cache - called after every write, and by tests that rewrite the file directly. */
 function smpro_in_cfg_reset(): void { smpro_in_cfg(true); }
 
 function smpro_in_cfg_write(array $c) {
@@ -137,11 +131,11 @@ function smpro_in_state_save($s) { @is_dir(dirname(SMPRO_IN_STATE)) || @mkdir(di
 /**
  * Successful cPanel / webmail logins from OUTSIDE the home region, plus per-account travel anomalies.
  *
- * The foreign-login alert existed but read only /var/log/secure — sshd. The break-ins that actually happen on a
+ * The foreign-login alert existed but read only /var/log/secure - sshd. The break-ins that actually happen on a
  * cPanel server do not come through ssh: they come through the cPanel panel (2083) and webmail (2096), which log
  * to /usr/local/cpanel/logs/login_log and nowhere sshd can see. So the check ran, found no foreign ssh login,
  * and reported "clear" while a real account was being signed into from another continent with a stolen password.
- * This is that same check pointed at the door attackers use — a SUCCESSFUL login is the signal, because a
+ * This is that same check pointed at the door attackers use - a SUCCESSFUL login is the signal, because a
  * password that is already correct never appears as a failure for any brute-force rule to catch.
  *
  * Returns:
@@ -153,14 +147,14 @@ function smpro_in_state_save($s) { @is_dir(dirname(SMPRO_IN_STATE)) || @mkdir(di
 /**
  * File Manager writes from outside the home region, and the takeover-tool signature.
  *
- * The 2026-09-06 takeover of 31 accounts never tripped a single guard because every guard counts FAILED logins
+ * A takeover of 31 accounts on one server never tripped a single guard because every guard counts FAILED logins
  * and a stolen password does not fail. What the attacker DID leave was a fingerprint in cPanel's own access log:
  * from an outside address, `Fileman/save_file_content` writes a probe file, and `fileop&op=unlink` deletes it a
- * few seconds later (it was testing whether mail() worked before dropping the phishing kit) — 454 times across
- * the accounts. That write→delete pair, seconds apart, from an address outside the region the operator trusts,
+ * few seconds later (it was testing whether mail() worked before dropping the phishing kit) - 454 times across
+ * the accounts. That write->delete pair, seconds apart, from an address outside the region the operator trusts,
  * is not something a real customer does. This reads the same log and reports two things:
- *   'writes'    => File Manager writes from OUTSIDE the home region (one row per ip|user)      — high
- *   'signature' => write followed by unlink from the same ip|user within $pairSecs           — critical
+ *   'writes'    => File Manager writes from OUTSIDE the home region (one row per ip|user)      - high
+ *   'signature' => write followed by unlink from the same ip|user within $pairSecs           - critical
  * "Outside the home region" is the shared smpro_geo_foreign rule, so it is configured in one place.
  */
 function smpro_fm_foreign_writes($windowHours = 24, $pairSecs = 120, $tailLines = 60000) {
@@ -195,7 +189,7 @@ function smpro_fm_foreign_writes_parse($raw, $cutoff, $pairSecs = 120) {
         if ($ts && $ts < $cutoff) continue;
         if (function_exists('smpro_is_server_ip') && smpro_is_server_ip($ip)) continue;
         $g = smpro_geo_foreign($ip);
-        if (empty($g['foreign'])) continue;                        // home region / Arab set / local → a customer at work
+        if (empty($g['foreign'])) continue;                        // home region / Arab set / local -> a customer at work
         $file = '';
         if ($isUnlink && preg_match('/sourcefiles=([^&\s"]+)/', $line, $f)) $file = urldecode($f[1]);
         $k = $ip . '|' . $user;
@@ -228,10 +222,10 @@ function smpro_fm_foreign_writes_parse($raw, $cutoff, $pairSecs = 120) {
  * Honeytoken (decoy) accounts: cPanel users that exist for no customer, host nothing, and are never logged into.
  *
  * A credential marketplace sells lists in bulk, and a buyer's tool tries every account on the list. A decoy
- * account on that list is the one login that can never be legitimate — so ANY successful login to it is a
+ * account on that list is the one login that can never be legitimate - so ANY successful login to it is a
  * confirmed leak with zero chance of a false positive, and even a FAILED attempt means the account name is on
  * somebody's list. Both are reported; the successful one is critical. The decoy user names come from the
- * operator's config (`honeytoken_users`) — the plugin never guesses which accounts are decoys.
+ * operator's config (`honeytoken_users`) - the plugin never guesses which accounts are decoys.
  */
 function smpro_honey_hits($windowHours = 168) {
     $cfg = function_exists('smpro_in_cfg') ? smpro_in_cfg() : [];
@@ -419,13 +413,13 @@ function smpro_foreign_success_logins($windowHours = 168, $anomalyCountries = 2,
     if (!is_readable($log) || !function_exists('smpro_geo_foreign'))
         return ['ok' => false, 'why' => 'login_log unreadable or geo unavailable', 'foreign' => [], 'anomaly' => []];
     // With no home region, EVERY country is "foreign" and this would flag the operator's own logins. That is not
-    // a finding, it is a missing setting — report it as such and classify nothing.
+    // a finding, it is a missing setting - report it as such and classify nothing.
     if (function_exists('smpro_im_home_configured') && !smpro_im_home_configured())
         return ['ok' => false, 'why' => 'home region not configured', 'foreign' => [], 'anomaly' => []];
     $cutoff = time() - max(1, (int)$windowHours) * 3600;
     // tail is bounded; a busy panel writes a lot, so read enough to cover the window without scanning the whole file.
     $raw = (string)@shell_exec('timeout 25 tail -n 40000 ' . escapeshellarg($log) . ' 2>/dev/null'); if (function_exists('smpro_login_log_resolve')) $raw = smpro_login_log_resolve($raw);   // 127.0.0.1 behind WebShield / the cPanel proxy -> the visitor
-    // An empty read of a log that is NOT empty means the read failed (timeout, permission, tail missing) — that
+    // An empty read of a log that is NOT empty means the read failed (timeout, permission, tail missing) - that
     // is "nothing was checked", not "nothing was found", and the two must never look the same to the caller.
     if (trim($raw) === '') {
         if ((int)@filesize($log) > 0) return ['ok' => false, 'why' => 'login_log could not be read (tail returned nothing on a non-empty file)', 'foreign' => [], 'anomaly' => []];
@@ -491,7 +485,7 @@ function smpro_foreign_success_logins($windowHours = 168, $anomalyCountries = 2,
          * This had no allowance of any kind, so a mailbox whose owner lives in Turkey was reported every week,
          * for ever. Resetting its password does nothing: they sign in from Turkey again the next day and the
          * alert returns naming the same account. An alert that cannot be cleared by doing what it asks is the
-         * fastest way to teach an operator to ignore it — and to ignore the real one underneath it.
+         * fastest way to teach an operator to ignore it - and to ignore the real one underneath it.
          *
          * The allowance is the one Country Login Lock already keeps per account, not a second list of its own.
          * Two allow-lists that can disagree is a bug waiting for the day they do: the account the report calls
@@ -513,7 +507,7 @@ function smpro_foreign_success_logins($windowHours = 168, $anomalyCountries = 2,
             if (empty($g['foreign'])) $seen[$account]['home_cc'][$g['cc']] = true;
             $seen[$account]['ip'][$ip] = true;
         }
-        if (empty($g['foreign'])) continue;                        // home region / Arab / local / unplaceable → fine
+        if (empty($g['foreign'])) continue;                        // home region / Arab / local / unplaceable -> fine
         $key = $ip . '|' . $user;
         if (!isset($foreign[$key])) $foreign[$key] = ['ip' => $ip, 'user' => $user, 'account' => $account, 'cc' => $g['cc'], 'service' => $service, 'n' => 0, 'first' => $ts, 'last' => $ts];
         $foreign[$key]['n']++;
@@ -531,7 +525,7 @@ function smpro_foreign_success_logins($windowHours = 168, $anomalyCountries = 2,
         // COUNT THE HOME REGION AS ONE PLACE.
         //
         // This counted every country separately, so an account signed into from two neighbouring countries that
-        // are BOTH inside the configured home region was reported as "signed in from several countries — the
+        // are BOTH inside the configured home region was reported as "signed in from several countries - the
         // password is in more than one pair of hands". For a host whose customers live across that region this is
         // simply what an owner and their staff look like, and no password reset can ever change it: the owner
         // keeps signing in from both. The alert therefore could not be cleared by doing what it asked, which is
@@ -548,7 +542,7 @@ function smpro_foreign_success_logins($windowHours = 168, $anomalyCountries = 2,
     return ['ok' => true, 'foreign' => array_values($foreign), 'anomaly' => $anomaly];
 }
 
-/** Country name for a 2-letter code ("DE" → "Germany"); the code itself when intl is missing. */
+/** Country name for a 2-letter code ("DE" -> "Germany"); the code itself when intl is missing. */
 function smpro_cc_name($cc) {
     $cc = strtoupper(trim((string)$cc)); if ($cc === '' || strlen($cc) !== 2) return $cc;
     if (class_exists('Locale')) { $n = (string)@Locale::getDisplayRegion('-' . $cc, 'en'); if ($n !== '' && strtoupper($n) !== $cc) return $n; }
@@ -559,7 +553,7 @@ function smpro_cc_name($cc) {
 
 /**
  * Turn smpro_foreign_success_logins() output into the alert an operator can act on without decoding it. The old
- * text was "user @ ip (CC, cpaneld) ×n" capped at 12 rows — for 38 logins it showed a third of them, two-letter
+ * text was "user @ ip (CC, cpaneld) xn" capped at 12 rows - for 38 logins it showed a third of them, two-letter
  * codes, no time, no provider, and no way to tell which ACCOUNT the webmail address belonged to. This groups by
  * account, names the country and the network, says which door (cPanel panel / webmail), when it last happened,
  * and what to do. Pure: $intel($ip) supplies provider/ASN (offline lookup in production; a stub in tests).
@@ -636,7 +630,7 @@ function smpro_login_guard_run($dryrun = false) {
     $fails = [];
     foreach (explode("\n", $raw) as $line) {
         $line = trim($line); if ($line === '') continue;
-        // cPanel login_log is  [ts] level [service] IP - user "REQUEST" MESSAGE  — ONE dash before the user,
+        // cPanel login_log is  [ts] level [service] IP - user "REQUEST" MESSAGE  - ONE dash before the user,
         // then a quoted request. The old pattern required a SECOND dash (IP - user - MESSAGE), which current
         // cPanel never writes, so this matched nothing and the brute-force guard silently counted zero while
         // the Login Monitor's own (different, working) regex kept showing thousands of failures.
@@ -659,7 +653,7 @@ function smpro_login_guard_run($dryrun = false) {
     // hundreds of addresses at once. Rented cloud addresses make that cheap. So a second rule looks at the
     // NETWORK: when one network fields several addresses and they add up to real volume, the whole set counts as
     // one attacker even though no member reached the per-address threshold on its own.
-    // Both numbers must be met — several addresses AND real volume. Either alone is ordinary background noise.
+    // Both numbers must be met - several addresses AND real volume. Either alone is ordinary background noise.
     $netMinIps   = max(2, (int)($cfg['login_guard_net_ips']   ?? 2));
     $netMinFails = max(2, (int)($cfg['login_guard_net_fails'] ?? 10));
     $netHit = [];
@@ -762,7 +756,7 @@ function smpro_im_classify($text) {
     $t = strtolower($text);
     $has = function ($n) use ($t) { foreach ((array)$n as $x) if (strpos($t, $x) !== false) return true; return false; };
     // word-boundary match for SHORT/ambiguous tokens so they don't false-match INSIDE benign words
-    // (rce⊂force, sqli⊂mysqli, lfi⊂gulfintel, rfi⊂surfing, shell⊂powershell, login⊂…, session⊂obsession).
+    // (rce⊂force, sqli⊂mysqli, lfi⊂gulfintel, rfi⊂surfing, shell⊂powershell, login⊂..., session⊂obsession).
     $hasw = function ($n) use ($t) { foreach ((array)$n as $x) if (preg_match('/\b' . preg_quote($x, '/') . '\b/', $t)) return true; return false; };
     if ($has(['sql injection', 'union select', 'attack-sqli']) || $hasw(['sqli']))         return 'SQL Injection';
     if ($has(['cross-site scripting', 'attack-xss']) || $hasw(['xss']))                    return 'XSS';
@@ -865,19 +859,19 @@ function smpro_im_parse_modsec($bytes, $cap, $fromTs = 0, bool $withMonitor = fa
         }
         $cur = null;
     };
-    $tok = null;   // the current transaction's ModSec boundary token — see below
+    $tok = null;   // the current transaction's ModSec boundary token - see below
     foreach (explode("\n", $raw) as $ln) {
         if (preg_match('/^--([0-9A-Za-z]+)-([A-Z])--\s*$/', $ln, $m)) {
             $lineTok = $m[1]; $l = $m[2];
             // SECURITY: a ModSec transaction uses ONE random boundary token for ALL its section delimiters,
             // precisely so logged request/response content can never be mistaken for a delimiter. Bind to the
             // token from the opening -A-- and treat ONLY same-token lines as real delimiters. A different-token
-            // boundary line is attacker-forged content inside the logged request body (part C) — ignore it
+            // boundary line is attacker-forged content inside the logged request body (part C) - ignore it
             // (fall through as inert content) so it can't start/populate a fake event with an attacker-chosen
-            // IP / domain / severity (→ poisoned feed, false CRITICAL alerts, auto-block of a framed victim IP).
+            // IP / domain / severity (-> poisoned feed, false CRITICAL alerts, auto-block of a framed victim IP).
             if ($tok === null) {
                 if ($l === 'A') { $flush(); $tok = $lineTok; $started = true; $sec = 'A'; $cur = ['ts'=>0,'ip'=>'','realip'=>'', 'xff' => '', 'xff_name' => '','domain'=>'','method'=>'','uri'=>'','code'=>'','rule'=>'','msg'=>'','tag'=>'','severity'=>'','ua'=>'']; }
-                continue;   // stray delimiter outside any transaction → ignore
+                continue;   // stray delimiter outside any transaction -> ignore
             }
             if ($lineTok === $tok) {
                 if ($l === 'A')     { $flush(); $tok = $lineTok; $sec = 'A'; $cur = ['ts'=>0,'ip'=>'','realip'=>'','domain'=>'','method'=>'','uri'=>'','code'=>'','rule'=>'','msg'=>'','tag'=>'','severity'=>'','ua'=>'']; }
@@ -885,7 +879,7 @@ function smpro_im_parse_modsec($bytes, $cap, $fromTs = 0, bool $withMonitor = fa
                 else                { $sec = $l; }
                 continue;
             }
-            // foreign-token boundary line → forged body content: do NOT switch sections; fall through as content.
+            // foreign-token boundary line -> forged body content: do NOT switch sections; fall through as content.
         }
         if (!$started || $cur === null) continue;
         if ($sec === 'A') {
@@ -909,7 +903,7 @@ function smpro_im_parse_modsec($bytes, $cap, $fromTs = 0, bool $withMonitor = fa
                 $c = strpos($ln, ':');
                 if ($c !== false) { $cur['xff_name'] = trim(substr($ln, 0, $c)); $cur['xff'] = trim(substr($ln, $c + 1)); }
             }
-            // NOTE: X-Forwarded-For is intentionally NOT trusted as the attacker IP — any HTTP client can set it,
+            // NOTE: X-Forwarded-For is intentionally NOT trusted as the attacker IP - any HTTP client can set it,
             // so honoring it would let an attacker attribute their attack to (and get auto-blocked) an arbitrary
             // victim IP. Only the fronting-layer headers above (CF-Connecting-IP / True-Client-IP) are used, and
             // only when the connection IP is a Cloudflare edge (see the flush() guard).
@@ -939,7 +933,7 @@ function smpro_im_parse_modsec($bytes, $cap, $fromTs = 0, bool $withMonitor = fa
 function smpro_im_by_domain($events) {
     $d = [];
     foreach ($events as $e) {
-        // tolerate malformed/partial event rows (missing keys) — no warnings on bad input
+        // tolerate malformed/partial event rows (missing keys) - no warnings on bad input
         $dom = (string)($e['domain'] ?? '') !== '' ? (string)$e['domain'] : '(no host)';
         if (!isset($d[$dom])) $d[$dom] = ['domain'=>$dom,'account'=>smpro_im_account_for($dom),'total'=>0,'ips'=>[],'cats'=>[],'sev'=>0,'sevlabel'=>'','first'=>PHP_INT_MAX,'last'=>0];
         $g = &$d[$dom]; $g['total']++;
@@ -1069,7 +1063,7 @@ function smpro_in_account_summary($account, $sinceTs = 0, $untilTs = 0) {
     return $s;
 }
 /** ModSecurity rule-engine state across Apache contexts. cPanel writes SecRuleEngine PER-VHOST in the
- *  generated httpd.conf (plus the global modsec conf.d), so there is no single value — we COUNT them.
+ *  generated httpd.conf (plus the global modsec conf.d), so there is no single value - we COUNT them.
  *  Returns ['on'=>int,'off'=>int,'detection'=>int,'blocking'=>bool,'summary'=>str]. Used to warn honestly
  *  when the WAF is logging attacks but NOT blocking them. [1.1 beta] */
 function smpro_im_modsec_engine_state() {
@@ -1114,7 +1108,7 @@ function smpro_im_allow_ip($ip) {
     }
     if (!empty($c['use_cloudflare']) && function_exists('smpro_cf_unblock_ip') && smpro_cf_configured()) { $r = @smpro_cf_unblock_ip($ip); if (!empty($r['ok'])) $parts[] = 'CF unblock'; }
     // Apply to the LIVE firewall too (top-of-INPUT ACCEPT) so the unblock/allow takes effect even if CSF is
-    // disabled/desynced and the old drop rules (incl. Imunify360) are still loaded — otherwise it may not stick.
+    // disabled/desynced and the old drop rules (incl. Imunify360) are still loaded - otherwise it may not stick.
     if (function_exists('smpro_fw_iptables_allow')) { $live = smpro_fw_iptables_allow($ip); if ($live !== '') $parts[] = 'live iptables'; }
     if (function_exists('smpro_im_blocked_forget')) smpro_im_blocked_forget($ip);   // drop from the blocked set so it no longer shows "✓ Blocked"
     return ['ok'=>true,'msg'=>implode(' · ', $parts)];
@@ -1143,10 +1137,10 @@ function smpro_im_csf_blocked() {
     return $set;
 }
 function smpro_im_csf_block($ip) {
-    // Robust + VERIFIED block: never trust `csf -d` stdout — confirm the IP actually landed in csf.deny and is
+    // Robust + VERIFIED block: never trust `csf -d` stdout - confirm the IP actually landed in csf.deny and is
     // enforced. ok=true ONLY when really enforcing (false + actionable msg when CSF is in TESTING mode / absent).
     // Route through the firewall that is ACTUALLY enforcing. On a box where CSF is installed but disabled and
-    // Imunify360 owns the rules, writing to csf.deny "succeeded" while blocking nothing — the admin saw the
+    // Imunify360 owns the rules, writing to csf.deny "succeeded" while blocking nothing - the admin saw the
     // attacker keep hitting the site after pressing Block.
     if (function_exists('smpro_fw_block_ip')) {
         $r = smpro_fw_block_ip($ip, 'smpro Intrusion Monitor');
@@ -1185,13 +1179,13 @@ function smpro_cf_block_ip($ip, $note = '') {
 function smpro_im_allowlisted($ip) {
     foreach (smpro_in_cfg()['allowlist'] as $a) { $a = trim((string)$a); if ($a !== '' && ($a === $ip || (strpos($a, '/') !== false && smpro_in_cidr_match($ip, $a)))) return true; }
     // Anything the allow-list feature manages counts as allow-listed here too. Those ranges are in csf.allow,
-    // which stops CSF acting on them — but this guard read only the manual list above, so an automatic response
+    // which stops CSF acting on them - but this guard read only the manual list above, so an automatic response
     // could still be aimed at Googlebot or an uptime monitor. CSF would refuse the deny because the range is
     // allowed there, and the plugin would record a block that never took effect and present it as done.
     //
-    // The module is pulled in HERE rather than relied on being present. Every bin/ worker that can block —
+    // The module is pulled in HERE rather than relied on being present. Every bin/ worker that can block -
     // notify_check (which is what actually runs the automatic response), login_guard, hub_worker, cooler_tick,
-    // autopurge — loads intrusion.php and does NOT load fwallow.php. A plain function_exists() check would have
+    // autopurge - loads intrusion.php and does NOT load fwallow.php. A plain function_exists() check would have
     // been false in all of them, so this guard would have held in the panel and quietly done nothing in the one
     // place blocking happens without a human watching.
     if (!function_exists('smpro_fw_allow_covers')) {
@@ -1203,7 +1197,7 @@ function smpro_im_allowlisted($ip) {
 }
 
 /**
- * Shared per-IP login/auth scan across ALL services — SSH (/var/log/secure), mail (exim/dovecot
+ * Shared per-IP login/auth scan across ALL services - SSH (/var/log/secure), mail (exim/dovecot
  * IMAP·POP·SMTP), FTP (pure-ftpd) and cPanel/WHM/webmail (login_log). This is what makes a
  * mail/SSH/FTP brute-forcer that never touches the web or cPanel actually SHOW UP in the IP report
  * (previously only SSH+cPanel were scanned, so a mail brute-force read as "no activity").
@@ -1261,17 +1255,17 @@ function smpro_ip_auth_attempts($ip, $sinceTs = 0, $untilTs = 0, $cap = 400) {
 /**
  * Home-region protection classifier for AUTO/AI blocks (manual admin blocks bypass this).
  * Returns:
- *   'core_protected' — RESIDENTIAL IP in a configured home region: never auto-block, route to manual review.
- *   'arab_caution'   — RESIDENTIAL IP in another Arab country: auto-block only when the attack is clear & repeated.
- *   'normal'         — everything else (incl. ALL datacenter/hosting IPs from anywhere): blockable as usual.
+ *   'core_protected' - RESIDENTIAL IP in a configured home region: never auto-block, route to manual review.
+ *   'arab_caution'   - RESIDENTIAL IP in another Arab country: auto-block only when the attack is clear & repeated.
+ *   'normal'         - everything else (incl. ALL datacenter/hosting IPs from anywhere): blockable as usual.
  */
-/** The configured home-region country codes. One source of truth — never write a country code inline. */
+/** The configured home-region country codes. One source of truth - never write a country code inline. */
 /** Has the operator set a home region at all? Every geo-based classification is meaningless until they have. */
 function smpro_im_home_configured(): bool { return count(smpro_im_home_regions()) > 0; }
 
 /**
  * Suggest a home region from where THIS server is. Used only to pre-fill the setting and to word the setup
- * notice — never applied silently, because a server hosted abroad (a Saudi business on a German box) would then
+ * notice - never applied silently, because a server hosted abroad (a Saudi business on a German box) would then
  * be told its own customers are foreign. Returns '' when it cannot tell.
  */
 function smpro_im_home_suggest(): string {
@@ -1288,13 +1282,13 @@ function smpro_im_home_suggest(): string {
 
 function smpro_im_home_regions(): array {
     $c = smpro_in_cfg();
-    // Respect an explicitly EMPTY protect_regions (admin cleared it) — do NOT fall back to EG/SA here, or the
+    // Respect an explicitly EMPTY protect_regions (admin cleared it) - do NOT fall back to EG/SA here, or the
     // labels/AI prompts would claim EG/SA are protected while enforcement (region_status/trusted_regions) protects
     // nothing. A fresh install still gets EG/SA from the config DEFAULT, so this only differs when deliberately cleared.
     return array_values(array_filter(array_map('strtoupper', array_map('trim', (array)($c['protect_regions'] ?? [])))));
 }
-/** Human label for the configured home regions — country name plus code, joined for prose.
- *  Used in admin-facing text AND in AI prompts — the operator's market must come from THEIR config, never from a
+/** Human label for the configured home regions - country name plus code, joined for prose.
+ *  Used in admin-facing text AND in AI prompts - the operator's market must come from THEIR config, never from a
  *  literal baked into the product, or every licensed server is told it serves someone else's customers. */
 function smpro_im_home_regions_label(bool $withLock = false): string {
     // Names come from ext-intl when it is loaded, otherwise the bare code. No country table is shipped:
@@ -1317,7 +1311,7 @@ function smpro_im_home_regions_label(bool $withLock = false): string {
 function smpro_im_home_regions_short(): string { return implode('/', smpro_im_home_regions()); }
 
 /** The operator's TRUSTED country set = home regions ∪ caution regions. This is what "not foreign" means for
- *  login-anomaly classification and the region view-filters — defined by the operator's own market, never a
+ *  login-anomaly classification and the region view-filters - defined by the operator's own market, never a
  *  baked-in list. Empty ⇒ nothing is trusted (every external country reads as foreign/outside). */
 function smpro_im_trusted_regions(): array {
     $c = smpro_in_cfg();
@@ -1357,10 +1351,10 @@ function smpro_im_parse_ccs(string $s): array {
 function smpro_im_region_status($ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return 'normal';
     $in = function_exists('smpro_ip_intel') ? smpro_ip_intel($ip, false) : [];
-    // Datacenter / hosting networks are fair game regardless of country — abusers rent VMs inside the home region too.
+    // Datacenter / hosting networks are fair game regardless of country - abusers rent VMs inside the home region too.
     if (function_exists('smpro_ip_is_datacenter') && smpro_ip_is_datacenter($in)) return 'normal';
     $cc = strtoupper((string)($in['country'] ?? ''));
-    if ($cc === '') return 'normal';                                          // unknown geo → no special protection
+    if ($cc === '') return 'normal';                                          // unknown geo -> no special protection
     $c = smpro_in_cfg();
     $home = array_map('strtoupper', (array)($c['protect_regions'] ?? []));   // no market fallback: unset means unset
     if (in_array($cc, $home, true)) return 'core_protected';
@@ -1380,7 +1374,7 @@ function smpro_in_cidr_match($ip, $cidr) {
         $mask = $bits === 0 ? 0 : (~0 << (32 - $bits)) & 0xFFFFFFFF;
         return (ip2long($ip) & $mask) === (ip2long($net) & $mask);
     }
-    // IPv6 — compare the packed bytes up to $bits (so IPv6 CIDR allowlist entries actually match)
+    // IPv6 - compare the packed bytes up to $bits (so IPv6 CIDR allowlist entries actually match)
     if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && filter_var($net, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
         if ($bits < 0 || $bits > 128) return false;
         $a = @inet_pton($ip); $b = @inet_pton($net); if ($a === false || $b === false) return false;
@@ -1390,9 +1384,9 @@ function smpro_in_cidr_match($ip, $cidr) {
         $m = (~0 << (8 - $rem)) & 0xFF;
         return (ord($a[$whole]) & $m) === (ord($b[$whole]) & $m);
     }
-    return false;   // mixed family → no match
+    return false;   // mixed family -> no match
 }
-/** Cloudflare edge IP ranges (published CIDRs). Behind CF, ModSecurity logs the EDGE IP as the client — so we
+/** Cloudflare edge IP ranges (published CIDRs). Behind CF, ModSecurity logs the EDGE IP as the client - so we
  *  resolve the real attacker from CF-Connecting-IP and never show/block a CF IP (that would block ALL CF traffic). */
 function smpro_ip_is_cloudflare($ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return false;
@@ -1403,7 +1397,7 @@ function smpro_ip_is_cloudflare($ip) {
     foreach ($cidrs as $c) if (smpro_in_cidr_match($ip, $c)) return true;
     return false;
 }
-/** A "noise" source IP for the attack feed: empty, a Cloudflare edge, or private/local/reserved — not a real attacker. */
+/** A "noise" source IP for the attack feed: empty, a Cloudflare edge, or private/local/reserved - not a real attacker. */
 function smpro_im_is_noise_ip($ip) {
     return $ip === '' || smpro_ip_is_cloudflare($ip) || (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($ip));
 }
@@ -1414,7 +1408,7 @@ function smpro_im_block_ip($ip, $note = '') {
     if (function_exists('smpro_is_server_ip') && smpro_is_server_ip($ip))       return ['ok'=>false,'msg'=>'refused: server IP'];
     if (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($ip))  return ['ok'=>false,'msg'=>'refused: private/local IP'];
     if (smpro_im_allowlisted($ip))                                             return ['ok'=>false,'msg'=>'refused: allowlisted'];
-    // NEVER CSF-block a Cloudflare edge IP — it fronts inbound traffic for EVERY site on the box, so a deny would
+    // NEVER CSF-block a Cloudflare edge IP - it fronts inbound traffic for EVERY site on the box, so a deny would
     // black-hole all of them. The real client is in CF-Connecting-IP (the WAF path already resolves it). Block at CF.
     if (smpro_ip_is_cloudflare($ip))                                           return ['ok'=>false,'msg'=>'refused: Cloudflare edge IP — blocking it would cut ALL inbound traffic to every site. Block the real client (CF-Connecting-IP) at Cloudflare, not CSF.'];
     $c = smpro_in_cfg(); $parts = []; $ok = false;
@@ -1425,7 +1419,7 @@ function smpro_im_block_ip($ip, $note = '') {
 }
 
 /* Persistent record of IPs SM Pro has blocked (manual / AI / login-guard / emergency), across CSF *and* Cloudflare.
- * The CSF deny list alone misses Cloudflare-only blocks and anything CSF failed to persist — this closes that gap so
+ * The CSF deny list alone misses Cloudflare-only blocks and anything CSF failed to persist - this closes that gap so
  * a blocked IP always shows "✓ Blocked" and never re-surfaces as a fresh find. Dedicated locked file (no state race). */
 function smpro_im_blocked_file() { return SMPRO_VARLIB . '/im_blocked.json'; }
 function smpro_im_blocked_load() { $d = json_decode((string)@file_get_contents(smpro_im_blocked_file()), true); return is_array($d) ? $d : []; }
@@ -1497,16 +1491,16 @@ function smpro_im_looks_malicious($file) {
     return trim((string)@shell_exec($cmd)) !== '';
 }
 /** Always-on built-in exclusions: legit security/login plugins routinely contain the SAME dangerous-function
- *  NAMES (eval(, shell_exec(, base64_decode(…) as quoted strings in their own scanners — so a naive regex
+ *  NAMES (eval(, shell_exec(, base64_decode(...) as quoted strings in their own scanners - so a naive regex
  *  false-flags them as web-shells. These are unioned with the admin's breach_exclude so they apply even to
  *  already-saved configs (shipping the build fixes existing installs without the admin editing anything).
  *
  *  EVERY entry here must be a WIDELY-DISTRIBUTED third-party security plugin. A site-specific or single-customer
  *  name must never be seeded: this list ships to every licensed server, so the name becomes a scan-evasion
- *  primitive everywhere — an attacker only has to put the string in a path for the file to skip the breach scan
+ *  primitive everywhere - an attacker only has to put the string in a path for the file to skip the breach scan
  *  entirely. Our own WP plugin is deliberately NOT here; it is trusted by verified header via
  *  smpro_wpguard_trusted(), which a name cannot forge. Per-server needs belong in the admin's own
- *  breach_exclude (Intrusion Monitor › "Breach scan — ignore paths"), not in the shipped seed. */
+ *  breach_exclude (Intrusion Monitor › "Breach scan - ignore paths"), not in the shipped seed. */
 function smpro_im_breach_exclude_seed() {
     return ['imunify-security', 'wordfence', '/wp-content/cache/', '/wp-content/upgrade/', '/wp-content/uploads/cache/',
             '/mu-plugins/', 'ithemes-security', 'better-wp-security', 'sucuri', 'wp-security', 'all-in-one-wp-security', 'ninjafirewall'];
@@ -1514,7 +1508,7 @@ function smpro_im_breach_exclude_seed() {
 /** Is a path excluded from breach scanning (legit, frequently-updated security/cache dirs + known plugins)? */
 function smpro_im_breach_excluded($path) {
     // WP Guard (HostGuard's WP security plugin): trust its OWN verified files + quarantine dir + log + .htaccess
-    // lockdown — never quarantine what our own product legitimately wrote. Header-verified, not name-only.
+    // lockdown - never quarantine what our own product legitimately wrote. Header-verified, not name-only.
     if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($path)) return true;
     foreach (array_merge(smpro_im_breach_exclude_seed(), (array)(smpro_in_cfg()['breach_exclude'] ?? [])) as $sub) {
         $sub = trim((string)$sub); if ($sub !== '' && stripos($path, $sub) !== false) return true;
@@ -1524,7 +1518,7 @@ function smpro_im_breach_excluded($path) {
     if (function_exists('smpro_fe_wl_match')) { $m = smpro_fe_wl_match(smpro_im_account_for_path($path), $path, null, null); if ($m && in_array($m['mode'], ['downgrade', 'silent'], true)) return true; }
     return false;
 }
-/** cpanel account owning a /home/<user>/… path (cheap, for whitelist account-scoping in the detector). */
+/** cpanel account owning a /home/<user>/... path (cheap, for whitelist account-scoping in the detector). */
 function smpro_im_account_for_path($path) { return preg_match('#^/home/([^/]+)/#', (string)$path, $m) ? $m[1] : ''; }
 /** Should this candidate be SUPPRESSED from the breach alert / auto-quarantine because the operator
  *  whitelisted it in Forensics? silent = exact-hash; downgrade = path/glob, suppressed UNLESS a NEW
@@ -1537,9 +1531,9 @@ function smpro_im_wl_suppress($account, $file) {
     if (!$m) return false;
     if ($m['mode'] === 'silent') return true;
     if ($m['mode'] === 'downgrade') return !(function_exists('smpro_fe_wl_added_obfuscation') && smpro_fe_wl_added_obfuscation($file, (string)$account));
-    return false;   // 'rearm' (e.g. 10× size jump) → do NOT suppress
+    return false;   // 'rearm' (e.g. 10x size jump) -> do NOT suppress
 }
-/** A file carrying a real WordPress plugin header is an admin-installed plugin, not a drive-by web-shell — never
+/** A file carrying a real WordPress plugin header is an admin-installed plugin, not a drive-by web-shell - never
  *  auto-quarantine it (it still gets reported). Real shells don't ship a "Plugin Name:" header; this stops the
  *  whole class of false-positives where a security plugin names dangerous functions in its own signature list. */
 function smpro_im_is_wp_plugin($file) {
@@ -1565,7 +1559,7 @@ function smpro_im_malice_count($file) {
 /**
  * Likely-compromise detection: a domain that received an EXPLOIT-class attack served 2xx/3xx
  * AND has a recently-changed PHP file in its docroot that ALSO contains web-shell indicators.
- * Legit auto-updating paths (Imunify WP plugin, caches) are excluded — so Imunify's own
+ * Legit auto-updating paths (Imunify WP plugin, caches) are excluded - so Imunify's own
  * rules.php no longer false-flags. Bounded + throttled.
  */
 function smpro_im_breaches($events, $changedWithinMin = 60, $maxDomains = 25) {
@@ -1589,8 +1583,8 @@ function smpro_im_breaches($events, $changedWithinMin = 60, $maxDomains = 25) {
                  . ' -maxdepth 6 -type f \\( -name "*.php" -o -name "*.phtml" \\) -mmin -' . (int)$changedWithinMin . ' 2>/dev/null | head -n 60';
             foreach (array_filter(explode("\n", (string)@shell_exec($cmd))) as $f) {
                 if (smpro_im_breach_excluded($f)) continue;          // skip Imunify WP plugin, caches, etc.
-                if (smpro_im_is_wp_plugin($f)) continue;             // admin-installed plugin (Plugin Name header) → not a drive-by shell
-                if (smpro_im_wl_suppress($acct, $f)) continue;       // operator-whitelisted (Forensics) legit large single-file app → don't re-alert, unless a NEW obfuscation family appeared
+                if (smpro_im_is_wp_plugin($f)) continue;             // admin-installed plugin (Plugin Name header) -> not a drive-by shell
+                if (smpro_im_wl_suppress($acct, $f)) continue;       // operator-whitelisted (Forensics) legit large single-file app -> don't re-alert, unless a NEW obfuscation family appeared
                 if (smpro_im_looks_malicious($f)) $bad[] = $f;        // only count files that look like a web-shell
                 if (count($bad) >= 12) break;
             }
@@ -1609,7 +1603,7 @@ function smpro_im_subnet24($ip) { return preg_match('/^(\d+\.\d+\.\d+)\.\d+$/', 
  * Comprehensive attack analysis from a set of events: most-targeted PATHS, top source IPs
  * (with their main target + distinct User-Agent count), COORDINATED campaigns (IPs sharing a
  * /24 subnet = likely botnet), UA-ROTATION (one IP cycling many User-Agents to dodge blocks),
- * and attack PHASES (remote-exploit → brute-force → spam).
+ * and attack PHASES (remote-exploit -> brute-force -> spam).
  */
 function smpro_im_attack_analysis($events) {
     $paths = []; $ips = []; $subnets = [];
@@ -1690,16 +1684,16 @@ function smpro_im_ai_block_decide($offenders) {
     $keepBlock = [];
     foreach ($block as $ip) {
         $rs = smpro_im_region_status($ip);
-        if ($rs === 'core_protected') { $review[] = $ip; continue; }          // home-region residential → manual review, never auto-block
+        if ($rs === 'core_protected') { $review[] = $ip; continue; }          // home-region residential -> manual review, never auto-block
         if ($rs === 'arab_caution') {
             $h = $hitsOf[$ip] ?? ['hits'=>0,'cats'=>0];
-            if ($h['hits'] < 5 && $h['cats'] < 2) { $review[] = $ip; continue; } // not clear & repeated → review
+            if ($h['hits'] < 5 && $h['cats'] < 2) { $review[] = $ip; continue; } // not clear & repeated -> review
         }
         $keepBlock[] = $ip;
     }
     $block = array_values(array_unique($keepBlock));
     $review = array_values(array_unique($review));
-    // sanitize 'keep' the same way as block/review — never echo back un-validated model output as IPs
+    // sanitize 'keep' the same way as block/review - never echo back un-validated model output as IPs
     $keep = array_values(array_filter(array_map('trim', (array)($j['keep'] ?? [])), fn($ip) => filter_var($ip, FILTER_VALIDATE_IP)));
     return ['ok'=>true,'block'=>$block,'keep'=>$keep,'review'=>$review,'reason'=>(string)($j['reason'] ?? ''),'provider'=>$r['provider'] ?? ''];
 }
@@ -1707,7 +1701,7 @@ function smpro_im_ai_block_decide($offenders) {
  * Does an event count as a genuine attack FROM the server itself / a local process?
  * ANY internal source (loopback ::1/127.0.0.1, private LAN, or the server's own public IP)
  * legitimately makes internal HTTP (wp-cron, cache warmers, health checks, cPanel internals,
- * monitoring) that trips GENERIC WAF rules — those are NOT attacks. A local COMPROMISE shows up
+ * monitoring) that trips GENERIC WAF rules - those are NOT attacks. A local COMPROMISE shows up
  * as real exploit-class traffic, so:
  *   - flag ONLY real exploit-class kinds (SQLi/RCE/RFI/LFI/PHP-inj/upload), for every internal source;
  *   - never flag wp-cron or generic "WAF Block (other)" noise (e.g. a single ::1 hit).
@@ -1721,7 +1715,7 @@ function smpro_im_is_self_attack($ip, $kind, $uri) {
     // Security plugins probe their OWN site from the box to prove a defence works, and the probe looks exactly
     // like the attack it defends against. Really Simple SSL requests /wp-content/uploads/code-execution.php to
     // confirm the uploads folder CANNOT run PHP (it wants that request to fail), and fetches its own
-    // ssl-test-page.php. From the server's own IP these are self-tests, not an upload attack — the filename is
+    // ssl-test-page.php. From the server's own IP these are self-tests, not an upload attack - the filename is
     // what trips the Malicious-Upload heuristic. This is scoped to the server's OWN public IP: the identical
     // request from an EXTERNAL address still flags, so a real attacker dropping that file is not whitelisted.
     if ($isServer) {
@@ -1750,14 +1744,14 @@ function smpro_im_selfattack_recent($hours = 6, $limit = 40) {
 }
 
 /**
- * CONNECTION SOURCES — answer "which process is doing this?" for a local-source attack.
+ * CONNECTION SOURCES - answer "which process is doing this?" for a local-source attack.
  *
  * A self-attack means something ON this box generates the traffic, so the useful question is not
  * "which IP" (it is our own) but WHICH PROCESS and WHICH ACCOUNT. This resolves live TCP sockets
- * involving that IP down to pid → binary → owning user → cPanel account, so the alert can name the
+ * involving that IP down to pid -> binary -> owning user -> cPanel account, so the alert can name the
  * culprit instead of telling the admin to go hunting.
  *
- * Read-only (`ss`/netstat + /proc) and called ON DEMAND from the JSON endpoint — never on a page
+ * Read-only (`ss`/netstat + /proc) and called ON DEMAND from the JSON endpoint - never on a page
  * render, because the self-attack bar is drawn on every page.
  */
 function smpro_im_conn_sources($ip = '', $limit = 60) {
@@ -1813,7 +1807,7 @@ function smpro_im_conn_sources($ip = '', $limit = 60) {
             if (count($rows) >= $limit) break 2;
         }
     }
-    // Owner tally counts only sockets that still HAVE an owning process — a TIME-WAIT socket has
+    // Owner tally counts only sockets that still HAVE an owning process - a TIME-WAIT socket has
     // already been closed by its process, so it names nobody and must not dominate the summary.
     $byUser = [];
     foreach ($rows as $r) { if ($r['pid'] > 0 && $r['user'] !== '') $byUser[$r['user']] = ($byUser[$r['user']] ?? 0) + 1; }
@@ -1842,7 +1836,7 @@ function smpro_im_harden_rule() {
 
 /**
  * Symlink-safe .htaccess write for an account-owned dir (root context). The account controls its /home dir,
- * so copy()/file_put_contents()/chown() on <dir>/.htaccess follows a symlink they plant (→ overwrite/chown a
+ * so copy()/file_put_contents()/chown() on <dir>/.htaccess follows a symlink they plant (-> overwrite/chown a
  * root file = privesc). Confine to /home, reject a symlinked leaf, back up with O_EXCL, and write via an
  * O_EXCL temp + atomic rename so the root write/chown can never land outside the account. Returns [ok, bak].
  */
@@ -1933,9 +1927,9 @@ function smpro_im_quarantine_file($file, $account, $dryrun = false) {
     @chmod($file, 0600);
     $moved = !is_link($file) && @rename($file, $dest);               // remove from the web tree (preserves the original at $dest)
     if (!$moved) {
-        // M5 FIX — rename failed (e.g. cross-device EXDEV, disk full). Only neutralize in place if a VERIFIED non-empty
+        // M5 FIX - rename failed (e.g. cross-device EXDEV, disk full). Only neutralize in place if a VERIFIED non-empty
         // backup exists; otherwise stubbing would overwrite the ONLY copy of a possibly-false-positive file with no way
-        // to restore. No backup → leave the file untouched and report failure so the caller does not record a "cleaned".
+        // to restore. No backup -> leave the file untouched and report failure so the caller does not record a "cleaned".
         if (@filesize($dest . '.bak') > 0 && !is_link($file)) {
             // neutralise in place through a temp + rename, never by writing into the path itself
             $stub = $file . '.smproq-' . bin2hex(random_bytes(4)); $sh = @fopen($stub, 'xb');
@@ -1953,9 +1947,9 @@ function smpro_im_clean_site($account, $withinMin = 1440, $dryrun = false, $max 
              . ' -maxdepth 7 -type f \\( -name "*.php" -o -name "*.phtml" -o -name "*.pht" \\) -mmin -' . (int)$withinMin . ' 2>/dev/null | head -n 300';
         foreach (array_filter(explode("\n", (string)@shell_exec($cmd))) as $f) {
             if (smpro_im_breach_excluded($f) || !smpro_im_looks_malicious($f)) continue;
-            if (smpro_im_is_wp_plugin($f)) continue;                 // legit admin-installed plugin (has Plugin Name header) → never auto-quarantine
-            if (smpro_im_wl_suppress($account, $f)) continue;        // CRITICAL: operator-whitelisted (Forensics) legit file → NEVER auto-quarantine/overwrite it (unless a new obfuscation family appeared). A large single-file app trips the ≥2-family gate below, so without this guard the whitelist's promise fails.
-            // M6 FIX — on the UNATTENDED (cron) path require ≥2 independent indicator families before pulling a file
+            if (smpro_im_is_wp_plugin($f)) continue;                 // legit admin-installed plugin (has Plugin Name header) -> never auto-quarantine
+            if (smpro_im_wl_suppress($account, $f)) continue;        // CRITICAL: operator-whitelisted (Forensics) legit file -> NEVER auto-quarantine/overwrite it (unless a new obfuscation family appeared). A large single-file app trips the ≥2-family gate below, so without this guard the whitelist's promise fails.
+            // M6 FIX - on the UNATTENDED (cron) path require ≥2 independent indicator families before pulling a file
             // from the live web tree; a lone weak match stays REPORTED, not auto-removed. Manual cleans pass strict=false.
             if ($strict && smpro_im_malice_count($f) < 2) continue;
             $r = smpro_im_quarantine_file($f, $account, $dryrun); if ($r) $cleaned[] = $r;
@@ -1976,7 +1970,7 @@ function smpro_im_recent_changed($account, $withinMin = 1440, $cap = 5) {
     return $n;
 }
 /* ---- clear-malicious scanner detection (credential probes / bare-IP scans) ---- */
-/** True if the request path is a credential/secret-file probe — no legitimate visitor ever requests these. */
+/** True if the request path is a credential/secret-file probe - no legitimate visitor ever requests these. */
 function smpro_im_is_secret_probe($uri) {
     $u = strtolower((string)$uri);
     if ($u === '') return false;
@@ -1987,7 +1981,7 @@ function smpro_im_is_secret_probe($uri) {
     foreach ($needles as $n) if (strpos($u, $n) !== false) return true;
     return false;
 }
-/** True if the Host targets the server's OWN bare IP / rDNS — no real visitor or hosted site uses this; only bots scanning the raw IP. */
+/** True if the Host targets the server's OWN bare IP / rDNS - no real visitor or hosted site uses this; only bots scanning the raw IP. */
 function smpro_im_is_bareip_host($host) {
     $host = strtolower(trim((string)$host));
     if ($host === '') return false;
@@ -2004,14 +1998,14 @@ function smpro_im_is_bareip_host($host) {
 }
 /**
  * Auto-block clear malicious scanners across the whole server (part of Emergency). High-confidence only:
- * an IP that probes credential/secret files (≥3) OR hammers the server's bare IP/rDNS (≥8) — both near-zero
+ * an IP that probes credential/secret files (≥3) OR hammers the server's bare IP/rDNS (≥8) - both near-zero
  * false-positive. Honors allowlist / never-block-self guards, dry-run, and a 6h per-IP cooldown. Reversible
  * via CSF (the same Unblock used everywhere). Returns the list for the admin alert.
  */
 /**
  * True only for a LEGITIMATE search-engine crawler, proven by forward-confirmed reverse DNS
  * (rDNS host ends in a known crawler domain AND that host resolves back to the same IP).
- * Note: Google CLOUD VMs (*.bc.googleusercontent.com) are NOT crawlers — they do NOT match, so
+ * Note: Google CLOUD VMs (*.bc.googleusercontent.com) are NOT crawlers - they do NOT match, so
  * rented-VM scanners are still blocked. Real Googlebot is *.googlebot.com / 66.249.x (forward-confirmed).
  */
 function smpro_im_is_verified_crawler($ip) {
@@ -2053,7 +2047,7 @@ function smpro_im_emergency_block_scanners($events, $dryrun = false) {
         if (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($ip)) continue;
         if (function_exists('smpro_is_server_ip') && smpro_is_server_ip($ip)) continue;
         if (smpro_im_allowlisted($ip)) continue;
-        if (smpro_im_is_verified_crawler($ip)) continue;                             // never block a verified search crawler (Googlebot/Bing/…)
+        if (smpro_im_is_verified_crawler($ip)) continue;                             // never block a verified search crawler (Googlebot/Bing/...)
         $rs = smpro_im_region_status($ip);
         if ($rs === 'core_protected') continue;                                      // home-region residential: never auto-block (manual review only)
         if ($rs === 'arab_caution' && $c['probe'] < 5 && $c['bare'] < 12) continue;  // other Arab residential: only on clear, repeated abuse
@@ -2105,7 +2099,7 @@ function smpro_im_emergency_run($events, $dryrunOverride = null) {
     $attacked = [];
     foreach ($events as $e) if ($e['domain'] !== '' && smpro_im_exploit_kind($e['kind']) && (int)($e['code'] ?? 0) >= 200 && (int)($e['code'] ?? 0) < 400) $attacked[$e['domain']] = ($attacked[$e['domain']] ?? 0) + 1;   // a 403-blocked probe is WAF noise, not an attack that reached the site
     arsort($attacked);
-    // server-wide: auto-block clear malicious scanners (credential probes / bare-IP scans) — runs even when no site files changed
+    // server-wide: auto-block clear malicious scanners (credential probes / bare-IP scans) - runs even when no site files changed
     $blocked = !empty($cfg['emergency_block_scanners']) ? smpro_im_emergency_block_scanners($events, $dryrun) : [];
     if ($blocked && !$dryrun && function_exists('smpro_audit')) {
         $okIps = array_column(array_filter($blocked, fn($b) => $b['ok']), 'ip');
@@ -2118,12 +2112,12 @@ function smpro_im_emergency_run($events, $dryrunOverride = null) {
         $acct = smpro_im_account_for($dom); if ($acct === '') continue;
         if (isset($cool[$acct]) && ($now - (int)$cool[$acct]) < 3600) continue;     // 1h cooldown per account
         // Force-unprotected on purpose. Hardening this account would undo an operator's explicit decision, and
-        // would do it unattended, at the moment the site is already under attack — the worst time to break it.
+        // would do it unattended, at the moment the site is already under attack - the worst time to break it.
         // Cleaning still runs: removing a web shell is not the same promise as locking files the owner writes to.
         if (smpro_im_ph_ignored($acct)) { $skippedHarden[] = $acct; continue; }
         if (smpro_im_recent_changed($acct, 1440, 1) < 1) continue;                  // trigger: files actually changed
         $cool[$acct] = $now;
-        $c = !empty($cfg['emergency_clean'])  ? smpro_im_clean_site($acct, 1440, $dryrun, 40, true) : [];   // unattended → strict (≥2 indicator families)
+        $c = !empty($cfg['emergency_clean'])  ? smpro_im_clean_site($acct, 1440, $dryrun, 40, true) : [];   // unattended -> strict (≥2 indicator families)
         $h = !empty($cfg['emergency_harden']) ? smpro_im_harden_site($acct, $dryrun)      : [];
         if ($c) $cleaned[]  = ['domain' => $dom, 'account' => $acct, 'files' => $c];
         if ($h) $hardened[] = ['domain' => $dom, 'account' => $acct, 'n' => count($h)];
@@ -2143,7 +2137,7 @@ function smpro_im_emergency_run($events, $dryrunOverride = null) {
  * Is this account on the force-unprotect ignore list?
  *
  * ph_ignore.php is boot-loaded by the page, but the cron workers each require their own short list of includes and
- * do not carry it — so it is pulled in here on demand. Without this the rule would hold in the interface and be
+ * do not carry it - so it is pulled in here on demand. Without this the rule would hold in the interface and be
  * ignored by the unattended pass, which is the only pass that matters for this rule.
  */
 function smpro_im_ph_ignored($acct) {
@@ -2173,17 +2167,17 @@ function smpro_im_emergency_undo($id) {
                 }
                 if (!empty($a['had']) && is_file($bk) && !is_link($bk) && dirname($bk) === dirname($p)) { @rename($bk, $p); }   // restore the owner's original
                 elseif (is_file($p)) {
-                    // m4 FIX — we CREATED this file (had=false). Only delete it if it is still EXACTLY our block; if the
+                    // m4 FIX - we CREATED this file (had=false). Only delete it if it is still EXACTLY our block; if the
                     // owner appended their own rules after ours, strip just our prefix and KEEP theirs (never delete owner content).
                     $cur = (string)@file_get_contents($p); $rule = smpro_im_harden_rule();
                     if (trim($cur) === trim($rule)) { @unlink($p); }
                     elseif (strpos($cur, $rule) === 0) { $rest = substr($cur, strlen($rule)); if (trim($rest) === '') { @unlink($p); } else { @file_put_contents($p, $rest); @chmod($p, 0644); } }
-                    // else: file no longer begins with our block (owner rewrote it entirely) → leave it untouched
+                    // else: file no longer begins with our block (owner rewrote it entirely) -> leave it untouched
                 }
             }
             elseif ($a['type'] === 'quarantine' && $p) {
                 if (smpro_im_has_chattr()) @shell_exec('chattr -i ' . escapeshellarg($p) . ' 2>/dev/null');
-                if (!empty($a['stored']) && is_file($a['stored'])) { @rename($a['stored'], $p); }      // moved copy → back to original
+                if (!empty($a['stored']) && is_file($a['stored'])) { @rename($a['stored'], $p); }      // moved copy -> back to original
                 elseif (!empty($a['backup']) && is_file($a['backup'])) { @copy($a['backup'], $p); }     // fallback: restore from the .bak copy
                 @chmod($p, 0644);
             }
@@ -2201,7 +2195,7 @@ function smpro_im_emergency_undo($id) {
  */
 /* ===================== upload-breach cluster detector (closes the .php-only breach-scan gap) ===================== */
 /** Group the window's parsed events into upload-attack CLUSTERS: many accepted-2xx "Malicious Upload" POST/PUT to one
- *  endpoint from multiple IPs. Pure in-memory over already-parsed events — no new find/grep/log read. Fires even when
+ *  endpoint from multiple IPs. Pure in-memory over already-parsed events - no new find/grep/log read. Fires even when
  *  no *.php changed (shells land in image dirs with image/blank extensions that smpro_im_breaches never sees). */
 function smpro_im_upload_clusters(array $events, $cfg = null) {
     $cfg = is_array($cfg) ? $cfg : smpro_in_cfg();
@@ -2213,7 +2207,7 @@ function smpro_im_upload_clusters(array $events, $cfg = null) {
         $code = (int)($e['code'] ?? 0); if ($code < 200 || $code >= 300) continue;                       // ACCEPTED only
         $mth = strtoupper((string)($e['method'] ?? '')); if ($mth !== '' && $mth !== 'POST' && $mth !== 'PUT') continue;
         $acct = smpro_im_account_for((string)($e['domain'] ?? '')); if ($acct === '') continue;
-        $ep = preg_replace('#/\d+/?$#', '', smpro_im_path_of((string)($e['uri'] ?? '')));                 // fold /…/uploadimage/5
+        $ep = preg_replace('#/\d+/?$#', '', smpro_im_path_of((string)($e['uri'] ?? '')));                 // fold /.../uploadimage/5
         $k = $acct . '|' . $ep;
         if (!isset($g[$k])) $g[$k] = ['account'=>$acct, 'endpoint'=>$ep, 'ips'=>[], 'n'=>0, 'first'=>PHP_INT_MAX, 'last'=>0, 'samples'=>[]];
         $g[$k]['n']++; if (($e['ip'] ?? '') !== '') $g[$k]['ips'][(string)$e['ip']] = 1;
@@ -2264,16 +2258,16 @@ function smpro_im_alert_scan() {
     $recent = array_filter($events, fn($e) => ($e['ts'] ?? 0) >= $cut);
     $alerts = [];
 
-    // SERVED exploit attempts — the genuinely dangerous ones: an exploit-class attack the app
+    // SERVED exploit attempts - the genuinely dangerous ones: an exploit-class attack the app
     // answered with 2xx/3xx (NOT blocked). Blocked probes (403) are routine WAF noise and do
-    // NOT raise a critical alert — that is what made the old "223 CRITICAL" alert meaningless.
+    // NOT raise a critical alert - that is what made the old "223 CRITICAL" alert meaningless.
     $served = array_filter($recent, fn($e) => smpro_im_exploit_kind($e['kind']) && (int)$e['code'] >= 200 && (int)$e['code'] < 400);
     if ($served) {
         $sd = array_values(array_unique(array_filter(array_map(fn($e) => $e['domain'], $served))));
         $alerts['critical'] = ['sig'=>'served:' . count($served), 'subject'=>count($served) . ' exploit attempt(s) SERVED 2xx (possible success) in last ' . $win . 'm',
             'body'=>'Domains: ' . implode(', ', array_slice($sd, 0, 12)) . (count($sd) > 12 ? ' +' . (count($sd) - 12) : '') . "\nThese were NOT blocked by the WAF — review immediately."];
     }
-    // domain spikes (blocked + served attempts) — high baseline on a busy shared server, so the threshold is high
+    // domain spikes (blocked + served attempts) - high baseline on a busy shared server, so the threshold is high
     $by = smpro_im_by_domain($recent); $thr = (int)$cfg['thr_domain_attacks']; $spiked = [];
     foreach ($by as $g) if ($g['total'] >= $thr) $spiked[] = $g['domain'] . ' (' . $g['total'] . ')';
     if ($spiked) $alerts['spike'] = ['sig'=>'spike:' . md5(implode(',', $spiked)), 'subject'=>count($spiked) . ' domain(s) under heavy attack (>=' . $thr . ' attempts/' . $win . 'm, mostly blocked)', 'body'=>implode("\n", array_slice($spiked, 0, 15)) . "\n(These are blocked + served attempts; most are blocked WAF noise.)"];
@@ -2289,7 +2283,7 @@ function smpro_im_alert_scan() {
         $lines = array_map(fn($b) => $b['domain'] . ' [' . implode(',', $b['kinds']) . '] files: ' . implode(', ', array_map('basename', array_slice($b['changed'], 0, 3))), $breaches);
         $alerts['breach'] = ['sig'=>'breach:' . md5(implode(',', array_column($breaches, 'domain'))), 'subject'=>'POSSIBLE COMPROMISE on ' . count($breaches) . ' domain(s)', 'body'=>implode("\n", $lines) . "\nOpen Forensics for the listed accounts NOW."];
     }
-    // upload-cluster breach (fires on accepted-2xx Malicious-Upload clusters even when NO .php changed — the gap
+    // upload-cluster breach (fires on accepted-2xx Malicious-Upload clusters even when NO .php changed - the gap
     // that let an unrestricted-upload attack run silently because smpro_im_breaches only scans *.php/*.phtml)
     if ($u = smpro_im_upload_cluster_alert($recentAll)) $alerts['upload_cluster'] = $u;   // accepted uploads are monitoring records by nature
     // GENUINE attack from the server's OWN / local IP (wp-cron + benign internal traffic excluded)
@@ -2318,9 +2312,9 @@ function smpro_im_alert_scan() {
             if (isset($done[$ip]) || !filter_var($ip, FILTER_VALIDATE_IP)) continue;
             if (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($ip)) continue;
             if (smpro_im_allowlisted($ip)) continue;
-            // home-region policy (the "any NON-ARAB IP after N attacks → block" rule):
-            //   core_protected = home-region residential → NEVER auto-block · arab_caution = other-Arab residential → 3× the floor
-            //   normal = non-Arab / datacenter (any country) / unknown geo → block at the floor. (Datacenter in the home region is still blockable.)
+            // home-region policy (the "any NON-ARAB IP after N attacks -> block" rule):
+            //   core_protected = home-region residential -> NEVER auto-block · arab_caution = other-Arab residential -> 3x the floor
+            //   normal = non-Arab / datacenter (any country) / unknown geo -> block at the floor. (Datacenter in the home region is still blockable.)
             if (!empty($cfg['protect_arab'])) {
                 $rs = smpro_im_region_status($ip);
                 if ($rs === 'core_protected') continue;
@@ -2337,10 +2331,10 @@ function smpro_im_alert_scan() {
     }
 
     // EMERGENCY auto-response. Two DISTINCT signals, deliberately separated to cut noise:
-    //   (a) routine SCANNER auto-blocks (credential/.env probes from datacenter VMs) — high volume,
-    //       low urgency → accumulate and send ONE grouped INFO digest per emergency_block_digest_hours
+    //   (a) routine SCANNER auto-blocks (credential/.env probes from datacenter VMs) - high volume,
+    //       low urgency -> accumulate and send ONE grouped INFO digest per emergency_block_digest_hours
     //       (default 12h), summarised by /24 subnet (campaign-aware), NOT a CRITICAL on every run.
-    //   (b) HARDEN/CLEAN on an actually-compromised site — rare, urgent → prompt CRITICAL, batched small.
+    //   (b) HARDEN/CLEAN on an actually-compromised site - rare, urgent -> prompt CRITICAL, batched small.
     if (!empty($cfg['emergency'])) {
         $em  = smpro_im_emergency_run($recent);
         $blk = $em['blocked'] ?? [];

@@ -1,9 +1,9 @@
 <?php
 /**
- * includes/diskio.php — live per-disk I/O (read/write throughput + BUSY%) + disk temperature (SMART).
+ * includes/diskio.php - live per-disk I/O (read/write throughput + BUSY%) + disk temperature (SMART).
  * Boot-loaded so the live JSON endpoint (index.php `format=json&metric=diskio`, polled by the Disk/Storage card
- * with NO page refresh — same mechanism as the dashboard) and the page render both share ONE implementation.
- * "Busy %" (io_ticks delta) is the real performance-impact signal — a disk at ~100% busy is the bottleneck even
+ * with NO page refresh - same mechanism as the dashboard) and the page render both share ONE implementation.
+ * "Busy %" (io_ticks delta) is the real performance-impact signal - a disk at ~100% busy is the bottleneck even
  * at low MB/s. Temperatures are cached ~60s because smartctl is slow.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -18,7 +18,7 @@ function smpro_ds_diskstats_snap() {
     }
     return $out;
 }
-/** Whole disks + RAID/LVM only — skip partitions and pseudo devices. */
+/** Whole disks + RAID/LVM only - skip partitions and pseudo devices. */
 function smpro_ds_dev_is_whole($n) {
     if (preg_match('/^(loop|ram|fd\d|sr\d|dm-name)/', $n)) return false;
     if (preg_match('/^(sd|vd|xvd|hd)[a-z]+$/', $n))  return true;   // whole SCSI/virtio/IDE disk (no trailing partition digit)
@@ -76,7 +76,7 @@ function smpro_ds_disktemps(array $devs, $ttl = 60) {
     @file_put_contents($f . '.tmp', json_encode(['ts' => time(), 't' => $t]), LOCK_EX); @chmod($f . '.tmp', 0600); @rename($f . '.tmp', $f);
     return $t;
 }
-/** Live I/O + temps → the payload shared by the page render AND the no-refresh live poll. $refreshTemps=false =
+/** Live I/O + temps -> the payload shared by the page render AND the no-refresh live poll. $refreshTemps=false =
  *  cache-only (fast page render); the live poll passes true so smartctl runs in the background JSON request. */
 function smpro_ds_diskio_payload(array $io, $refreshTemps = true): array {
     $temps = smpro_ds_disktemps(array_map(fn($d) => $d['dev'], $io), $refreshTemps ? 60 : PHP_INT_MAX);

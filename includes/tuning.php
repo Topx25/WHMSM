@@ -1,6 +1,6 @@
 <?php
 /**
- * tuning.php — Server Tune-up: scan the installed engines (Apache/Nginx, MySQL/MariaDB, CSF firewall,
+ * tuning.php - Server Tune-up: scan the installed engines (Apache/Nginx, MySQL/MariaDB, CSF firewall,
  * CloudLinux, Imunify, PHP) and recommend performance + security improvements. Every apply backs the
  * config up first (timestamped, listed), validates, rolls back on failure, and records a profile of
  * exactly what changed. Read scan = safe; apply = explicit per-item, with backup + validation.
@@ -9,7 +9,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 define('SMPRO_TUN_BK',   SMPRO_VARLIB . '/backups/tuning');     // timestamped config backups
 define('SMPRO_TUN_PROF', SMPRO_VARLIB . '/tuning/profiles');    // applied-change profiles
-define('SMPRO_TUN_POSTURE', SMPRO_VARLIB . '/tun_posture.json'); // cached SECURITY-posture summary → dashboard score (so the dashboard never runs this heavy scan itself)
+define('SMPRO_TUN_POSTURE', SMPRO_VARLIB . '/tun_posture.json'); // cached SECURITY-posture summary -> dashboard score (so the dashboard never runs this heavy scan itself)
 
 /* Cache a lightweight security-posture summary from a scan's recs, so the dashboard Security & Health score can
  * reflect open hardening items WITHOUT running the heavy tune-up scan on every dashboard load. */
@@ -38,7 +38,7 @@ function smpro_tun_posture_refresh_async(): void {
 }
 
 // Force a full PATH (like smpro_dom_sh) so bare binaries such as `sshd` resolve to /usr/sbin under the minimal
-// WHM-CGI PATH — otherwise `sshd -t` validation emits "command not found" and false-rolls-back a VALID config.
+// WHM-CGI PATH - otherwise `sshd -t` validation emits "command not found" and false-rolls-back a VALID config.
 function smpro_tun_sh($cmd, $t = 8) { return smpro_run((string)$cmd, (int)$t, ['path' => true, 'stderr' => 'discard']); }
 /** A version string changes at install/update time, not per page view: ten minutes between real calls. */
 function smpro_tun_ver($cmd) { return function_exists('smpro_memo') ? (string)smpro_memo('tun_ver_' . sha1($cmd), 600, fn() => trim(smpro_tun_sh($cmd)) ?: null) : trim(smpro_tun_sh($cmd)); }
@@ -83,8 +83,8 @@ function smpro_tun_targets(): array {
 }
 
 /* ---------------- access-isolation helpers (jailshell / CageFS / symlink) ---------------- */
-/** cPanel accounts on a FULL (non-jailed) login shell — these can browse the whole server outside their home.
- *  Returns [['user','shell','home'],…]. Skips root/system users (uid<1000) and non-/home homes. */
+/** cPanel accounts on a FULL (non-jailed) login shell - these can browse the whole server outside their home.
+ *  Returns [['user','shell','home'],...]. Skips root/system users (uid<1000) and non-/home homes. */
 function smpro_tun_shell_users(): array {
     $out  = smpro_tun_sh('getent passwd 2>/dev/null', 15);
     $full = ['/bin/bash', '/bin/sh', '/usr/bin/bash', '/usr/bin/sh', '/bin/zsh', '/usr/bin/zsh', '/bin/ksh'];
@@ -109,7 +109,7 @@ function smpro_tun_tweak_get(string $key): string {
     return (string)($j['data']['tweaksetting']['value'] ?? '');
 }
 
-/* ---------------- scan → recommendations (read-only) ---------------- */
+/* ---------------- scan -> recommendations (read-only) ---------------- */
 function smpro_tun_scan(): array {
     $det = smpro_tun_detect();
     $recs = [];
@@ -157,14 +157,14 @@ function smpro_tun_scan(): array {
         if ($cget('LF_ALERT_TO') === '') $rec('csf', 'csf_alert', 'security', 'low', 'CSF/LFD alert email not set', 'empty', 'LF_ALERT_TO=admin@…', 'Get notified of brute-force/login-failure blocks.');
     }
     if (isset($det['imunify'])) {
-        // config show is one big JSON line; the old grep-for-"false" matched unrelated keys → flagged forever. Read the actual PROACTIVE_DEFENSE mode.
+        // config show is one big JSON line; the old grep-for-"false" matched unrelated keys -> flagged forever. Read the actual PROACTIVE_DEFENSE mode.
         $pd = smpro_tun_sh('imunify360-agent config show 2>/dev/null', 15);
         $pdMode = preg_match('/"PROACTIVE_DEFENSE"\s*:\s*\{[^}]*"mode"\s*:\s*"([A-Za-z]+)"/', $pd, $mm) ? strtoupper($mm[1]) : '';
         if ($pdMode === '' || $pdMode === 'DISABLED') $rec('imunify', 'imunify_pad', 'security', 'medium', 'Imunify Proactive Defense not active', $pdMode ?: 'off', 'enable Proactive Defense (KILL)', 'Blocks malicious PHP execution in real time.');
     }
     if (isset($det['ssh'])) {
         $c = (string)@file_get_contents($det['ssh']['conf']);
-        $eff = smpro_tun_sh('sshd -T 2>/dev/null; /usr/sbin/sshd -T 2>/dev/null', 10);   // effective merged config — reflects sshd_config.d drop-ins (parity with apply)
+        $eff = smpro_tun_sh('sshd -T 2>/dev/null; /usr/sbin/sshd -T 2>/dev/null', 10);   // effective merged config - reflects sshd_config.d drop-ins (parity with apply)
         $sget = function ($k) use ($c, $eff) { if ($eff !== '' && preg_match('/^' . strtolower($k) . '\s+(.+)$/im', $eff, $m)) return trim($m[1]); return preg_match('/^\s*' . $k . '\s+(.+)$/im', $c, $m) ? trim($m[1]) : ''; };
         $root = strtolower($sget('PermitRootLogin'));
         if ($root === '' || $root === 'yes') $rec('ssh', 'ssh_root', 'security', 'high', 'SSH allows direct root login', $root ?: 'yes (default)', 'PermitRootLogin prohibit-password', 'Stops password brute-force of the root account; keys still work.', true, 'If root is your ONLY way in and you have no SSH key / sudo user, this can lock you out. Set up a key or a sudo user first.');
@@ -183,7 +183,7 @@ function smpro_tun_scan(): array {
     }
     if (isset($det['php'])) {
         $php = $det['php']['bin'];
-        // escapeshellarg the WHOLE -r program (the old nested-quote form was malformed → always returned empty → opcache flagged forever)
+        // escapeshellarg the WHOLE -r program (the old nested-quote form was malformed -> always returned empty -> opcache flagged forever)
         $ini = fn($k) => trim(smpro_tun_sh(escapeshellarg($php) . ' -r ' . escapeshellarg('echo (string)ini_get("' . $k . '");')));
         if ($ini('expose_php') === '1') $rec('php', 'php_expose', 'security', 'low', 'expose_php on (X-Powered-By leaks PHP version)', 'On', 'expose_php = Off', 'Hides the PHP version from response headers.');
         $oc = trim(smpro_tun_sh(escapeshellarg($php) . ' -r ' . escapeshellarg('echo (extension_loaded("Zend OPcache") && ini_get("opcache.enable")) ? "1" : "0";')));
@@ -196,7 +196,7 @@ function smpro_tun_scan(): array {
     // Jail Apache = mod_ruid2 running each vhost as its owner WITH symlink protection. This one WHM tweak fixes
     // BOTH the symlink race-condition AND vhost-segmentation findings, so both recs point at the same fix.
     $jailOn   = isset($det['apache']) ? (smpro_tun_tweak_get('jailapache') === '1') : true;
-    // 1) Symlink race-condition protection — protected by Jail Apache, CloudLinux SecureLinks, or CageFS.
+    // 1) Symlink race-condition protection - protected by Jail Apache, CloudLinux SecureLinks, or CageFS.
     if (isset($det['apache']) && !$jailOn && !$isCL && $symOwner !== '1') {
         $rec('access', 'harden_symlink', 'security', 'high', 'Symlink race-condition protection is OFF',
             'not enforced', 'enable Jail Apache (mod_ruid2 symlink protection)',
@@ -242,13 +242,13 @@ function smpro_tun_scan(): array {
 
 /* ---------------- install CSF firewall (official cPanel method) ----------------
  * Per cPanel docs (docs.cpanel.net/.../how-to-install-csf): CSF is the package "cpanel-csf"
- * (NOT "csf") in the cpanel-plugins repo — `dnf/yum install cpanel-csf` (AlmaLinux/CloudLinux/Rocky)
+ * (NOT "csf") in the cpanel-plugins repo - `dnf/yum install cpanel-csf` (AlmaLinux/CloudLinux/Rocky)
  * or `apt install cpanel-csf` (Ubuntu). firewalld must be off first (CSF cannot coexist with it).
  * CSF starts in TESTING mode (does NOT block) so installing it cannot lock anyone out. */
 function smpro_tun_install_csf(): array {
     if (is_file('/etc/csf/csf.conf') || is_file('/usr/sbin/csf')) return ['ok' => true, 'already' => true, 'msg' => 'CSF is already installed. ' . trim(smpro_tun_sh('csf -v 2>/dev/null | head -1'))];
     $log = [];
-    // firewalld conflicts with CSF — stop & disable it first (reversible; CSF's own setup expects this)
+    // firewalld conflicts with CSF - stop & disable it first (reversible; CSF's own setup expects this)
     if (smpro_tun_has('firewall-cmd') && trim(smpro_tun_sh('systemctl is-active firewalld 2>/dev/null')) === 'active') {
         $log[] = '# systemctl stop/disable firewalld (CSF cannot run alongside firewalld)';
         $log[] = smpro_tun_sh('systemctl stop firewalld 2>&1; systemctl disable firewalld 2>&1', 60);
@@ -276,11 +276,11 @@ function smpro_tun_install_csf(): array {
 /* ---------------- AI-driven optimization (advisory) ----------------
  * Collects a compact server profile (engines, versions, cores/RAM, current findings) and asks the
  * configured AI for the best, safest optimizations for the SELECTED targets only. AI output is
- * ADVISORY (shown with rationale + access-risk warnings) — it is never auto-written to a config. */
+ * ADVISORY (shown with rationale + access-risk warnings) - it is never auto-written to a config. */
 /* ===================== background jobs (AI optimization / Security Advisor) =====================
  * These two scans call an AI provider / whmapi1 and take 30-60s. Running them in the FOREGROUND meant
  * closing the page lost the result. smpro_tun_job_start() spawns a detached worker (bin/tun_worker.php)
- * that writes the result + timestamp to a state file; the page reads it on load ("Last updated …") and
+ * that writes the result + timestamp to a state file; the page reads it on load ("Last updated ...") and
  * polls while a job is running. Persisted per job under SMPRO_VARLIB/tuning/. */
 function smpro_tun_job_file(string $job): string { $job = preg_replace('/[^a-z]/', '', $job); return SMPRO_VARLIB . '/tuning/' . ($job ?: 'x') . '.json'; }
 function smpro_tun_job_read(string $job): array {
@@ -293,7 +293,7 @@ function smpro_tun_job_write(string $job, array $st): void {
     @file_put_contents($tmp, json_encode($st, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); @chmod($tmp, 0600); @rename($tmp, $f);
 }
 function smpro_tun_php_bin(): string { return smpro_php_cli_bin(); }
-/** Run the job synchronously (invoked by bin/tun_worker.php in the background) — persists result + timestamp. */
+/** Run the job synchronously (invoked by bin/tun_worker.php in the background) - persists result + timestamp. */
 function smpro_tun_job_run(string $job, array $args): void {
     $job = preg_replace('/[^a-z]/', '', $job);
     $started = (int)(smpro_tun_job_read($job)['started_at'] ?? 0) ?: time();
@@ -379,9 +379,9 @@ function smpro_tun_ai_optimize(array $targets): array {
 /** Access-risk appliers that must NEVER be applied in bulk (SSH lockout / firewall-enforcement). Individual + confirm only. */
 function smpro_tun_bulk_excluded(): array { return ['ssh_root', 'ssh_passauth', 'ssh_port', 'csf_testing']; }
 /**
- * Apply the AI suggestions that map to KNOWN, TESTED, one-click appliers — in bulk. Takes ONE automatic backup of all
+ * Apply the AI suggestions that map to KNOWN, TESTED, one-click appliers - in bulk. Takes ONE automatic backup of all
  * configs FIRST, then applies each via smpro_tun_apply() (which config-tests Apache and auto-rolls-back on failure).
- * Access-risk changes (SSH/CSF-enforcement) are EXCLUDED — they must be applied individually with the lockout warning.
+ * Access-risk changes (SSH/CSF-enforcement) are EXCLUDED - they must be applied individually with the lockout warning.
  */
 function smpro_tun_ai_apply_all(array $applyIds, string $progressJob = ''): array {
     $map = smpro_tun_apply_map(); $risky = smpro_tun_bulk_excluded();
@@ -390,7 +390,7 @@ function smpro_tun_ai_apply_all(array $applyIds, string $progressJob = ''): arra
     $toApply = array_values(array_diff($ids, $risky));
     if (!$toApply) return ['ok' => false, 'msg' => 'No safe one-click changes to apply from these suggestions.' . ($skippedRisky ? ' ' . count($skippedRisky) . ' access-risk change(s) must be applied individually.' : ''), 'skipped_risky' => $skippedRisky];
     $total = count($toApply);
-    // progress writer — merges a {done,total,current} block into the background-job state (no-op when run synchronously)
+    // progress writer - merges a {done,total,current} block into the background-job state (no-op when run synchronously)
     $wp = function ($done, $current) use ($progressJob, $total) {
         if ($progressJob === '' || !function_exists('smpro_tun_job_read')) return;
         $st = smpro_tun_job_read($progressJob); $st['progress'] = ['done' => (int)$done, 'total' => (int)$total, 'current' => (string)$current]; $st['updated_at'] = time();
@@ -440,7 +440,7 @@ function smpro_tun_secadvisor(): array {
         return ['ok' => false, 'msg' => 'Security Advisor unavailable: ' . ($err !== '' ? $err : 'no data') . '. (Requires a valid cPanel license + root.)'];
     }
 
-    // advice.type → our severity bucket. GOOD = passing (skip).
+    // advice.type -> our severity bucket. GOOD = passing (skip).
     $sevOf = ['ADVISE_BAD' => 'high', 'ADVISE_WARN' => 'medium', 'ADVISE_INFO' => 'low'];
     $recs = [];
     foreach ($payload as $it) {
@@ -460,14 +460,14 @@ function smpro_tun_secadvisor(): array {
             'category' => mb_substr($cat, 0, 60),
         ];
     }
-    // Order by severity (high → low) for the UI
+    // Order by severity (high -> low) for the UI
     $rank = ['high' => 0, 'medium' => 1, 'low' => 2];
     usort($recs, fn($x, $y) => ($rank[$x['sev']] ?? 9) <=> ($rank[$y['sev']] ?? 9));
     return ['ok' => true, 'recs' => $recs, 'count' => count($recs)];
 }
 
 /* --- SA: normalize raw advisory key for matching (strip class-path prefix, drop ALL non-alnum, uppercase).
- *   e.g. "SSH_direct_root_login_permitted" → "SSHDIRECTROOTLOGINPERMITTED" (so substring checks hit). --- */
+ *   e.g. "SSH_direct_root_login_permitted" -> "SSHDIRECTROOTLOGINPERMITTED" (so substring checks hit). --- */
 function smpro_tun_sa_normalize(string $id): string {
     if (strpos($id, '::') !== false) { $p = explode('::', $id); $id = end($p); }
     return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $id));
@@ -478,7 +478,7 @@ function smpro_tun_sa_apply(string $rawId): array {
     $bk = smpro_tun_backup_all();   // always backup before touching anything
     $id  = smpro_tun_sa_normalize($rawId);
 
-    // SSH hardening — substring match on normalized key (real cPanel keys: SSHDIRECTROOTLOGINPERMITTED, SSHPASSWORDAUTHENTICATIONENABLED…)
+    // SSH hardening - substring match on normalized key (real cPanel keys: SSHDIRECTROOTLOGINPERMITTED, SSHPASSWORDAUTHENTICATIONENABLED...)
     if (strpos($id, 'ROOTLOGIN') !== false)
         return smpro_tun_sa_sshd('PermitRootLogin', 'prohibit-password', 'ssh_root', $bk['id']);
     if (strpos($id, 'PASSWORDAUTH') !== false || (strpos($id, 'SSH') !== false && strpos($id, 'PASSWORD') !== false))
@@ -522,11 +522,11 @@ function smpro_tun_sa_apply(string $rawId): array {
     if (strpos($id, 'MODSECURITY') !== false || strpos($id, 'MODSEC') !== false)
         return smpro_tun_sa_modsecurity($bk['id']);
 
-    // Dynamic fallback — no hardcoded handler: re-fetch advisory from WHM and try its own 'function' field.
+    // Dynamic fallback - no hardcoded handler: re-fetch advisory from WHM and try its own 'function' field.
     return smpro_tun_sa_whm_dispatch($rawId, $id, $bk['id']);
 }
 
-/* --- SA: helper — locate whmapi1 binary --- */
+/* --- SA: helper - locate whmapi1 binary --- */
 function smpro_tun_sa_bin(): string {
     static $b = null;
     if ($b !== null) return $b;
@@ -534,7 +534,7 @@ function smpro_tun_sa_bin(): string {
     return ($b = (smpro_tun_has('whmapi1') ? 'whmapi1' : ''));
 }
 
-/* --- SA: dynamic WHM dispatch — substring-matches the normalized advisory key against a table of
+/* --- SA: dynamic WHM dispatch - substring-matches the normalized advisory key against a table of
  *   safe whmapi1 fixes. Keys/values come from this table (never the browser), so no injection risk.
  *   fetch_security_advice does NOT expose a per-advice 'function' field, so we map by key pattern. --- */
 function smpro_tun_sa_whm_dispatch(string $rawId, string $normId, string $bkId): array {
@@ -545,7 +545,7 @@ function smpro_tun_sa_whm_dispatch(string $rawId, string $normId, string $bkId):
     $table = [
         // Verified against Whostmgr/API/1/*.pm on cPanel 11.136. Four names used here previously do not exist
         // and answered "Unknown app": set_cphulk_config, compilerinstall, twofactorauth_set_policy,
-        // modsec_enable_disable. COMPILER and MODSEC have NO whmapi1 equivalent at all, so they are not listed —
+        // modsec_enable_disable. COMPILER and MODSEC have NO whmapi1 equivalent at all, so they are not listed -
         // smpro_tun_sa_compilers() (set_compiler_access script) and smpro_tun_sa_modsecurity()
         // (modsec_set_setting + modsec_deploy_settings_changes) own those, and both run before this table.
         ['CPHULK',        'enable_cphulk',           [],                                                              'cPHulkD brute-force protection enabled'],
@@ -568,7 +568,7 @@ function smpro_tun_sa_whm_dispatch(string $rawId, string $normId, string $bkId):
             ? smpro_tun_set_tweaksetting($bin, $args, $normId, $bkId, $label)
             : smpro_tun_sa_call_whm($bin, $fn, $args, $normId, $bkId);
         if (!empty($r['ok'])) { $r['applied'] = $label; return $r; }
-        // matched but call failed → report the error (don't keep scanning for a weaker match)
+        // matched but call failed -> report the error (don't keep scanning for a weaker match)
         return $r + ['manual' => true];
     }
 
@@ -579,7 +579,7 @@ function smpro_tun_sa_whm_dispatch(string $rawId, string $normId, string $bkId):
 }
 
 /* --- WHM Tweak Settings writer. cPanel's real function is `set_tweaksetting` (SINGULAR, one key/value per call);
- *   there is NO `set_tweaks` function — calling it returns result=0 and the fix silently fails. This loops over the
+ *   there is NO `set_tweaks` function - calling it returns result=0 and the fix silently fails. This loops over the
  *   given key=>value pairs, calling `set_tweaksetting key=<k> value=<v>` for each, and fails on the first error. --- */
 function smpro_tun_set_tweaksetting(string $bin, array $kv, string $pid, string $bkId, string $label = ''): array {
     if ($bin === '') return ['ok' => false, 'msg' => 'whmapi1 not available.', 'manual' => true];
@@ -662,7 +662,7 @@ function smpro_tun_sa_sshd(string $key, string $val, string $pid, string $bkId):
 
 function smpro_tun_sa_cphulk(string $bkId): array {
     $bin = smpro_tun_sa_bin(); if ($bin === '') return ['ok'=>false,'msg'=>'whmapi1 not found.','backup_id'=>$bkId];
-    // The real function is enable_cphulk (no args). `set_cphulk_config` does NOT exist on cPanel 11.136 —
+    // The real function is enable_cphulk (no args). `set_cphulk_config` does NOT exist on cPanel 11.136 -
     // whmapi1 answers "Unknown app", so the old call silently no-op'd and this fix never enabled anything.
     $out = smpro_tun_sh(escapeshellarg($bin) . ' --output=json enable_cphulk 2>&1', 25);
     $j   = json_decode($out, true);
@@ -671,9 +671,9 @@ function smpro_tun_sa_cphulk(string $bkId): array {
         smpro_tun_sh('/usr/local/cpanel/etc/init/startcphulkd 2>&1', 15); // fallback: start the daemon
     }
     // Tighten the threshold through the per-key setter. `max_failures` is a real config key; the old call's
-    // `brutes` was not one at all. Best-effort — a failure here does not invalidate the enable above.
+    // `brutes` was not one at all. Best-effort - a failure here does not invalidate the enable above.
     if ($ok) smpro_tun_sh(escapeshellarg($bin) . ' --output=json set_cphulk_config_key key=max_failures value=25 2>&1', 15);
-    // VERIFY the outcome instead of assuming success — the old code always returned ok=true and the UI
+    // VERIFY the outcome instead of assuming success - the old code always returned ok=true and the UI
     // removed the advisory even when nothing was actually applied.
     $sj = json_decode(smpro_tun_sh(escapeshellarg($bin) . ' --output=json cphulk_status 2>&1', 12), true);
     $on = is_array($sj) && ((int)($sj['data']['is_enabled'] ?? 0) === 1 || ($sj['data']['is_enabled'] ?? null) === true);
@@ -686,7 +686,7 @@ function smpro_tun_sa_cphulk(string $bkId): array {
 
 function smpro_tun_sa_mysql_remoteroot(string $bkId): array {
     $df  = is_file('/root/.my.cnf') ? '--defaults-extra-file=/root/.my.cnf' : '';
-    // Enumerate the remote-root accounts FIRST so this is genuinely reversible — the file backup ($bkId)
+    // Enumerate the remote-root accounts FIRST so this is genuinely reversible - the file backup ($bkId)
     // holds only config files, never these privilege rows (the old note wrongly implied it could restore them).
     $hostsRaw = smpro_tun_sh("mysql $df -N -B -e \"SELECT Host FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost','127.0.0.1','::1');\" 2>&1", 15);
     if (stripos($hostsRaw, 'ERROR') !== false) return ['ok' => false, 'msg' => 'MySQL error: ' . mb_substr($hostsRaw, 0, 200), 'backup_id' => $bkId];
@@ -703,7 +703,7 @@ function smpro_tun_sa_mysql_remoteroot(string $bkId): array {
     @is_dir($bkDir) || @mkdir($bkDir, 0700, true);
     $grantsFile = $bkDir . '/mysql_remote_root_grants.sql';
     @file_put_contents($grantsFile, $dump, LOCK_EX); @chmod($grantsFile, 0600);
-    // Revoke with DROP USER (removes the account cleanly, incl. privilege-table rows — DELETE left orphans).
+    // Revoke with DROP USER (removes the account cleanly, incl. privilege-table rows - DELETE left orphans).
     $drops = 'FLUSH PRIVILEGES; ';
     foreach ($hosts as $h) $drops .= "DROP USER IF EXISTS 'root'@'" . $esc($h) . "'; ";
     $drops .= 'FLUSH PRIVILEGES;';
@@ -721,7 +721,7 @@ function smpro_tun_sa_maxemail(string $bkId): array {
 }
 
 function smpro_tun_sa_compilers(string $bkId): array {
-    // Prefer cPanel's own script (there is NO whmapi1 function for compiler access — the old `compilerinstall`
+    // Prefer cPanel's own script (there is NO whmapi1 function for compiler access - the old `compilerinstall`
     // call is "Unknown app" and silently no-ops). Fall back to a clear manual instruction if the script isn't present.
     $script = '/usr/local/cpanel/scripts/set_compiler_access';
     if (is_executable($script)) {
@@ -737,7 +737,7 @@ function smpro_tun_sa_compilers(string $bkId): array {
 
 function smpro_tun_sa_autoupdate(string $bkId): array {
     $bin = smpro_tun_sa_bin(); if ($bin === '') return ['ok'=>false,'msg'=>'whmapi1 not found.','backup_id'=>$bkId];
-    // 'automatic' is NOT a valid value (whmapi1 returns result:0) — set_cpanel_updates only accepts daily/manual/never.
+    // 'automatic' is NOT a valid value (whmapi1 returns result:0) - set_cpanel_updates only accepts daily/manual/never.
     $out = smpro_tun_sh(escapeshellarg($bin) . ' --output=json set_cpanel_updates updates=daily 2>&1', 20);
     $j   = json_decode($out, true);
     if (!is_array($j) || empty($j['metadata']['result'])) return ['ok' => false, 'msg' => 'whmapi1 set_cpanel_updates failed — apply via WHM › Update Preferences.', 'manual' => true, 'backup_id' => $bkId];
@@ -810,7 +810,7 @@ function smpro_tun_backups(): array {
     return $out;
 }
 
-/** Restore a timestamped backup — copies each file back to its original location.
+/** Restore a timestamped backup - copies each file back to its original location.
  *  Before overwriting, saves the CURRENT config as a new "pre-restore" safeguard backup.
  *  If CSF was included, reloads it with `csf -r`. Returns ['ok','msg','restored','pre_restore_backup'?]. */
 function smpro_tun_restore(string $backupId): array {
@@ -827,8 +827,8 @@ function smpro_tun_restore(string $backupId): array {
         if (strpos($origPath, '..') !== false || strpos($origPath, '/') !== 0) { $failed[] = $origPath . ' (unsafe path)'; continue; }
         $bkFile = $dir . '/' . str_replace('/', '_', ltrim($origPath, '/'));
         if (!is_file($bkFile)) { $failed[] = $origPath . ' (backup file missing)'; continue; }
-        // Preserve the file's REAL mode — blindly forcing 0640 broke files that must be world-readable
-        // (e.g. /etc/my.cnf is 0644; at 0640 root:root the mysql user can't read it → DB starts on defaults).
+        // Preserve the file's REAL mode - blindly forcing 0640 broke files that must be world-readable
+        // (e.g. /etc/my.cnf is 0644; at 0640 root:root the mysql user can't read it -> DB starts on defaults).
         $origMode = @is_file($origPath) ? (@fileperms($origPath) & 0777) : null;
         if (is_file($origPath)) @copy($origPath, $sgDir . '/' . str_replace('/', '_', ltrim($origPath, '/')));
         if (@copy($bkFile, $origPath)) {
@@ -873,9 +873,9 @@ function smpro_tun_profiles(): array {
 
 /* ---------------- apply (safe subset only) ----------------
  * AUTO-applicable on cPanel = CSF settings (validated by `csf -r`) and my.cnf additions (appended under
- * [mysqld] WITHOUT restarting — takes effect on the next planned restart, so nothing breaks live).
- * Apache/PHP are cPanel-managed (regenerated from templates) → advisory only, never auto-edited here.
- * Every apply: backup → change → (validate) → record profile. */
+ * [mysqld] WITHOUT restarting - takes effect on the next planned restart, so nothing breaks live).
+ * Apache/PHP are cPanel-managed (regenerated from templates) -> advisory only, never auto-edited here.
+ * Every apply: backup -> change -> (validate) -> record profile. */
 function smpro_tun_apply_map(): array {
     return [
         'mysql_bufferpool' => ['mycnf', 'innodb_buffer_pool_size'],
@@ -885,14 +885,14 @@ function smpro_tun_apply_map(): array {
         'csf_synflood'     => ['csf', 'SYNFLOOD', '1'],
         'csf_ct'           => ['csf', 'CT_LIMIT', '300'],
         'csf_testing'      => ['csf', 'TESTING', '0'],
-        // Apache: written to a cPanel-safe Include drop-in (survives template rebuilds) → validate → graceful reload.
+        // Apache: written to a cPanel-safe Include drop-in (survives template rebuilds) -> validate -> graceful reload.
         'apache_tokens'    => ['apache_inc', 'ServerTokens Prod'],
         'apache_sig'       => ['apache_inc', 'ServerSignature Off'],
         'apache_keepalive' => ['apache_inc', "KeepAlive On\nKeepAliveTimeout 5"],
-        // PHP: written to a php.d drop-in for every EA-PHP version → restart PHP-FPM.
+        // PHP: written to a php.d drop-in for every EA-PHP version -> restart PHP-FPM.
         'php_expose'       => ['php_ini', 'expose_php', 'Off'],
         'php_opcache'      => ['php_ini', 'opcache.enable', '1'],
-        // previously advisory-only — now real, validated, reversible appliers:
+        // previously advisory-only - now real, validated, reversible appliers:
         'csf_alert'        => ['csf_alert'],                          // LF_ALERT_TO = server contact email
         'imunify_pad'      => ['imunify_pd'],                         // enable Proactive Defense
         'http_h2_apache'   => ['apache_h2'],                         // install mod_http2 + Protocols
@@ -954,7 +954,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         smpro_tun_profile_add([['engine' => 'mysql', 'id' => $recId, 'change' => implode('; ', $lines), 'from' => $rec['current']]]);
         return ['ok' => true, 'applied' => implode('; ', array_slice($lines, 1)), 'note' => 'Added to my.cnf — takes effect on the NEXT MySQL restart (do it at a quiet time). Not restarted now (safe).', 'needs_restart' => 'mysql'];
     }
-    // Apache: cPanel-safe Include drop-in (NOT httpd.conf — survives EasyApache rebuilds), validated + graceful reload + auto-rollback.
+    // Apache: cPanel-safe Include drop-in (NOT httpd.conf - survives EasyApache rebuilds), validated + graceful reload + auto-rollback.
     if ($kind === 'apache_inc') {
         $dir = '/etc/apache2/conf.d/includes'; if (!is_dir($dir)) $dir = is_dir('/usr/local/apache/conf/includes') ? '/usr/local/apache/conf/includes' : '';
         if ($dir === '') return ['ok' => false, 'msg' => 'Apache cPanel-include dir not found — apply via WHM › Include Editor. Recommended: ' . $rec['recommended'], 'manual' => true];
@@ -977,7 +977,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         $vers = [];
         foreach (glob('/opt/cpanel/ea-php*/root/usr/bin/php') ?: [] as $p) if (preg_match('#/(ea-php\d+)/#', $p, $mm)) $vers[$mm[1]] = '/opt/cpanel/' . $mm[1] . '/root/etc/php.d';
         if (!$vers) return ['ok' => false, 'msg' => 'No EA-PHP found — apply via WHM › MultiPHP INI Editor. Recommended: ' . $rec['recommended'], 'manual' => true];
-        // OPcache needs the Zend extension package — a php.d "opcache.enable=1" is INERT without it. Install it first.
+        // OPcache needs the Zend extension package - a php.d "opcache.enable=1" is INERT without it. Install it first.
         $need = [];
         if ($recId === 'php_opcache') {
             foreach ($vers as $v => $d) if (!glob('/opt/cpanel/' . $v . '/root/usr/lib*/php/modules/opcache.so')) $need[] = $v . '-php-opcache';
@@ -1003,7 +1003,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         foreach ($prev as $v => $pv) { $bin = $binOf[$v] ?? '';
             if ($bin === '' || !is_file($pv['file'])) continue;
             $chk = smpro_tun_sh(escapeshellarg($bin) . ' -n -c ' . escapeshellarg($pv['file']) . ' -v 2>&1', 10);
-            if (stripos($chk, 'PHP ') === false) {   // PHP failed to even print its version with this .ini → bad drop-in
+            if (stripos($chk, 'PHP ') === false) {   // PHP failed to even print its version with this .ini -> bad drop-in
                 if ($pv['content'] === null) @unlink($pv['file']); else @file_put_contents($pv['file'], $pv['content'], LOCK_EX);
                 $wrote--;
             }
@@ -1018,7 +1018,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         smpro_tun_profile_add([['engine' => 'php', 'id' => $recId, 'change' => $iniKey . '=' . $iniVal, 'from' => $rec['current']]]);
         return ['ok' => true, 'applied' => $iniKey . ' = ' . $iniVal, 'note' => 'Written to php.d on ' . $wrote . ' EA-PHP version(s)' . ($recId === 'php_opcache' ? ' + OPcache extension installed' : '') . ' + PHP-FPM restarted.'];
     }
-    // CSF/LFD alert email → server contact (safe).
+    // CSF/LFD alert email -> server contact (safe).
     if ($kind === 'csf_alert') {
         $file = '/etc/csf/csf.conf'; $c = (string)@file_get_contents($file); if ($c === '') return ['ok' => false, 'msg' => 'csf.conf unreadable'];
         $email = trim(smpro_tun_sh("awk '/^CONTACTEMAIL/{print \$2}' /etc/wwwacct.conf 2>/dev/null | head -1"));
@@ -1030,14 +1030,14 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         smpro_tun_profile_add([['engine' => 'csf', 'id' => $recId, 'change' => 'LF_ALERT_TO=' . $email, 'from' => $rec['current']]]);
         return ['ok' => true, 'applied' => 'LF_ALERT_TO = ' . $email, 'note' => 'CSF/LFD alerts now go to ' . $email . '. Change it in WHM › CSF if needed.'];
     }
-    // Imunify Proactive Defense → KILL mode (safe).
+    // Imunify Proactive Defense -> KILL mode (safe).
     if ($kind === 'imunify_pd') {
         if (!smpro_tun_has('imunify360-agent')) return ['ok' => false, 'msg' => 'imunify360-agent not found — apply via the Imunify UI.', 'manual' => true];
         smpro_tun_sh('imunify360-agent config update \'{"PROACTIVE_DEFENSE": {"mode": "KILL"}}\' 2>&1', 40);
         smpro_tun_profile_add([['engine' => 'imunify', 'id' => $recId, 'change' => 'PROACTIVE_DEFENSE=KILL', 'from' => $rec['current']]]);
         return ['ok' => true, 'applied' => 'Proactive Defense → KILL', 'note' => 'Imunify Proactive Defense enabled.'];
     }
-    // Apache HTTP/2 → ensure mod_http2 + Protocols directive in the cPanel-safe include (validated + graceful reload).
+    // Apache HTTP/2 -> ensure mod_http2 + Protocols directive in the cPanel-safe include (validated + graceful reload).
     if ($kind === 'apache_h2') {
         $bin = $scan['engines']['apache']['bin'] ?? 'httpd';
         if (!preg_match('/http2_module|mod_http2/i', smpro_tun_sh(escapeshellarg($bin) . ' -M 2>&1', 12))) {
@@ -1056,7 +1056,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         smpro_tun_profile_add([['engine' => 'apache', 'id' => $recId, 'change' => 'mod_http2 + Protocols h2 http/1.1', 'from' => $rec['current']]]);
         return ['ok' => true, 'applied' => 'HTTP/2 enabled', 'note' => 'mod_http2 ensured + Protocols set in a cPanel-safe include + Apache reloaded (graceful).'];
     }
-    // SSH hardening via sshd_config.d drop-in → validate (sshd -t) → reload. ACCESS-RISK: port change opens CSF first.
+    // SSH hardening via sshd_config.d drop-in -> validate (sshd -t) -> reload. ACCESS-RISK: port change opens CSF first.
     if ($kind === 'sshd') {
         $key = $m[1]; $val = $m[2];
         if ($key === 'Port' && is_file('/etc/csf/csf.conf')) {                    // open the new port in CSF BEFORE changing sshd (anti-lockout)
@@ -1078,7 +1078,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         smpro_tun_profile_add([['engine' => 'ssh', 'id' => $recId, 'change' => $key . ' ' . $val, 'from' => $rec['current']]]);
         return ['ok' => true, 'applied' => $key . ' ' . $val, 'note' => 'Applied + sshd reloaded. IMPORTANT: keep this session open and confirm a NEW SSH login works before closing it.' . ($key === 'Port' ? ' New port ' . $val . ' was opened in CSF first.' : '')];
     }
-    // Access isolation — install mod_ruid2 (if missing) + enable Jail Apache; rebuild + graceful restart.
+    // Access isolation - install mod_ruid2 (if missing) + enable Jail Apache; rebuild + graceful restart.
     if ($kind === 'jail_apache') {
         $bin = smpro_tun_sa_bin();
         if ($bin === '') return ['ok' => false, 'msg' => 'whmapi1 not available — enable Jail Apache in WHM › Tweak Settings.', 'manual' => true];
@@ -1097,7 +1097,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         return ['ok' => true, 'applied' => 'Jail Apache + mod_ruid2 enabled',
             'note' => ($loaded ? 'Apache now runs each vhost as its owner (mod_ruid2). ' : 'Jail Apache tweak set — if mod_ruid2 is not loaded yet, rebuild EasyApache 4. ') . 'Reversible: turn Jail Apache off in WHM › Tweak Settings. Note: this can affect accessing Mailman via Apache. Backup: ' . $bkId . '.'];
     }
-    // Access isolation — move full-shell cPanel accounts into jailshell (reversible per-account).
+    // Access isolation - move full-shell cPanel accounts into jailshell (reversible per-account).
     if ($kind === 'jailshell') {
         $js = '/usr/local/cpanel/bin/jailshell';
         if (!is_executable($js)) return ['ok' => false, 'msg' => 'jailshell not found at ' . $js . ' — set shells in WHM › Manage Shell Access.', 'manual' => true];
@@ -1115,7 +1115,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         return ['ok' => true, 'applied' => count($done) . ' account(s) → jailshell',
             'note' => ($fail ? count($fail) . ' could not be changed (' . implode(', ', array_slice($fail, 0, 5)) . '). ' : '') . 'Reversible per-account in WHM › Manage Shell Access. Backup: ' . $bkId . '.'];
     }
-    // Access isolation — enable CageFS for all users (CloudLinux). Reversible: cagefsctl --disable-all.
+    // Access isolation - enable CageFS for all users (CloudLinux). Reversible: cagefsctl --disable-all.
     if ($kind === 'cagefs_enable') {
         $ctl = smpro_tun_cagefsctl();
         if ($ctl === '') return ['ok' => false, 'msg' => 'cagefsctl not found — install CageFS from WHM › CloudLinux™ Manager first.', 'manual' => true];

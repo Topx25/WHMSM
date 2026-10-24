@@ -1,11 +1,11 @@
 <?php
 /**
- * bin/home_move.php — detached worker for the Disk/Storage "move home directory" feature.
+ * bin/home_move.php - detached worker for the Disk/Storage "move home directory" feature.
  * Survives the page closing (ignore_user_abort + set_time_limit(0)). Reads --mode/--user/--target,
  * performs the phase, and streams progress into SMPRO_VARLIB/backups/home_move/job.json.
  * Modes: move | rollback | finalize.  See includes/disk_home.php for the design.
  */
-define('SMPRO_BOOT', 1);   // MUST precede the requires — every include exits('forbidden') without it (that was the "no heartbeat" bug)
+define('SMPRO_BOOT', 1);   // MUST precede the requires - every include exits('forbidden') without it (that was the "no heartbeat" bug)
 $root = dirname(__DIR__);
 foreach (['defines', 'helpers', 'maintenance', 'domains', 'disk_home'] as $m) {   // domains.php: smpro_dom_user_protected / smpro_dom_whmapi used by preflight + roots
     $f = $root . '/includes/' . $m . '.php';
@@ -40,16 +40,16 @@ if ($selftest) {
 }
 /* --watchdog (cron, every minute): if a job is unfinished but NO worker is alive, relaunch it so an
  * interrupted move (reboot / OOM / killed process) continues on its own without the admin doing anything.
- * "A worker is alive" == it holds the job lock, which it keeps for the whole run — so a free lock plus an
+ * "A worker is alive" == it holds the job lock, which it keeps for the whole run - so a free lock plus an
  * unfinished job is a reliable dead-worker signal. rsync resumes, and the move phase is resume-aware. */
 if (in_array('--watchdog', $argv, true)) {
     $j = smpro_ds_home_job_read($GLOBALS['JOBK'] ?? '');
     if (empty($j) || !empty($j['done'])) exit(0);                       // nothing running / already finished
-    if ((time() - (int)($j['heartbeat'] ?? 0)) < 180) exit(0);          // still beating — leave it alone
+    if ((time() - (int)($j['heartbeat'] ?? 0)) < 180) exit(0);          // still beating - leave it alone
     if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) { $j['msg'] = 'Paused: the plugin is Disabled - the move resumes when it is enabled again'; smpro_ds_home_job_write($j); exit(0); }   // a watchdog never relaunches rsync + rm -rf under the global switch
     $lockDir = defined('SMPRO_LOCKS') ? SMPRO_LOCKS : (SMPRO_VARLIB . '/locks');
     $t = @fopen($lockDir . '/home_move.lock', 'c');
-    if ($t && !@flock($t, LOCK_EX | LOCK_NB)) exit(0);                  // a worker still owns it → alive
+    if ($t && !@flock($t, LOCK_EX | LOCK_NB)) exit(0);                  // a worker still owns it -> alive
     if ($t) { @flock($t, LOCK_UN); @fclose($t); }
     $wmode = (string)($j['mode'] ?? 'move'); $wuser = (string)($j['user'] ?? ''); $wtar = (string)($j['target'] ?? '');
     if ($wuser === '' || !in_array($wmode, ['move', 'rollback', 'finalize'], true)) exit(0);
@@ -71,7 +71,7 @@ if (!in_array($mode, ['move', 'rollback', 'finalize'], true) || $user === '') { 
 $JOB = ['phase' => 'starting', 'pct' => 2, 'done' => false, 'mode' => $mode, 'user' => $user, 'target' => $troot, 'heartbeat' => time(), 'launched_at' => time(), 'msg' => 'Worker started'];
 /**
  * Append one human-readable step to the job's activity log. The card renders this as a plain, readable
- * timeline — the admin should never have to look at raw job data to know what the move is doing. Repeated
+ * timeline - the admin should never have to look at raw job data to know what the move is doing. Repeated
  * progress ticks for the SAME phase replace the last line instead of flooding it.
  */
 function jlog($phase, $msg, $replace = false) {
@@ -93,7 +93,7 @@ function jp($phase, $pct, $msg) { global $JOB; $JOB['phase'] = $phase; $JOB['pct
 function jdone($ok, $msg, $extra = []) { global $JOB; $JOB['phase'] = $ok ? 'done' : 'error'; $JOB['pct'] = 100; $JOB['done'] = true; $JOB['msg'] = $msg; $JOB['heartbeat'] = time(); $JOB['result'] = array_merge(['ok' => $ok, 'msg' => $msg], $extra);
     jlog($ok ? 'done' : 'error', $msg);
     smpro_ds_home_job_write($JOB, $GLOBALS['JOBK'] ?? ''); }
-jp('starting', 2, 'Worker started');   // heartbeat FIRST — the launcher is waiting on exactly this
+jp('starting', 2, 'Worker started');   // heartbeat FIRST - the launcher is waiting on exactly this
 
 /* ---- single-flight lock (worker side; held for the whole job) ---- */
 $lockDir = defined('SMPRO_LOCKS') ? SMPRO_LOCKS : (SMPRO_VARLIB . '/locks');
@@ -136,7 +136,7 @@ function hm_rsync_progress($cmd, $totalBytes, $label, $lo, $hi) {
     @stream_set_blocking($pipes[1], false); @stream_set_blocking($pipes[2], false);
     $buf = ''; $lastUi = 0; $startedPass = time();
     $lastProgress = ''; $pending = '';
-    // Rolling file view: with millions of files we must never store the whole list — keep a running COUNT
+    // Rolling file view: with millions of files we must never store the whole list - keep a running COUNT
     // plus the most recent handful of names, which is what the admin actually wants to see.
     if (!isset($JOB['files_done'])) $JOB['files_done'] = 0;
     // Carry the list ACROSS passes: this runs once for the bulk copy and again for the delta. The delta
@@ -147,7 +147,7 @@ function hm_rsync_progress($cmd, $totalBytes, $label, $lo, $hi) {
         $chunk = (string)@stream_get_contents($pipes[1]);
         @stream_get_contents($pipes[2]);
         if ($chunk !== '') {
-            // rsync separates progress updates with \r and file names with \n — normalise, then process whole
+            // rsync separates progress updates with \r and file names with \n - normalise, then process whole
             // lines only, holding any partial tail back so a file name is never cut in half.
             $pending .= str_replace("\r", "\n", $chunk);
             $lines = explode("\n", $pending);
@@ -155,14 +155,14 @@ function hm_rsync_progress($cmd, $totalBytes, $label, $lo, $hi) {
             foreach ($lines as $ln) {
                 $ln = trim($ln);
                 if ($ln === '') continue;
-                // rsync writes the unit in EITHER case (kB/s and MB/s both occur) and appends "(xfr#N, to-chk=…)"
-                // on the final line — match case-insensitively and treat any xfr/to-chk line as progress, or a
+                // rsync writes the unit in EITHER case (kB/s and MB/s both occur) and appends "(xfr#N, to-chk=...)"
+                // on the final line - match case-insensitively and treat any xfr/to-chk line as progress, or a
                 // progress line gets mistaken for a file name (it did: "0 0% 0.00kB/s" was counted as a file).
                 if (preg_match('/([\d,]+)\s+(\d+)%\s+([\d.]+)\s*([KMGT]?)B\/s/i', $ln) || strpos($ln, 'to-chk=') !== false || strpos($ln, 'xfr#') !== false) { $lastProgress = $ln; continue; }
                 // rsync chatter we must not mistake for a file name
                 if (preg_match('/^(sending|receiving) incremental file list$/', $ln)) continue;
                 if (preg_match('/^(sent|total size|created directory|building file list|delta-transmission)/i', $ln)) continue;
-                if (preg_match('/^(rsync|IO error|file has vanished|skipping|deleting)/i', $ln)) continue;   // '--delete' prints "deleting <file>" — that is a removal, not a transfer
+                if (preg_match('/^(rsync|IO error|file has vanished|skipping|deleting)/i', $ln)) continue;   // '--delete' prints "deleting <file>" - that is a removal, not a transfer
                 if (substr($ln, -1) === '/') { $JOB['current_file'] = $ln; continue; }   // a directory, not a transfer
                 $JOB['files_done']++;
                 $JOB['current_file'] = $ln;
@@ -196,7 +196,7 @@ function hm_rsync_progress($cmd, $totalBytes, $label, $lo, $hi) {
         usleep(400000);
     }
     @fclose($pipes[1]); @fclose($pipes[2]); @proc_close($proc);
-    // Final flush — a fast pass can finish between two UI ticks, which previously left the file list empty
+    // Final flush - a fast pass can finish between two UI ticks, which previously left the file list empty
     // even though thousands of files had been counted.
     $JOB['recent_files'] = $recent;
     $JOB['current_file'] = '';
@@ -232,10 +232,10 @@ function hm_rewrite_userdata($user, $src, $dst) {
 /** Rebuild every generated config that derives from passwd + userdata. Returns a log string. */
 function hm_rebuild($user) {
     $log = '';
-    // Narrate each rebuild step into the activity log — this stage used to be one long silent pause.
+    // Narrate each rebuild step into the activity log - this stage used to be one long silent pause.
     $step = function ($label) { jp('rebuild', 82, $label); };
     $step('Updating the domain map (updateuserdomains)…');
-    // NB: do NOT run `userdata_update --reload` here — it regenerates the userdata from httpd.conf.datastore
+    // NB: do NOT run `userdata_update --reload` here - it regenerates the userdata from httpd.conf.datastore
     // (the OLD path) and reverts the documentroot/homedir rewrite. rebuildhttpdconf regenerates httpd.conf +
     // the datastore FROM userdata (the correct direction), which is all we need.
     $log .= "[updateuserdomains]\n"   . hm_sh('/usr/local/cpanel/scripts/updateuserdomains', 120);
@@ -265,7 +265,7 @@ if (!$pw) { jdone(false, 'Account not found in /etc/passwd.'); exit; }
 /* ================= MOVE ================= */
 if ($mode === 'move') {
     // RESUME-AWARE: a previous attempt may have died (reboot/OOM/kill) after the cutover. If the account is
-    // ALREADY on the target, re-running the copy would be wrong — pick up from the rebuild instead. rsync
+    // ALREADY on the target, re-running the copy would be wrong - pick up from the rebuild instead. rsync
     // itself is resumable, so an interrupted copy simply continues where it stopped.
     $prev = smpro_ds_home_state_read($user);
     $resumed = !empty($prev['user']) && $prev['user'] === $user && ($prev['status'] ?? '') === 'moving';
@@ -288,7 +288,7 @@ if ($mode === 'move') {
 
     if (!$alreadyFlipped) {
         // PREFLIGHT: rsync is what actually performs the move. It ships with cPanel, but a hardened or
-        // minimal build can be missing it — and without this check the job would start, flip to the "Copying"
+        // minimal build can be missing it - and without this check the job would start, flip to the "Copying"
         // phase, run a command that does not exist, and report progress for a copy that never happened. Fail
         // BEFORE anything is touched, while the account is still entirely untouched and safe.
         $rsyncBin = trim((string)@shell_exec('command -v rsync 2>/dev/null'));
@@ -345,7 +345,7 @@ if ($mode === 'move') {
     $okDoc  = is_dir($dst . '/public_html') || is_dir($dst);
     $cfg    = trim(hm_sh('/usr/sbin/apachectl -t || /usr/local/apache/bin/httpd -t', 30));
     $cfgOk  = stripos($cfg, 'Syntax OK') !== false || $cfg === '';
-    // Confirm the rewrite SURVIVED the rebuild (no non-cache userdata file still points at the old home) —
+    // Confirm the rewrite SURVIVED the rebuild (no non-cache userdata file still points at the old home) -
     // this is what catches a userdata_update-style revert regression.
     $udOk = true; $reSrc = '#' . preg_quote($src, '#') . '(?=/|$|[\s:"\'])#m';
     foreach (glob('/var/cpanel/userdata/' . $user . '/*') ?: [] as $f) {

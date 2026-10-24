@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/domain-checker.php — Domain Checker.
+ * modules/domain-checker.php - Domain Checker.
  * Lists every hosted domain with its owner + account status (fast, server-side), then deep-checks
  * each domain on demand (live DNS A record vs this server's IPs, + WHOIS expiry) via ?domchk=1.
  * Multi-select + per-row Suspend / Terminate of the owning cPanel account (root, CSRF, confirmed).
@@ -184,7 +184,7 @@ body.dc-resizing{cursor:col-resize!important;user-select:none!important}
   var rows=[].slice.call(document.querySelectorAll('tr[data-domain]'));
   var dcChecked=false;
 
-  // ---- localStorage state — persists check results across page navigations ----
+  // ---- localStorage state - persists check results across page navigations ----
   var DC_STATE_KEY='dc_state_v2';
   var dcState={v:2,scanId:null,scanDone:false,total:0,since:0,results:{},savedAt:0};
   function saveState(){try{dcState.savedAt=Math.floor(Date.now()/1000);localStorage.setItem(DC_STATE_KEY,JSON.stringify(dcState));}catch(e){}}
@@ -283,7 +283,7 @@ body.dc-resizing{cursor:col-resize!important;user-select:none!important}
   }
   document.addEventListener('click',function(e){var b=e.target.closest('.dcCheckBtn');if(b){var tr=b.closest('tr[data-domain]');if(tr)checkOne(tr);}});
 
-  // ---- background scan — starts a server-side worker that checks every domain, polls progress ----
+  // ---- background scan - starts a server-side worker that checks every domain, polls progress ----
   var dcPollIv=null;
   function stopScanPoll(){if(dcPollIv){clearInterval(dcPollIv);dcPollIv=null;}}
   function startScanPoll(scanId){
@@ -483,7 +483,7 @@ body.dc-resizing{cursor:col-resize!important;user-select:none!important}
       else btn.disabled=false;
     }).catch(function(){btn.disabled=false;alert('Request failed.');});};
 
-  // ---- Terminate: styled two-step modal (warning → confirm + optional /backup/ archive) ----
+  // ---- Terminate: styled two-step modal (warning -> confirm + optional /backup/ archive) ----
   var dcTermTr=null;
   window.dcTerminate=function(btn){dcTermTr=btn.closest('tr[data-domain]');var user=dcTermTr.getAttribute('data-user');
     P('dcM1User').textContent=user;P('dcM2User').textContent=user;
@@ -509,7 +509,7 @@ body.dc-resizing{cursor:col-resize!important;user-select:none!important}
       } else { go.disabled=false;go.style.opacity='1';P('dcM2Msg').innerHTML='<span style="color:#b91c1c">&#10007; '+esc((j&&j.msg)||'Could not start')+'</span>'; }
     }).catch(function(){go.disabled=false;go.style.opacity='1';P('dcM2Msg').innerHTML='<span style="color:#b91c1c">Request failed.</span>';});};
 
-  // Poll a background terminate job (every 5s) — non-blocking; UI stays fully usable.
+  // Poll a background terminate job (every 5s) - non-blocking; UI stays fully usable.
   function dcPollJob(id,user,tr,backup){
     var tries=0,max=300;   // up to ~25 min
     var iv=setInterval(function(){
@@ -536,7 +536,7 @@ body.dc-resizing{cursor:col-resize!important;user-select:none!important}
     var bulkBackup=false;
     if(kind==='terminate'){
       var t=prompt('Type TERMINATE to permanently remove '+list.length+' account(s):');if(t!=='TERMINATE'){alert('Cancelled.');return;}
-      // Backing up is the DEFAULT. Never let Cancel/Escape silently choose "delete without backup" — Escape is
+      // Backing up is the DEFAULT. Never let Cancel/Escape silently choose "delete without backup" - Escape is
       // the universal "get me out of here", so it must select the SAFE option, matching the single-account
       // modal whose backup checkbox is checked by default. Skipping the backup now requires typing NOBACKUP.
       bulkBackup=true;

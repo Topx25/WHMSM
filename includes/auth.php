@@ -1,6 +1,6 @@
 <?php
 /**
- * auth.php — WHM context verification (defense-in-depth).
+ * auth.php - WHM context verification (defense-in-depth).
  *
  * Primary auth is enforced by cpsrvd: nothing under whostmgr/docroot/cgi/ runs
  * without an authenticated WHM session (the /cpsessXXXX/ prefix). These helpers
@@ -18,7 +18,7 @@ function smpro_is_cli() {
 }
 
 /** Actor identity. cpsrvd sets REMOTE_USER for authenticated WHM cgi.
- *  SECURITY: a web request with no authenticated actor must NEVER be assumed to be root —
+ *  SECURITY: a web request with no authenticated actor must NEVER be assumed to be root -
  *  the euid fallback (which is root under the WHM CGI) is allowed ONLY for CLI maintenance. */
 function smpro_current_actor() {
     $u = getenv('REMOTE_USER');
@@ -30,7 +30,7 @@ function smpro_current_actor() {
         }
         return 'root';
     }
-    return '';                                             // web with no REMOTE_USER → unknown → fail-closed downstream
+    return '';                                             // web with no REMOTE_USER -> unknown -> fail-closed downstream
 }
 
 /** Remote IP of the WHM operator, if available. */
@@ -62,7 +62,7 @@ function smpro_require_whm_access() {
     if (function_exists('smpro_audit')) smpro_audit('access_denied', ['actor' => smpro_current_actor(), 'reason' => 'no_whm_context']);
     http_response_code(403);
     // An AJAX caller has to get JSON here too. This gate runs BEFORE the CSRF layer, so it is the first thing an
-    // expired session meets — and answering it in HTML is what made a dialog report its own generic "could not
+    // expired session meets - and answering it in HTML is what made a dialog report its own generic "could not
     // load" instead of the real reason. smpro_wants_json() lives in the CSRF module, which may not be loaded this
     // early; if it is absent this simply falls through to the page below.
     if (function_exists('smpro_wants_json') && smpro_wants_json()) {
@@ -87,7 +87,7 @@ function smpro_require_whm_access() {
 function smpro_actor_has_root() {
     if (smpro_is_cli()) return true;
     $actor = smpro_current_actor();
-    if ($actor === '') return false;                       // web request without an authenticated actor → never root
+    if ($actor === '') return false;                       // web request without an authenticated actor -> never root
     // cache lives root-only (0700) so a non-root user can't forge a root=true verdict
     @is_dir(SMPRO_CACHE) || @mkdir(SMPRO_CACHE, 0700, true); @chmod(SMPRO_CACHE, 0700);
     $cacheFile = SMPRO_CACHE . '/auth_root_' . preg_replace('/[^A-Za-z0-9_.\-]/', '', $actor) . '.json';
@@ -98,11 +98,11 @@ function smpro_actor_has_root() {
     }
 
     // PRIMARY, unspoofable signal: the authenticated WHM account is literally 'root'. cpsrvd sets
-    // REMOTE_USER from the login session — a reseller can NEVER make it 'root'. We REQUIRE this, so a
+    // REMOTE_USER from the login session - a reseller can NEVER make it 'root'. We REQUIRE this, so a
     // `whmapi1 myprivs` that reflects the root *process* (not the user) can never grant root to a reseller.
     $isRoot = ($actor === 'root');
     // Defense-in-depth: when it IS the root account, corroborate with the WHM ACL; if WHM reports this
-    // account lacks the 'all' privilege, deny. (Only ever RESTRICTS — never grants to a non-root actor.)
+    // account lacks the 'all' privilege, deny. (Only ever RESTRICTS - never grants to a non-root actor.)
     $bin = '/usr/local/cpanel/bin/whmapi1';
     if ($isRoot && is_executable($bin)) {
         $to  = max(1, min(30, (int)SMPRO_TIMEOUT_QUICK));   // constant, but cast defensively
@@ -116,7 +116,7 @@ function smpro_actor_has_root() {
             $privs = $data['privileges'] ?? null;
             $first = (is_array($privs) && isset($privs[0]) && is_array($privs[0])) ? $privs[0] : (is_array($privs) ? $privs : []);
             if (empty($data['all']) && empty($first['all'])) {
-                $isRoot = false;                            // WHM says this 'root' account lacks full ACL → deny
+                $isRoot = false;                            // WHM says this 'root' account lacks full ACL -> deny
             }
         }
     }

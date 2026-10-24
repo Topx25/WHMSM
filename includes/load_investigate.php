@@ -1,9 +1,9 @@
 <?php
 /**
- * load_investigate.php — "Overload Investigator".
+ * load_investigate.php - "Overload Investigator".
  * Finds the REAL cause of a high load average (not just the single top process): CPU vs I/O-wait vs
  * memory/swap, the top individual hogs, the per-USER CPU aggregate, and process SWARMS (many small
- * processes from one account that each stay under the per-process threshold but sum to a big load —
+ * processes from one account that each stay under the per-process threshold but sum to a big load -
  * the case a threshold/per-process guard is blind to). Produces a rule-based diagnosis + ranked
  * suggestions, an optional AI diagnosis, a recommended step-by-step auto-handling plan, and keeps a
  * bounded history of overload episodes for the report. Read-only except the admin-triggered actions.
@@ -14,7 +14,7 @@ define('SMPRO_OVERLOAD_LOG', SMPRO_VARLIB . '/overload_history.json');
 
 /* ---------------- evidence ---------------- */
 
-// CPU time breakdown from two /proc/stat samples ~200ms apart → user/system/iowait/idle %.
+// CPU time breakdown from two /proc/stat samples ~200ms apart -> user/system/iowait/idle %.
 function smpro_load_cpu_breakdown(): array {
     $read = function () {
         $s = @file_get_contents('/proc/stat');
@@ -48,7 +48,7 @@ function smpro_load_mem(): array {
 // Wide process list (top by CPU), with full args so swarms/wp-cron are visible.
 function smpro_load_procs(int $n = 60): array {
     $self = getmypid();
-    // user:32 keeps full cPanel usernames — the bare `user` column truncates >8 chars with a trailing '+',
+    // user:32 keeps full cPanel usernames - the bare `user` column truncates >8 chars with a trailing '+',
     // which breaks /var/cpanel/users/<name> account detection and the one-click "Cool this user" match.
     $raw = (string)@shell_exec('ps -eo pid,pcpu,pmem,user:32,comm,args --sort=-pcpu 2>/dev/null | head -' . (int)max(10, $n + 5));
     $out = [];
@@ -86,7 +86,7 @@ function smpro_load_evidence(): array {
     }
 
     // swarms: a CUSTOMER cPanel account running many (>=8) of the SAME per-site PHP engine.
-    // Excludes the web server (httpd/apache/nginx/php-fpm) and system users (nobody/root/…): many
+    // Excludes the web server (httpd/apache/nginx/php-fpm) and system users (nobody/root/...): many
     // Apache workers under 'nobody' is NORMAL, not a runaway swarm (that was a false positive).
     $phpEngines = ['php-cgi', 'lsphp', 'php', 'suphp', 'cgiwrap'];
     $swarms = [];
@@ -125,8 +125,8 @@ function smpro_load_diagnose(array $ev): array {
     $swap = (int)($ev['mem']['swap_used_pct'] ?? 0); $memUsed = (int)($ev['mem']['used_pct'] ?? 0);
     $causes = []; $sugg = [];
 
-    // top CUSTOMER account (a real cPanel user) by aggregate CPU — the actual per-user driver.
-    // System/service users (nobody, root, mysql, named, …) are never "the account causing load".
+    // top CUSTOMER account (a real cPanel user) by aggregate CPU - the actual per-user driver.
+    // System/service users (nobody, root, mysql, named, ...) are never "the account causing load".
     $topCust = null;
     foreach (($ev['top_users'] ?? []) as $u) {
         $un = preg_replace('/[^a-z0-9._-]/i', '', (string)($u['user'] ?? ''));
@@ -146,7 +146,7 @@ function smpro_load_diagnose(array $ev): array {
 
     // -1) Scheduled jobs that never finished. Checked BEFORE the healthy shortcut below, because this is exactly
     //     the case that slips through it: the load is a queue of throttled processes rather than work, so the
-    //     ratio can sit under the threshold while hundreds of them accumulate. Measured on a live server — load
+    //     ratio can sit under the threshold while hundreds of them accumulate. Measured on a live server - load
     //     ~60 on 96 cores, which is 62% and comfortably "healthy" by the test below, with 278 stuck job processes
     //     across five accounts, the oldest running for 14 days. Calling that server fine is worse than silence.
     $ccStuck = function_exists('smpro_cc_stuck') ? smpro_cc_stuck(60) : ['total' => 0];
@@ -173,7 +173,7 @@ function smpro_load_diagnose(array $ev): array {
     // -2) Processes holding a core without doing anything. Also before the healthy shortcut: each one costs a
     //     whole core permanently, but a handful of them barely moves the ratio on a large machine, so the test
     //     below would call the server fine while cores are being burned. Found on a live server: two, at 100%
-    //     for 29.7 and 11.8 days — one a mail daemon stuck in its event loop, one a customer's PHP request that
+    //     for 29.7 and 11.8 days - one a mail daemon stuck in its event loop, one a customer's PHP request that
     //     never returned. Neither had ever been reported by anything.
     $spin = function_exists('smpro_spin_scan') ? smpro_spin_scan(24, 80, 8, 3, 1000) : ['found' => []];
     if (!empty($spin['found'])) {
@@ -189,7 +189,7 @@ function smpro_load_diagnose(array $ev): array {
             'action' => ['type' => 'link', 'page' => 'top-processes']];
     }
 
-    // 0) HEALTHY — do NOT invent a "cause" when the server is well under capacity.
+    // 0) HEALTHY - do NOT invent a "cause" when the server is well under capacity.
     //    empty($causes) matters: the checks above can already have found something the ratio test cannot see.
     if ($pct < 85 && $wa < 25 && $swap < 40 && $memUsed < 95 && empty($causes)) {
         $primary = "No overload — load {$load} on {$cores} cores ({$pct}% of capacity). The server is healthy right now.";

@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/backup-monitor.php — JetBackup monitoring + auto-retry on failure.
+ * modules/backup-monitor.php - JetBackup monitoring + auto-retry on failure.
  *
  * Reads JetBackup5 jobs (jetbackup5api) and computes each job's last-run status
  * from last_run vs last_completed (completed ⇒ last_completed ≥ last_run).
@@ -16,7 +16,7 @@ require_once SMPRO_INCLUDES . '/backupmon.php';   // SMPRO_BM_* + the cron insta
 define('SMPRO_BM_STATE', SMPRO_VARLIB . '/state/backup_retry.json');
 
 function smpro_bm_available() { return is_executable(SMPRO_BM_BIN); }
-/** Last JetBackup API failure text (licence expired, API disabled, daemon down…). Set-only — never cleared by a
+/** Last JetBackup API failure text (licence expired, API disabled, daemon down...). Set-only - never cleared by a
  *  later success, so one broken call still surfaces even if other calls on the page succeed. */
 function smpro_bm_err(?string $set = null): string { static $e = ''; if ($set !== null && $e === '') $e = $set; return $e; }
 
@@ -25,7 +25,7 @@ function smpro_bm_api($func, $data = '') {
     $j = json_decode($out, true);
     if (!is_array($j)) { smpro_bm_err('JetBackup returned no readable response for "' . $func . '" (API disabled, or jetbackup5api failed to run).'); return []; }
     // JetBackup 5 wraps every reply: success=1 + data, or success=0 + message. On an expired licence / disabled API
-    // the reply is success=0 with 'data' holding error text — reading 'data' regardless made a hard failure look
+    // the reply is success=0 with 'data' holding error text - reading 'data' regardless made a hard failure look
     // like a healthy "no jobs configured" page with green KPIs.
     if (array_key_exists('success', $j) && (int)$j['success'] !== 1) {
         $m = trim((string)($j['message'] ?? $j['error'] ?? ''));
@@ -70,8 +70,8 @@ function smpro_bm_alerts($limit = 14) {
         $msg = (string)($x['title'] ?? $x['message'] ?? $x['name'] ?? '');
         if ($msg === '') continue;
         // Severity: prefer JetBackup's own field over guessing from the (possibly reworded/localised) message.
-        // We do NOT assume the numeric scale of a `level` int — that is exactly the vendor-format guess that has
-        // burned this codebase before — so a numeric level is only SURFACED, not interpreted. A STRING severity
+        // We do NOT assume the numeric scale of a `level` int - that is exactly the vendor-format guess that has
+        // burned this codebase before - so a numeric level is only SURFACED, not interpreted. A STRING severity
         // (unambiguous) is trusted, and the message-text heuristic is kept as a never-miss safety net: a row is a
         // failure if EITHER signal fires, so a real backup failure is never hidden by wording. Erring toward
         // flagging is the safe direction for a monitor.
@@ -95,7 +95,7 @@ if ($reqMethod === 'POST' && ($_POST['bm_action'] ?? '') === 'retry') {
     if ($id === '') { echo json_encode(['ok'=>false,'msg'=>'Bad job id.']); exit; }
     $r = smpro_bm_api('runBackupJobManually', '_id=' . $id);
     $ok = (int)($r['success'] ?? 0) === 1;
-    if ($ok) { smpro_cache_bust('bm_jobs2'); smpro_cache_bust('bm_alerts2'); }   // MUST match the render cache keys (…2) or the stale failed state persists for the full TTL
+    if ($ok) { smpro_cache_bust('bm_jobs2'); smpro_cache_bust('bm_alerts2'); }   // MUST match the render cache keys (...2) or the stale failed state persists for the full TTL
     smpro_audit('backup_retry', ['id'=>$id,'ok'=>$ok]);
     echo json_encode(['ok'=>$ok,'msg'=>$ok ? 'Backup job started — it will run now.' : ('JetBackup error: ' . (string)($r['message'] ?? 'failed'))], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
@@ -111,9 +111,9 @@ if ($reqMethod === 'POST' && ($_POST['bm_action'] ?? '') === 'autoretry') {
 $avail = smpro_bm_available();
 // JetBackup API is N+2 shell calls (listBackupJobs + getBackupJob per job + listAlerts), each up to 60s.
 // Cache so a render costs at most one sweep per TTL; the retry cron and manual re-run keep it moving.
-// The API error has to travel WITH the cached value — a cache hit never re-runs the closure, so a static
+// The API error has to travel WITH the cached value - a cache hit never re-runs the closure, so a static
 // error holder alone would go quiet on the second render and the page would go back to looking healthy.
-// Cache keys are versioned (…2): the previous release cached a bare jobs array under 'bm_jobs', and a stale
+// Cache keys are versioned (...2): the previous release cached a bare jobs array under 'bm_jobs', and a stale
 // hit in the old shape would read as "no jobs" for a full TTL right after the upgrade.
 $jobsC = $avail ? smpro_cache_through('bm_jobs2', 120, fn() => ['jobs' => smpro_bm_jobs(), 'err' => smpro_bm_err()]) : ['jobs'=>[], 'err'=>''];
 $jobs  = (array)($jobsC['jobs'] ?? []);

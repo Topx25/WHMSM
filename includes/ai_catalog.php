@@ -1,6 +1,6 @@
 <?php
 /**
- * ai_catalog.php — selectable AI providers (free-first) with signup/API-key links, a paid/free/limited
+ * ai_catalog.php - selectable AI providers (free-first) with signup/API-key links, a paid/free/limited
  * badge + the free limit, and local usage (consumed today vs the limit + remaining). All providers are
  * OpenAI-compatible (POST <base>/chat/completions), so saving a key + activating one is enough for
  * smpro_ai_chat() to use it. Keys/config reuse the AI Providers engine vault (mspro_ai304_*).
@@ -71,7 +71,7 @@ function smpro_ai_provider_state(string $id): array {
     if (function_exists('smpro_ai_engine_loaded')) smpro_ai_engine_loaded();
     $key = function_exists('mspro_ai304_get_secret') ? (string)mspro_ai304_get_secret($id) : '';
     $hasKey = $key !== '';
-    // Never render key characters into the page — the old "first 5 chars" mask leaked real secret bytes.
+    // Never render key characters into the page - the old "first 5 chars" mask leaked real secret bytes.
     // Show a non-reversible fingerprint instead (stable, lets you tell which key is saved, exposes nothing).
     $mask = $hasKey ? ('fingerprint ' . substr(hash('sha256', $key), 0, 10)) : '';
     $cfg = function_exists('mspro_ai304_load_config') ? mspro_ai304_load_config() : [];
@@ -102,7 +102,7 @@ function smpro_ai_provider_models(string $id): array {
     }
     // OpenAI-compatible: {data:[{id:...}]}. Some return {models:[{name|id}]} or a bare list.
     $list = $j['data'] ?? $j['models'] ?? (array_is_list($j) ? $j : []);
-    // exclude non-chat model families (speech/TTS/embeddings/rerank/image) — they can't do chat completions
+    // exclude non-chat model families (speech/TTS/embeddings/rerank/image) - they can't do chat completions
     $nonchat = '~(whisper|orpheus|[\-_/]tts$|[\-_/]tts[\-_/]|^tts|playai-tts|embed|rerank|bark|stable-diffusion|sdxl|flux\.1|dall-?e|moderation|distil-whisper|guard-stream)~i';
     $models = []; $total = 0; $dropped = 0;
     foreach ((array)$list as $m) {
@@ -111,9 +111,9 @@ function smpro_ai_provider_models(string $id): array {
         $mid = preg_replace('~^models/~', '', $mid);                      // gemini prefixes "models/"
         if (is_array($m) && array_key_exists('active', $m) && $m['active'] === false) { $dropped++; continue; }  // decommissioned/inactive
         if ($mid === '' || !preg_match('~^[A-Za-z0-9._:/\-]{1,80}$~', $mid)) { $dropped++; continue; }
-        if (preg_match($nonchat, $mid)) { $dropped++; continue; }          // audio / TTS / embedding / image — not chat
+        if (preg_match($nonchat, $mid)) { $dropped++; continue; }          // audio / TTS / embedding / image - not chat
         $models[$mid] = 1;
-        if (count($models) >= 2000) break;                                 // cap — a hostile provider can't bloat our config
+        if (count($models) >= 2000) break;                                 // cap - a hostile provider can't bloat our config
     }
     $models = array_keys($models); sort($models, SORT_NATURAL | SORT_FLAG_CASE);
     if (!$models) return ['ok' => false, 'msg' => 'No chat-capable models returned by the provider.'];
@@ -179,7 +179,7 @@ function smpro_ai_provider_test(string $id, string $model = ''): array {
     $ms = (int)round((microtime(true) - $t0) * 1000);
     if (!empty($res['ok'])) return ['ok' => true, 'model' => $model, 'ms' => $ms];
     $code = (int)($res['http_code'] ?? 0);
-    // A 429 (rate-limited) or a transient 408/5xx does NOT mean the model is broken — the endpoint accepted
+    // A 429 (rate-limited) or a transient 408/5xx does NOT mean the model is broken - the endpoint accepted
     // the model, it just throttled/hiccuped this instant. Report it as WORKING (throttled) so it is neither
     // shown as failed nor pruned from the list. Only a hard reject (400/404/501) or an auth error
     // (401/402/403) means the model is genuinely unusable for chat.
@@ -236,9 +236,9 @@ function smpro_ai_provider_save(string $id, string $key): array {
 
 /* ---------------- ROOT model validation: probe each model live + read the API's own rate limits ----------------
  * A model is only "usable for chat" if a real /chat/completions ping is accepted. We classify by the
- * provider's HTTP code — dropping ONLY hard rejections (400/404/501 = decommissioned, no chat support,
+ * provider's HTTP code - dropping ONLY hard rejections (400/404/501 = decommissioned, no chat support,
  * terms required), and KEEPING success/rate-limit/transient (200/429/5xx). The provider's own limit is
- * read from the standard x-ratelimit-* response headers — the real per-model limit, not our hit count. */
+ * read from the standard x-ratelimit-* response headers - the real per-model limit, not our hit count. */
 function smpro_ai_http_chat_probe(string $base, string $key, string $model, int $timeout = 12): array {
     $payload = json_encode(['model' => $model, 'max_tokens' => 1, 'messages' => [['role' => 'user', 'content' => 'ping']]], JSON_UNESCAPED_SLASHES);
     // in-process curl (key stays off the command line); capture response headers for the x-ratelimit-* reads
@@ -271,7 +271,7 @@ function smpro_ai_provider_verify(string $id): array {
     foreach ($models as $m) {
         $p = smpro_ai_http_chat_probe($base, $key, $m);
         $code = $p['code'];
-        $keep = in_array($code, [200, 201, 429, 408, 500, 502, 503, 504], true);   // drop only hard rejects (400/404/501…)
+        $keep = in_array($code, [200, 201, 429, 408, 500, 502, 503, 504], true);   // drop only hard rejects (400/404/501...)
         if ($keep) $working[] = $m;
         if ($limit === null && ($p['limit_tokens'] !== '' || $p['limit_requests'] !== '')) {
             $limit = ['tokens' => $p['limit_tokens'], 'rem_tokens' => $p['remaining_tokens'], 'requests' => $p['limit_requests'], 'rem_requests' => $p['remaining_requests']];
@@ -294,7 +294,7 @@ function smpro_ai_provider_verify(string $id): array {
 /* ---------------- hourly auto-health: re-probe every active provider's saved models ----------------
  * Runs from the notify cron (self-gated to once per hour). For each provider that has a key, it pings each
  * saved model and removes ONLY the genuinely-dead ones (HTTP 400/404/501 = decommissioned / no chat / terms
- * required) and the auth-dead ones (401/402/403). Models returning 200/429/5xx are KEPT — a 429 means the
+ * required) and the auth-dead ones (401/402/403). Models returning 200/429/5xx are KEPT - a 429 means the
  * model works but is throttled right now, so dropping it would wrongly shrink the fallback chain. The result
  * (so the UI only ever shows currently-usable models) and the real per-model API limit are saved. */
 define('SMPRO_AI_PRUNE_STATE', SMPRO_VARLIB . '/ai/health.json');
@@ -318,10 +318,10 @@ function smpro_ai_autoprune(bool $force = false): array {
     $perProvCap = $force ? 25 : 10;      // models probed per provider per run (manual "Check now" can do more)
 
     foreach ($active as $id) {
-        if (time() >= $deadline) break;                                         // budget spent → finish next hour
+        if (time() >= $deadline) break;                                         // budget spent -> finish next hour
         if (!isset($cat[$id])) continue;
         $key = function_exists('mspro_ai304_get_secret') ? (string)mspro_ai304_get_secret($id) : '';
-        if ($key === '') continue;                                              // no key → can't probe; leave as-is
+        if ($key === '') continue;                                              // no key -> can't probe; leave as-is
         $base = rtrim((string)($cfg[$id]['base_url'] ?? $cat[$id]['base_url']), '/');
         $models = array_values((array)($cfg[$id]['models'] ?? []));
         if (!$models) continue;
@@ -330,7 +330,7 @@ function smpro_ai_autoprune(bool $force = false): array {
 
         $keep = []; $dropped = []; $limit = null;
         foreach ($models as $m) {
-            if (time() >= $deadline) { $keep[] = $m; continue; }                // out of budget → keep unprobed as-is
+            if (time() >= $deadline) { $keep[] = $m; continue; }                // out of budget -> keep unprobed as-is
             $p = smpro_ai_http_chat_probe($base, $key, $m, $probeTo);
             $code = (int)$p['code'];
             // keep success + rate-limit + transient; drop hard rejects and auth-dead
@@ -339,14 +339,14 @@ function smpro_ai_autoprune(bool $force = false): array {
             } elseif (in_array($code, [400, 401, 402, 403, 404, 501], true)) {
                 $dropped[] = ['model' => $m, 'code' => $code];
             } else {
-                $keep[] = $m;                                                   // 0/unknown (network blip) → keep, retry next hour
+                $keep[] = $m;                                                   // 0/unknown (network blip) -> keep, retry next hour
             }
             if ($limit === null && ($p['limit_tokens'] !== '' || $p['limit_requests'] !== '')) {
                 $limit = ['tokens' => $p['limit_tokens'], 'rem_tokens' => $p['remaining_tokens'], 'requests' => $p['limit_requests'], 'rem_requests' => $p['remaining_requests']];
             }
         }
         // final list = probed-survivors + the unprobed tail (models beyond the per-run cap are PRESERVED,
-        // never silently dropped — they get probed in a future run).
+        // never silently dropped - they get probed in a future run).
         $finalModels = array_merge(array_values($keep), array_slice($allModels, $perProvCap));
         if ($finalModels) {
             // only rewrite when something actually changed (avoid needless disk writes / config churn)
@@ -377,7 +377,7 @@ function smpro_ai_enable_all_free(): array {
     $enabled = 0; $models = 0; $noKey = [];
     foreach ($cat as $id => $p) {
         $free = array_values($p['free_models'] ?? []);
-        if (!$free) continue;                                              // paid-only provider (e.g. openai) → skip
+        if (!$free) continue;                                              // paid-only provider (e.g. openai) -> skip
         $key = function_exists('mspro_ai304_get_secret') ? (string)mspro_ai304_get_secret($id) : '';
         if ($key === '') { $noKey[] = $p['label']; continue; }             // only providers with a saved key
         $cfg[$id] = array_merge((array)($cfg[$id] ?? []), ['base_url' => $p['base_url'], 'models' => $free, 'model' => $free[0], 'timeout_seconds' => 45]);
@@ -451,7 +451,7 @@ function smpro_ai_catalog_render(): void {
         } else {
             echo '<div style="font-size:12px;color:#0f2657;font-weight:700;margin-bottom:8px">Sent today: ' . (int)$use['req'] . ' req · ' . number_format($use['tok']) . ' tokens</div>';
         }
-        // REAL provider limit (read from the API rate-limit headers during Auto-pick) — not our local count
+        // REAL provider limit (read from the API rate-limit headers during Auto-pick) - not our local count
         if (!empty($st['api_limit'])) {
             $al = $st['api_limit']; $parts = [];
             if (!empty($al['tokens']))   $parts[] = 'tokens ' . smpro_h(($al['rem_tokens'] !== '' ? $al['rem_tokens'] . '/' : '') . $al['tokens']) . '/min';
@@ -467,7 +467,7 @@ function smpro_ai_catalog_render(): void {
         echo '<div style="display:flex;gap:6px;margin-bottom:8px">';
         echo '<input type="password" id="aik_' . $id . '" placeholder="' . ($st['has_key'] ? 'saved — leave blank to keep' : 'paste API key') . '" autocomplete="new-password" style="flex:1;padding:7px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.5);font-size:13px">';
         echo '<button class="btn" style="background:#16a34a;color:#fff" onclick="aiProvSave(\'' . $id . '\')">Save key</button></div>';
-        // multi-select model picker — real models can be fetched live via the token; free preselected, paid flagged.
+        // multi-select model picker - real models can be fetched live via the token; free preselected, paid flagged.
         $selSet = array_flip($st['models']);
         $opts = [];
         foreach (($p['free_models'] ?? []) as $m) $opts[$m] = ['tag' => 'free', 'paid' => false];

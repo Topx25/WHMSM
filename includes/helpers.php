@@ -1,6 +1,6 @@
 <?php
 /**
- * helpers.php — read-only live collectors + small utilities.
+ * helpers.php - read-only live collectors + small utilities.
  * Every function here READS system state only. No mutation, no restart.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -17,12 +17,12 @@ function smpro_csv_cell($v) {
     if ($v !== '' && strpbrk($v[0], "=+-@\t\r\n") !== false) return "'" . $v;
     return $v;
 }
-/** fputcsv wrapper that runs every field through smpro_csv_cell() — use for any CSV built from log/network data. */
+/** fputcsv wrapper that runs every field through smpro_csv_cell() - use for any CSV built from log/network data. */
 function smpro_fputcsv($fh, array $row) {
     return fputcsv($fh, array_map('smpro_csv_cell', $row));
 }
 
-/** Beta build gate — beta-only sections render only when the running build is a beta (version carries "beta").
+/** Beta build gate - beta-only sections render only when the running build is a beta (version carries "beta").
  *  Same license key works for both stable and beta; the stable build simply hides beta sections. */
 function smpro_is_beta() { return defined('SMPRO_VERSION') && stripos(SMPRO_VERSION, 'beta') !== false; }
 
@@ -34,7 +34,7 @@ function smpro_beta_badge($label = 'Beta') {
 }
 
 /**
- * Brand logo — inline SVG shield with a monitor "pulse" line (Safety + Monitor).
+ * Brand logo - inline SVG shield with a monitor "pulse" line (Safety + Monitor).
  * Scales to $px; a unique gradient id per call avoids duplicate-id clashes when
  * the logo appears multiple times on one page (header + sidebar + footer).
  */
@@ -95,7 +95,7 @@ function smpro_brand_link($label = null) {
 /** Append a JSON line to the audit log. Best-effort, never fatal. */
 /**
  * A cron worker that dies must SAY so. Every worker in bin/ wraps its job in try/catch so one bad run cannot
- * leave a stuck process — but an empty catch turned that into silence: a guard that threw on every run looked,
+ * leave a stuck process - but an empty catch turned that into silence: a guard that threw on every run looked,
  * from the outside, exactly like a guard that ran and found nothing. This records the failure the same way
  * index.php records a module fatal, so an operator reading the audit trail sees "the login guard has been
  * failing since Tuesday" instead of nothing at all. Falls back to error_log if the audit trail itself is
@@ -118,13 +118,13 @@ function smpro_audit($action, array $details = []) {
         'details'   => $details,
     ], JSON_UNESCAPED_SLASHES);
     // Size-bounded rotation (once per request, best-effort): the log is append-only with no logrotate, and the
-    // readers tail/grep it — at ~20MB roll to audit.log.1 and start fresh so it can't grow (or slow reads) forever.
+    // readers tail/grep it - at ~20MB roll to audit.log.1 and start fresh so it can't grow (or slow reads) forever.
     smpro_log_append(SMPRO_AUDIT_LOG, $line . "\n", 20971520, 3);   // rotated under a lock, three generations
 }
 
 /**
  * Lightweight per-actor fixed-window rate limit. Returns TRUE if the call is allowed, FALSE if over budget.
- * File-based (SMPRO_CACHE/rl), best-effort, never fatal — protects paid/upstream endpoints (AI, license server)
+ * File-based (SMPRO_CACHE/rl), best-effort, never fatal - protects paid/upstream endpoints (AI, license server)
  * from a stuck retry loop or a compromised-but-authenticated session burning token/quota.
  */
 function smpro_ratelimit($bucket, $max, $window) {
@@ -158,7 +158,7 @@ function smpro_cpu_cores() {
     return $n ?: 1;
 }
 
-/** Load averages from /proc/loadavg → [1m,5m,15m]. */
+/** Load averages from /proc/loadavg -> [1m,5m,15m]. */
 function smpro_loadavg() {
     $p = explode(' ', trim(@file_get_contents('/proc/loadavg')));
     return [
@@ -249,7 +249,7 @@ function smpro_process_count() {
     return $n;
 }
 
-/** Human-readable bytes. THE canonical byte formatter — new code must call this, not roll its own.
+/** Human-readable bytes. THE canonical byte formatter - new code must call this, not roll its own.
  *  (Several modules still carry their own drifted copies with slightly different output; those are migrated
  *  to this one only when the file is already being edited for another reason, never in a risky mass sweep.) */
 function smpro_bytes($b) {
@@ -260,18 +260,18 @@ function smpro_bytes($b) {
 }
 
 /**
- * THE canonical timeout-bounded shell runner — new code must call this instead of reinventing a per-file
+ * THE canonical timeout-bounded shell runner - new code must call this instead of reinventing a per-file
  * `*_sh`/`*_run` wrapper (there are ~20 drifted copies today; they migrate to this one on touch, not in a
  * mass sweep). Returns captured output as a string.
  *
  *   $timeout  seconds before `timeout(1)` kills the command (min 1).
- *   $opt['stderr']  'merge'  → 2>&1 (default; you want to see errors)
- *                   'discard'→ 2>/dev/null (a probe whose stderr is noise)
- *                   'keep'   → leave the caller's own redirection untouched
- *   $opt['path']    true → prepend a hardened PATH so tools in /usr/local/sbin etc. resolve under the WHM CGI
+ *   $opt['stderr']  'merge'  -> 2>&1 (default; you want to see errors)
+ *                   'discard'-> 2>/dev/null (a probe whose stderr is noise)
+ *                   'keep'   -> leave the caller's own redirection untouched
+ *   $opt['path']    true -> prepend a hardened PATH so tools in /usr/local/sbin etc. resolve under the WHM CGI
  *                   environment (that PATH is often missing, which is why bare `sshd`/`csf` sometimes fail).
  *
- * The command is passed through verbatim, exactly like the wrappers it replaces — callers still
+ * The command is passed through verbatim, exactly like the wrappers it replaces - callers still
  * escapeshellarg() their own arguments. This function adds no quoting and makes nothing safe that wasn't.
  */
 function smpro_run(string $cmd, int $timeout = SMPRO_TIMEOUT_NORMAL, array $opt = []): string {
@@ -288,10 +288,10 @@ function smpro_run(string $cmd, int $timeout = SMPRO_TIMEOUT_NORMAL, array $opt 
 /**
  * Stream a command's stdout one line at a time (popen + fgets), so memory stays at one line no matter how long the
  * output is. `shell_exec` + `explode("\n")` holds the WHOLE output twice (the string and the array): a 200k-line
- * cPanel log window is ~60MB raw and ~300MB in PHP, which is over the 128M cap the cPanel CLI ships with — the page
- * died silently at that point (2026-09-07). Same contract as smpro_run: the command is passed verbatim, the caller
+ * cPanel log window is ~60MB raw and ~300MB in PHP, which is over the 128M cap the cPanel CLI ships with - the page
+ * died silently at that point. Same contract as smpro_run: the command is passed verbatim, the caller
  * quotes its own arguments; stderr is discarded; a `timeout` bounds the child. Lines come back without their
- * newline. Iterate once — it is a generator, not an array (count()/array_* do not apply).
+ * newline. Iterate once - it is a generator, not an array (count()/array_* do not apply).
  */
 function smpro_run_lines(string $cmd, int $timeout = SMPRO_TIMEOUT_NORMAL): \Generator {
     $t = max(1, (int)$timeout);
@@ -304,7 +304,7 @@ function smpro_run_lines(string $cmd, int $timeout = SMPRO_TIMEOUT_NORMAL): \Gen
 /**
  * Turn a fatal error into a visible, logged failure instead of a blank page. index.cgi runs PHP with
  * display_errors=0 and stderr discarded, so before this a page that ran out of memory or hit a parse/redeclare
- * fatal produced EMPTY output — the operator saw a white page and nothing anywhere said why. Registered once by
+ * fatal produced EMPTY output - the operator saw a white page and nothing anywhere said why. Registered once by
  * index.php after helpers load. Writes SMPRO_VARLOG/page_fatal.log, records an audit row, and prints a box (or a
  * JSON error for format=json). Kept lean on purpose: after an out-of-memory bailout there is little headroom.
  */
@@ -335,7 +335,7 @@ function smpro_page_fatal_guard(): void {
 
 /**
  * Record a swallowed exception instead of losing it. Optional self-heal steps (installing a cron, refreshing GeoIP,
- * a background posture refresh) must never break a page, so they run inside try/catch — but a `catch {}` that
+ * a background posture refresh) must never break a page, so they run inside try/catch - but a `catch {}` that
  * discards the error is how a cron that silently never installs stays invisible for months. Every such site now
  * calls this: one line in SMPRO_VARLOG/soft_fail.log (context, class, message, file:line), capped at 1MB, never throws.
  */
@@ -352,7 +352,7 @@ function smpro_soft_fail(string $ctx, \Throwable $e): void {
 
 /**
  * Worker counterpart of smpro_page_fatal_guard(): a bin/ script that dies of a FATAL (out of memory, redeclare,
- * parse error) never reaches its own try/catch, so before this the worker simply stopped — no audit row, no log
+ * parse error) never reaches its own try/catch, so before this the worker simply stopped - no audit row, no log
  * line, the cron kept "running". Armed automatically below for every CLI process that is not a web request and
  * not the test lab. Writes the same worker_fatal audit row smpro_worker_fatal() writes, plus SMPRO_VARLOG/worker_fatal.log.
  */
@@ -391,7 +391,7 @@ function smpro_dur($sec) {
  * Use to keep expensive probes OFF the render path per the plugin rule: wrap the probe so the
  * result is recomputed at most once per $ttl instead of on every page load / post-action reload.
  *   $data = smpro_cache_through('netbw', 300, fn() => smpro_net_bandwidth());
- * With $compute=false it returns the cached value even if stale (never recomputes) — the render-only
+ * With $compute=false it returns the cached value even if stale (never recomputes) - the render-only
  * mode; a format=json poll then calls it with $compute=true to refresh. Cache under SMPRO_CACHE, 0600.
  */
 function smpro_cache_through($key, $ttl, callable $producer, $compute = true) {
@@ -407,7 +407,7 @@ function smpro_cache_through($key, $ttl, callable $producer, $compute = true) {
     if (@file_put_contents($t, json_encode(['ts' => time(), 'v' => $v], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), LOCK_EX) !== false) { @chmod($t, 0600); @rename($t, $f); }
     return $v;
 }
-/** Invalidate a smpro_cache_through() entry — call after an action that changes what the probe would report. */
+/** Invalidate a smpro_cache_through() entry - call after an action that changes what the probe would report. */
 function smpro_cache_bust($key) {
     $dir = defined('SMPRO_CACHE') ? SMPRO_CACHE : (SMPRO_VARLIB . '/cache');
     @unlink($dir . '/ct_' . preg_replace('/[^a-z0-9_]/i', '', (string)$key) . '.json');
@@ -419,7 +419,7 @@ function smpro_status($pct) {
     if ($pct >= 80) return 'warn';
     return 'good';
 }
-/* LOAD pressure (load ÷ cores, %) verdict — the SINGLE source of truth for load colour, used everywhere
+/* LOAD pressure (load ÷ cores, %) verdict - the SINGLE source of truth for load colour, used everywhere
  * (dashboard, Server Health page, top bar, health score): warn ≥70%, danger ≥100%. Keep these thresholds
  * identical to smpro_sv_snapshot()/load-monitor verdict so the same load never shows two different colours. */
 function smpro_load_status($pressure) {
@@ -442,15 +442,15 @@ function smpro_redact_sensitive($text) {
 
 /* ---- Server Health snapshot (matches the legacy dashboard score logic exactly) ---- */
 if (!defined('SMPRO_SV_ABS_WARN')) define('SMPRO_SV_ABS_WARN', 15.0);   // legacy fallback only
-/** Absolute load thresholds SCALED to core count — so a big server (e.g. 96 cores) is not
- *  flagged warning/danger at light load. Warn ≈ cores×0.5 (~50% pressure), danger ≈ cores×0.85. */
+/** Absolute load thresholds SCALED to core count - so a big server (e.g. 96 cores) is not
+ *  flagged warning/danger at light load. Warn ≈ coresx0.5 (~50% pressure), danger ≈ coresx0.85. */
 function smpro_sv_abs_warn($cores)   { $cores = max(1, (int)$cores); return max(6.0,  round($cores * 0.5,  1)); }
 function smpro_sv_abs_danger($cores) { $cores = max(1, (int)$cores); return max(10.0, round($cores * 0.85, 1)); }
-/** Color class for a 0–100 percentage: good(green) / attn(blue) / danger(red). */
+/** Color class for a 0-100 percentage: good(green) / attn(blue) / danger(red). */
 function smpro_sv_col($pct) { if ($pct >= 90) return 'danger'; if ($pct >= 70) return 'attn'; return 'good'; }
 /**
  * Full server-health snapshot. Health is driven by Load Averages PEAK pressure
- * across cores — identical formula to the legacy Safety Monitor dashboard.
+ * across cores - identical formula to the legacy Safety Monitor dashboard.
  */
 function smpro_sv_snapshot() {
     $m = smpro_collect_metrics();
@@ -493,7 +493,7 @@ function smpro_sv_snapshot() {
 }
 
 /* ----------------------------------------------------------------------
- * IP INTELLIGENCE (shared) — country / provider / ASN via Team Cymru whois,
+ * IP INTELLIGENCE (shared) - country / provider / ASN via Team Cymru whois,
  * cached on disk, with a per-request new-lookup cap. Plus datacenter/bot
  * detection (logins from cloud/hosting ranges are almost always automated).
  * -------------------------------------------------------------------- */
@@ -530,7 +530,7 @@ function smpro_ip_is_datacenter($intel) {
         'GODADDY','IONOS','SELECTEL','CLOUD','HOSTING','SERVER','DATACENTER','DATA CENTER','COLO','VPS',
         'DIGITAL OCEAN','CLOUDFLARE','FASTLY','LIMESTONE','PSYCHZ','QUADRANET','HOSTWINDS','NAMECHEAP'];
     // word-boundary match: a bare substring made short tokens (SERVER/COLO/VPS/CLOUD) false-match inside
-    // residential org names (OBSERVER, COLOMBIA, …), wrongly stripping home-region auto-block protection.
+    // residential org names (OBSERVER, COLOMBIA, ...), wrongly stripping home-region auto-block protection.
     foreach ($kw as $k) if (preg_match('/\b' . preg_quote($k, '/') . '\b/', $hay)) return true;
     return false;
 }
@@ -560,7 +560,7 @@ function smpro_path_safe($file, array $allowedPrefixes) {
     return '';
 }
 /** Resolve country/provider/ASN for an IP (cached). $cap=false skips new whois. */
-/* ---- offline GeoIP (local MaxMind DB) — resolves COUNTRY with no network, so it works even when outbound
+/* ---- offline GeoIP (local MaxMind DB) - resolves COUNTRY with no network, so it works even when outbound
  *      whois/port-43 is blocked by the firewall (the usual reason Country shows "n/a" on a locked-down box). ---- */
 function smpro_geoip_bin() {
     static $b = null;
@@ -571,7 +571,7 @@ function smpro_geoip_db($kind = 'Country', $fresh = false) {
     static $p = [];
     if (!$fresh && isset($p[$kind])) return $p[$kind];
     // OUR own downloaded copy (SMPRO_VARLIB/geoip) is searched FIRST so a fresh DB always beats a stale/absent
-    // system DB — this is what makes country resolve on a box with no system GeoIP DB.
+    // system DB - this is what makes country resolve on a box with no system GeoIP DB.
     foreach ([SMPRO_VARLIB . '/geoip', '/usr/share/GeoIP', '/var/lib/csf/Geo', '/usr/local/share/GeoIP', '/var/lib/GeoIP', '/usr/share/GeoIP2'] as $d)
         foreach (["GeoLite2-$kind.mmdb", "GeoIP2-$kind.mmdb", "dbip-$kind.mmdb"] as $f)
             if (is_file("$d/$f")) return $p[$kind] = "$d/$f";
@@ -579,7 +579,7 @@ function smpro_geoip_db($kind = 'Country', $fresh = false) {
 }
 /** Offline 2-letter country code for an IP via the local MaxMind DB. '' if unavailable.
  *  Prefers the fast `mmdblookup` binary; falls back to the pure-PHP reader (includes/mmdb.php) when the binary
- *  is absent — so country still resolves on a box without libmaxminddb installed. */
+ *  is absent - so country still resolves on a box without libmaxminddb installed. */
 function smpro_geoip_cc($ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return '';
     $db = smpro_geoip_db('Country') ?: smpro_geoip_db('City');
@@ -614,7 +614,7 @@ function smpro_geoip_sources($kind) {
     $mo = date('Y-m'); $pm = date('Y-m', strtotime('first day of last month'));
     if (strtolower($kind) === 'asn') return [
         'https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-asn-mmdb@latest/geolite2-asn.mmdb',      // combined v4+v6, no gzip
-        'https://github.com/sapics/ip-location-db/releases/download/latest/geolite2-asn-ipv4.mmdb',     // 30x → needs follow
+        'https://github.com/sapics/ip-location-db/releases/download/latest/geolite2-asn-ipv4.mmdb',     // 30x -> needs follow
         "https://download.db-ip.com/free/dbip-asn-lite-$mo.mmdb.gz",
         "https://download.db-ip.com/free/dbip-asn-lite-$pm.mmdb.gz",
     ];
@@ -622,7 +622,7 @@ function smpro_geoip_sources($kind) {
         "https://download.db-ip.com/free/dbip-country-lite-$mo.mmdb.gz",                                 // gzip, v4+v6, current month
         "https://download.db-ip.com/free/dbip-country-lite-$pm.mmdb.gz",                                 // prev-month fallback
         'https://cdn.jsdelivr.net/npm/@ip-location-db/dbip-country-mmdb/dbip-country-ipv4.mmdb',
-        'https://github.com/sapics/ip-location-db/releases/download/latest/dbip-country-ipv4.mmdb',      // 30x → needs follow
+        'https://github.com/sapics/ip-location-db/releases/download/latest/dbip-country-ipv4.mmdb',      // 30x -> needs follow
         'https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-country-mmdb/geolite2-country-ipv4.mmdb',
     ];
 }
@@ -656,7 +656,7 @@ function smpro_geoip_update($kind = 'Country') {
         if (function_exists('smpro_mmdb_open')) {
             if ($kind === 'Country') $valid = (smpro_mmdb_country($tmp, '8.8.8.8') === 'US');
             else                     $valid = (bool)(smpro_mmdb_asn($tmp, '8.8.8.8'));
-        } else { $valid = true; }                                                       // reader absent → trust marker check
+        } else { $valid = true; }                                                       // reader absent -> trust marker check
         if (!$valid) { @unlink($tmp); continue; }
         if (!@rename($tmp, $dest)) { @unlink($tmp); continue; }                          // atomic install
         smpro_geoip_db($kind, true);                                                     // bust the path cache
@@ -680,7 +680,7 @@ function smpro_geoip_auto_update() {
  *  appear in the command line (shelling out to the `curl` binary leaks secrets via /proc/<pid>/cmdline,
  *  readable by other local users). TLS verification is ON. Returns ['code'=>int,'body'=>string,'error'=>string].
  *  $opts: method, headers[], body(string), timeout(int). Falls back to escaped shell curl only if the
- *  extension is missing (degraded — argv exposure — but functional). */
+ *  extension is missing (degraded - argv exposure - but functional). */
 /** True when a request header carries a credential (then redirects are never followed). */
 function smpro_http_has_secret_header(array $headers): bool {
     foreach ($headers as $h) if (preg_match('/^\s*(authorization|x-api-key|key|access-token|x-auth-token|api-key|x-token|cf-api-key|x-auth-key|x-auth-email)\s*:/i', (string)$h)) return true;
@@ -698,7 +698,7 @@ function smpro_http($url, array $opts = []) {
             CURLOPT_TIMEOUT        => $timeout,
             CURLOPT_CONNECTTIMEOUT => max(3, min(10, $timeout)),
             // Follow redirects BY DEFAULT (pass follow=>false to opt out). It used to be opt-in and no caller
-            // ever opted in, so every JSON API here — Cloudflare, AbuseIPDB, Telegram, Pushbullet — would have
+            // ever opted in, so every JSON API here - Cloudflare, AbuseIPDB, Telegram, Pushbullet - would have
             // silently received an HTML redirect page the day its vendor moved a path, and json_decode would
             // just return null with no error. That exact failure hit the bot-ranges feed (see fwallow.php).
             // Capped at 5 hops, and TLS verification stays on across every hop.
@@ -728,7 +728,7 @@ function smpro_http($url, array $opts = []) {
         $out = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = (string)curl_error($ch); curl_close($ch);
         return ['code' => $code, 'body' => ($out === false ? '' : (string)$out), 'error' => $err, 'hdr' => $hdr];
     }
-    // degraded fallback: extension absent → shell curl (args fully escaped; only used if curl_init is missing)
+    // degraded fallback: extension absent -> shell curl (args fully escaped; only used if curl_init is missing)
     $cmd = 'curl -s -m ' . $timeout . ((!array_key_exists('follow', $opts) || !empty($opts['follow'])) ? ' -L --max-redirs 5' : '') . ' -X ' . escapeshellarg($method) . ' ' . escapeshellarg($url) . " -w '\\n%{http_code}'";
     // headers (tokens, keys) and the body never ride in argv, where every local user can read them in ps: they go
     // through a 0600 curl config file that is removed right after the call
@@ -855,12 +855,12 @@ function smpro_ip_intel($ip, $cap = true) {
         }
         return $r;
     }
-    // OFFLINE country FIRST — no network, no cap. This is what makes Country resolve behind egress firewalls.
+    // OFFLINE country FIRST - no network, no cap. This is what makes Country resolve behind egress firewalls.
     $cc = smpro_geoip_cc($ip);
     $intel = ['ip' => $ip, 'country' => ($cc !== '' ? $cc : 'n/a'), 'provider' => 'n/a', 'asn' => '', 'cached_at' => $now];
     $intel['source'] = ($cc !== '') ? 'local GeoIP database' : 'unavailable';
     if ($asn = smpro_geoip_asn($ip)) { $intel = array_merge($intel, $asn); $intel['source'] = 'local GeoIP database'; }
-    // network whois (Team Cymru) enriches provider/ASN — only within the per-request cap
+    // network whois (Team Cymru) enriches provider/ASN - only within the per-request cap
     if ($cap && $new < SMPRO_IPMAXNEW) {
         $new++;
         $raw = @shell_exec('timeout 4 whois -h whois.cymru.com ' . escapeshellarg(' -v ' . $ip) . ' 2>/dev/null');
@@ -879,7 +879,7 @@ function smpro_ip_intel($ip, $cap = true) {
 
 /** Is this country one of the operator's CONFIGURED trusted regions (home ∪ caution)? Formerly a fixed 22-country
  *  Arab list; now delegates to the same region config the auto-block tiers use, so "foreign" is defined by the
- *  operator's market — not a baked-in region. Empty config (or config layer not loaded) ⇒ false ⇒ the country is
+ *  operator's market - not a baked-in region. Empty config (or config layer not loaded) ⇒ false ⇒ the country is
  *  treated as foreign/outside. The name is kept for its many callers; semantics are "is a trusted home region". */
 function smpro_cc_is_arab($cc) {
     $cc = strtoupper((string)$cc);
@@ -931,7 +931,7 @@ function smpro_ip_intel_bulk($ips, bool $async = false) {
     $script = 'exec 3<>/dev/tcp/whois.cymru.com/43 || exit 1; printf %s ' . escapeshellarg($query) . ' >&3; cat <&3';
     $raw = (string)@shell_exec('timeout 14 bash -c ' . escapeshellarg($script) . ' 2>/dev/null');
     if (trim($raw) === '') {
-        // whois/Team Cymru unreachable (e.g. outbound port 43 blocked) → warm COUNTRY offline from the local
+        // whois/Team Cymru unreachable (e.g. outbound port 43 blocked) -> warm COUNTRY offline from the local
         // MaxMind DB so the table + the home-region protection still work. Country-only here for speed.
         foreach (array_slice($need, 0, 80) as $ip) {
             if (isset($cache[$ip])) continue;
@@ -1024,7 +1024,7 @@ function smpro_hidden_ip_toggle($ip, $hide) {
 
 /** True for the 22 Arab-League country codes. */
 function smpro_is_arab_cc($cc) {
-    // single source of truth — delegate to smpro_cc_is_arab() so the Arab-CC list can never drift in two places
+    // single source of truth - delegate to smpro_cc_is_arab() so the Arab-CC list can never drift in two places
     return smpro_cc_is_arab($cc);
 }
 
@@ -1069,8 +1069,8 @@ function smpro_proc_risk($cpu, $cores) {
 
 /**
  * Is this a KNOWN-GOOD security / hosting-platform daemon? Prevents the plugin from flagging or acting on
- * legitimate infrastructure as suspicious. (Real-world lesson: Imunify's Rust scanner "rustbolit" — an
- * unknown-looking root process consuming CPU/RAM — is a legitimate Imunify component, not malware.)
+ * legitimate infrastructure as suspicious. (Real-world lesson: Imunify's Rust scanner "rustbolit" - an
+ * unknown-looking root process consuming CPU/RAM - is a legitimate Imunify component, not malware.)
  * Matches the process comm (basename) case-insensitively against exact names and prefixes.
  */
 function smpro_is_trusted_system_proc($comm) {
@@ -1118,7 +1118,7 @@ function smpro_top_processes($limit = 100) {
 
     // user:48 keeps full usernames; comm:32 readable; COLUMNS=4096 avoids arg truncation.
     // Shell ordering is strict: the env assignment MUST come first, before timeout
-    // and nice — neither of those can parse a leading VAR=val token.
+    // and nice - neither of those can parse a leading VAR=val token.
     $ps = 'ps -eo user:48=,pid=,ppid=,comm:32=,pcpu=,pmem=,stat=,etime=,args= --sort=-pcpu';
     $build = function ($t) use ($ps) {
         $w = 'timeout ' . (int)$t . ' ';
@@ -1221,7 +1221,7 @@ function smpro_top_processes($limit = 100) {
  * Collect ALL live metrics in one shot. Shared by the HTML render and the
  * JSON polling endpoint so both always show identical, real-time values.
  */
-/** Highest CPU/package temperature in °C (thermal zones → sensors), or null if no sensor. */
+/** Highest CPU/package temperature in °C (thermal zones -> sensors), or null if no sensor. */
 function smpro_cpu_temp() {
     $max = null;
     foreach (glob('/sys/class/thermal/thermal_zone*/temp') ?: [] as $f) {
@@ -1231,7 +1231,7 @@ function smpro_cpu_temp() {
     if ($max !== null) return round($max, 1);
     $out = (string)@shell_exec('sensors 2>/dev/null');
     if ($out !== '') {
-        // take the FIRST temperature after each label's colon (the live reading) — ignore (high=/crit=) thresholds
+        // take the FIRST temperature after each label's colon (the live reading) - ignore (high=/crit=) thresholds
         foreach (explode("\n", $out) as $line) {
             if (preg_match('/:\s*[+]?(\d{2,3}(?:\.\d)?)\s*°C/u', $line, $m)) {
                 $c = (float)$m[1];
@@ -1327,7 +1327,7 @@ function smpro_ctl_get() {
     if (!is_array($c)) $c = [];
     $c += ['mode' => 'enabled', 'reenable_at' => 0, 'updated_at' => 0, 'actor' => ''];
     if (!in_array($c['mode'], ['enabled', 'dryrun', 'disabled'], true)) $c['mode'] = 'enabled';
-    // auto re-enable: a scheduled restart time has arrived → flip back to enabled
+    // auto re-enable: a scheduled restart time has arrived -> flip back to enabled
     if ($c['mode'] === 'disabled' && (int)$c['reenable_at'] > 0 && time() >= (int)$c['reenable_at']) {
         $c['mode'] = 'enabled'; $c['reenable_at'] = 0; $c['updated_at'] = time(); $c['actor'] = 'auto-reenable';
         smpro_ctl_save($c);
@@ -1338,14 +1338,14 @@ function smpro_ctl_get() {
 function smpro_ctl_mode()     { return smpro_ctl_get()['mode']; }
 function smpro_ctl_disabled() {
     if (smpro_ctl_get()['mode'] === 'disabled') return true;                 // admin manually disabled
-    // flagged diagnostics marker (confirmed endpoint redirect) → IMMEDIATE full stop; cleared only by a server reset
+    // flagged diagnostics marker (confirmed endpoint redirect) -> IMMEDIATE full stop; cleared only by a server reset
     if (function_exists('smpro_lic_tlm_at') && smpro_lic_tlm_at() > 0) return true;
-    // connection-loss SOFT stop (opted-in licenses only, reversible) → full stop; resumes the instant a fresh
-    // signed exchange returns. NOT a tamper — must stay OUT of $smTamperLock so License/Plugin-Control stay reachable.
+    // connection-loss SOFT stop (opted-in licenses only, reversible) -> full stop; resumes the instant a fresh
+    // signed exchange returns. NOT a tamper - must stay OUT of $smTamperLock so License/Plugin-Control stay reachable.
     if (function_exists('smpro_lic_sync_disabled') && smpro_lic_sync_disabled()) return true;
-    // pairing REVERSIBLE stop (opt-in; signed pair_stop=true) — same soft, non-tamper, self-healing posture as sync.
+    // pairing REVERSIBLE stop (opt-in; signed pair_stop=true) - same soft, non-tamper, self-healing posture as sync.
     if (function_exists('smpro_lic_pair_stopped') && smpro_lic_pair_stopped()) return true;
-    // license stopped (expired/suspended/revoked) for >48h → whole plugin dormant (all functions off; resumes on renewal)
+    // license stopped (expired/suspended/revoked) for >48h -> whole plugin dormant (all functions off; resumes on renewal)
     if (function_exists('smpro_lic_dormant') && smpro_lic_dormant()) return true;
     return false;
 }
@@ -1390,11 +1390,11 @@ function smpro_csf_allow_index(): array {
  * or disabled (TESTING): tries `csf -a`, then VERIFIES against csf.allow, and if it didn't land
  * (e.g. CSF disabled = csf -a is a no-op) it appends to /etc/csf/csf.allow directly so the allow
  * applies as soon as CSF runs. Returns ['ok'=>bool,'already'=>bool,'msg'=>string]. Never trusts
- * csf's stdout for success — only the actual presence in csf.allow.
+ * csf's stdout for success - only the actual presence in csf.allow.
  */
 /* ================================ WP Guard allowlist ================================
  * WP Guard is HostGuard's WordPress security plugin. SM Pro must TRUST its OWN files and defensive
- * artifacts — never flag / quarantine / "possible compromise" them — while still scanning everything
+ * artifacts - never flag / quarantine / "possible compromise" them - while still scanning everything
  * else. VERIFY, don't trust the name: a wp-guard.php is only trusted when its header carries BOTH
  * "Plugin Name: WP Guard" AND "Author: HostGuard" (an attacker could drop a fake same-named file).
  */
@@ -1405,13 +1405,13 @@ function smpro_wpguard_verify($file) {
 /* ============================ IPv6 address handling ============================
  * ONE rule, because getting it wrong fails silently rather than loudly: a bare IPv6 literal already
  * contains colons, so anything that joins it to a port with ":" produces an address that parses wrong and
- * the connection just never succeeds — the peer/host reads as "down" or "unreachable" and nothing says why.
+ * the connection just never succeeds - the peer/host reads as "down" or "unreachable" and nothing says why.
  *
  *   Building host:port (sockets, URLs, curl --resolve, Host: headers)  -> smpro_host_port()
  *   Need only the bracketed host                                       -> smpro_ip_bracket()
  *   Comparing/storing/logging an address, or matching it against a list -> use it BARE, never bracketed
  *
- * Hostnames and IPv4 pass through untouched, so these are always safe to call — never hand-roll the join.
+ * Hostnames and IPv4 pass through untouched, so these are always safe to call - never hand-roll the join.
  */
 
 /** Bracket a bare IPv6 literal for use in a host:port context. Hostname/IPv4/already-bracketed: unchanged. */
@@ -1419,7 +1419,7 @@ function smpro_ip_bracket(string $host): string {
     $h = trim($host);
     if ($h === '' || $h[0] === '[') return $h;                 // already bracketed
     // A bare IPv6 literal is the only form with 2+ colons and no brackets; "host:port" has exactly one.
-    // Strip a link-local zone (fe80::1%eth0) before validating — FILTER_VALIDATE_IP rejects the %zone form,
+    // Strip a link-local zone (fe80::1%eth0) before validating - FILTER_VALIDATE_IP rejects the %zone form,
     // so validating the raw string would leave a link-local address unbracketed and silently unreachable.
     $bare = (($pc = strpos($h, '%')) !== false) ? substr($h, 0, $pc) : $h;
     return (substr_count($bare, ':') >= 2 && filter_var($bare, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false)
@@ -1437,7 +1437,7 @@ function smpro_host_port(string $host, int $port): string {
  *
  * Why verify: a cron file is how most background features actually run. Writing it with `@file_put_contents`
  * and ignoring the result means a read-only /etc, a full disk, or an immutable flag leaves the UI reporting
- * the feature as enabled while nothing is ever scheduled — the same "silent nothing looks like success" class
+ * the feature as enabled while nothing is ever scheduled - the same "silent nothing looks like success" class
  * of bug as an empty parse rendering green. Callers should surface a false return rather than assume.
  *
  * Also normalises the two things that make a cron.d file silently ignored by cron: mode 0644 and a trailing
@@ -1446,7 +1446,7 @@ function smpro_host_port(string $host, int $port): string {
 function smpro_cron_install(string $path, string $content): bool {
     if ($path === '' || strpos($path, '/etc/cron.d/') !== 0) return false;
     // A TEST must never write a real cron. /etc/cron.d is an absolute path with no sandbox equivalent, so any
-    // test that saves a feature's settings installed a live scheduled job on the machine running the suite —
+    // test that saves a feature's settings installed a live scheduled job on the machine running the suite -
     // the lab caught it, restored the file and went red at random. Reported as success so the calling code is
     // still exercised; what is skipped is the write, not the logic.
     if (defined('SMPRO_TEST_SRC')) return true;
@@ -1458,11 +1458,11 @@ function smpro_cron_install(string $path, string $content): bool {
 }
 
 /**
- * Every file that holds log lines for the last $days of $path — the live file plus its rotated siblings,
+ * Every file that holds log lines for the last $days of $path - the live file plus its rotated siblings,
  * newest first. Returned paths may be gzipped; pair with smpro_log_read_cmd().
  *
- * Why this exists: log rotation is a per-server policy, not a constant. Measured on a stock cPanel box —
- * weekly rotation keeping 4 generations — the LIVE exim/maillog/secure files held only ~5 days. A reader that
+ * Why this exists: log rotation is a per-server policy, not a constant. Measured on a stock cPanel box -
+ * weekly rotation keeping 4 generations - the LIVE exim/maillog/secure files held only ~5 days. A reader that
  * looks at the live file alone therefore answers "nothing found" for any window longer than that, and every
  * page above it renders that emptiness as a clean result. On a host that rotates daily the live file can hold
  * a few hours. Rotated names differ by tool (logrotate `x.1`/`x.1.gz`, cPanel `x-<date>`, syslog `x.gz`), so
@@ -1480,10 +1480,10 @@ function smpro_log_files(string $path, int $days = 7, int $maxRotatedBytes = 0):
         if ($mt === false || $mt < $cutoff) continue;
         $rot[$f] = $mt;
     }
-    arsort($rot);                                   // newest rotation first — for budget selection (keep newest)
+    arsort($rot);                                   // newest rotation first - for budget selection (keep newest)
     // Optional on-disk size budget for the ROTATED portion. This is what makes rotation-aware reading safe on
     // high-volume logs: on a busy mail/auth server the rotated exim/secure files are enormous, so with a budget
-    // set they are skipped and the caller effectively reads the live file only — the cheap, pre-existing path.
+    // set they are skipped and the caller effectively reads the live file only - the cheap, pre-existing path.
     // On a quiet server the rotated files are small, fit the budget, and the extra history is recovered. The
     // property that creates the performance risk (log size) is exactly the one that switches the behaviour off.
     // 0 = unbudgeted (callers reading low-volume logs, e.g. login events).
@@ -1494,7 +1494,7 @@ function smpro_log_files(string $path, int $days = 7, int $maxRotatedBytes = 0):
         if ($budget > 0) {
             $sz = (int)@filesize($f);
             // Strict budget: if even the newest rotated file alone exceeds it, include nothing and read the live
-            // file only. On a high-volume log that is the safe direction — better a shorter window than a scan
+            // file only. On a high-volume log that is the safe direction - better a shorter window than a scan
             // that decompresses gigabytes into the caller's timeout.
             if ($used + $sz > $budget) break;
             $used += $sz;
@@ -1502,26 +1502,26 @@ function smpro_log_files(string $path, int $days = 7, int $maxRotatedBytes = 0):
         $sel[] = $f;
     }
     // ORDER MATTERS: callers stream these files in list order and pipe into `tail -n N`, which keeps the END of
-    // the stream. So emit OLDEST→NEWEST with the LIVE file LAST — then `tail -n N` keeps the newest N lines
+    // the stream. So emit OLDEST->NEWEST with the LIVE file LAST - then `tail -n N` keeps the newest N lines
     // (live + most-recent rotated). Emitting live-first (the previous bug) made tail return the OLDEST rotated
     // data and silently discard the live file whenever the total exceeded N.
-    $out = array_reverse($sel);                     // rotated: oldest → newest
+    $out = array_reverse($sel);                     // rotated: oldest -> newest
     $out[] = $path;                                 // live file last (newest)
     return $out;
 }
 
 /**
  * Shell fragment that streams those files OLDEST-first (live last), transparently decompressing gzipped ones, so
- * an existing `... | grep x | tail -n N` pipeline keeps working unchanged — just swap the plain path for this,
+ * an existing `... | grep x | tail -n N` pipeline keeps working unchanged - just swap the plain path for this,
  * and `tail -n N` still yields the NEWEST N lines.
  * Returns '' when nothing is readable, which callers must treat as "no data", never as "nothing happened".
- * $maxRotatedBytes caps the on-disk size of the rotated portion (0 = uncapped) — pass a budget for high-volume
+ * $maxRotatedBytes caps the on-disk size of the rotated portion (0 = uncapped) - pass a budget for high-volume
  * system logs (exim, secure, maillog) so a busy server does not decompress gigabytes into a timeout.
  */
 function smpro_log_read_cmd(string $path, int $days = 7, int $maxFiles = 6, int $maxRotatedBytes = 0): string {
     $files = smpro_log_files($path, $days, $maxRotatedBytes);
     if (!$files) return '';
-    // Keep the NEWEST $maxFiles (they are at the END of the oldest→newest+live-last list) — never the oldest.
+    // Keep the NEWEST $maxFiles (they are at the END of the oldest->newest+live-last list) - never the oldest.
     $files = array_slice($files, -max(1, $maxFiles));
     $parts = [];
     foreach ($files as $f) {
@@ -1540,24 +1540,24 @@ function smpro_syslog_read_cmd(string $path, int $days = 7): string {
 }
 
 /**
- * Canonical PHP-CLI interpreter for detached workers — the ONE place that answers "which php do we exec?".
+ * Canonical PHP-CLI interpreter for detached workers - the ONE place that answers "which php do we exec?".
  *
  * Portability rule: never name a specific EA-PHP branch. A server built on ea-php83 only has no ea-php82, and a
  * resolver that falls through to a bare 'php' depends on root's PATH, which under cron/setsid is often just
- * /usr/bin:/bin — the worker then never starts and the job dies with "no heartbeat" and no explanation.
- * Order: cPanel's own bundled PHP (always present, version-stable) → newest installed EA-PHP → PATH → system dirs.
+ * /usr/bin:/bin - the worker then never starts and the job dies with "no heartbeat" and no explanation.
+ * Order: cPanel's own bundled PHP (always present, version-stable) -> newest installed EA-PHP -> PATH -> system dirs.
  */
 function smpro_php_cli_bin(): string {
     static $b = null;
     if ($b !== null) return $b;
     if (@is_executable('/usr/local/cpanel/3rdparty/bin/php')) return ($b = '/usr/local/cpanel/3rdparty/bin/php');
     $ea = glob('/opt/cpanel/ea-php*/root/usr/bin/php') ?: [];
-    natsort($ea);                                                   // ea-php74 < ea-php80 < … < ea-php85
+    natsort($ea);                                                   // ea-php74 < ea-php80 < ... < ea-php85
     foreach (array_reverse($ea) as $p) if (@is_executable($p)) return ($b = $p);
     $which = trim((string)@shell_exec('command -v php 2>/dev/null'));
     if ($which !== '' && @is_executable($which)) return ($b = $which);
     foreach (['/usr/local/bin/php', '/usr/bin/php', '/bin/php'] as $p) if (@is_executable($p)) return ($b = $p);
-    return ($b = 'php');                                            // last resort — let exec fail loudly, not silently
+    return ($b = 'php');                                            // last resort - let exec fail loudly, not silently
 }
 
 /**
@@ -1565,9 +1565,9 @@ function smpro_php_cli_bin(): string {
  *   - wp-content/mu-plugins/wp-guard.php  and  wp-content/plugins/wp-guard/wp-guard.php   (header-verified)
  *   - wp-content/plugins/wp-guard/readme.txt
  *   - wp-content/hostguard-security.log
- *   - anything under wp-content/hostguard-quarantine/          (malware WP Guard already neutralized — leave it)
+ *   - anything under wp-content/hostguard-quarantine/          (malware WP Guard already neutralized - leave it)
  *   - a .htaccess whose body contains "php_flag engine off"    (WP Guard's PHP-execution lockdown)
- * Returns FALSE for uploads/*.php, Protector.php and injected index.php — those stay real threats.
+ * Returns FALSE for uploads/*.php, Protector.php and injected index.php - those stay real threats.
  */
 /** The WP Guard WHM plugin, when installed: found through its WHM app registration and its own cron line, never a
  *  fixed path. ['installed'=>bool,'version'=>'','data_dir'=>'','db'=>'','url'=>'']. Read-only; memoized. */
@@ -1587,7 +1587,7 @@ function smpro_wpguard_whm(): array {
     $w['installed'] = $w['version'] !== '';
     return $w;
 }
-/** True when $path sits in a WP Guard WHM quarantine — <home-parent>/.wpguard-quarantine/… or <home>/.wpguard/quarantine/… —
+/** True when $path sits in a WP Guard WHM quarantine - <home-parent>/.wpguard-quarantine/... or <home>/.wpguard/quarantine/... -
  *  and every folder from that quarantine root down is root-owned and closed to the account. An account cannot make a
  *  root-owned folder, so naming a folder this way buys an attacker nothing. Those files are the originals WP Guard keeps
  *  for its own Undo: alerting on them is noise and deleting or cleaning them would break WP Guard's rollback. */
@@ -1621,7 +1621,7 @@ function smpro_wpguard_trusted($path) {
     if (smpro_wpguard_whm_quarantined($p)) return true;   // WP Guard WHM's kept originals (its Undo depends on them)
     if (smpro_wpguard_whm_sitecopy($p)) return true;      // WP Guard WHM's per-site plugin copy (Imunify calls it a "file lock tool")
     $n = str_replace('\\', '/', $p);
-    // Quarantine trust: require the dir to be ACTUALLY locked down (Deny from all / Require all denied) —
+    // Quarantine trust: require the dir to be ACTUALLY locked down (Deny from all / Require all denied) -
     // an unconditional substring match let an account hide an executable webshell by just naming a dir this
     // way. Deny-from-all blocks web access under every SAPI (unlike php_flag), so an attacker adding it to
     // pass this check only neutralizes their own file.
@@ -1654,14 +1654,14 @@ function smpro_csf_allow_add($ip, $reason = '') {
     $csf = function_exists('smpro_im_csf_bin') ? smpro_im_csf_bin() : '';
     if ($csf !== '') @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -a ' . escapeshellarg($ip) . ' ' . escapeshellarg($reason) . ' 2>&1');
     clearstatcache();
-    if (!smpro_csf_allowlisted($ip)) {                              // csf disabled / no-op → write the file directly
+    if (!smpro_csf_allowlisted($ip)) {                              // csf disabled / no-op -> write the file directly
         $f = '/etc/csf/csf.allow';
         if (is_file($f) && is_writable($f)) @file_put_contents($f, $ip . ' # ' . $reason . ' - ' . date('D M j H:i:s Y') . "\n", FILE_APPEND | LOCK_EX);
         clearstatcache();
         if ($csf !== '' && smpro_csf_allowlisted($ip)) @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');  // reload if CSF is enabled
     }
     $ok = smpro_csf_allowlisted($ip);
-    // ALSO make the allow take effect on the LIVE firewall right now — works even if CSF is disabled/TESTING/desynced
+    // ALSO make the allow take effect on the LIVE firewall right now - works even if CSF is disabled/TESTING/desynced
     // (stale rules loaded, INPUT policy DROP). A top-of-INPUT ACCEPT short-circuits every downstream drop sub-chain
     // (INPUT_imunify360, LOCALINPUT, CSF's own chains). This is what prevents a lock-out when csf.allow alone can't apply.
     $live = function_exists('smpro_fw_iptables_allow') ? smpro_fw_iptables_allow($ip) : '';
@@ -1676,7 +1676,7 @@ function smpro_csf_allow_add($ip, $reason = '') {
  * drop sub-chain (INPUT_imunify360, LOCALINPUT, CSF's chains), so the traffic is accepted even while those chains
  * would otherwise drop it. Idempotent (skips if an identical ACCEPT already exists). Accepts a bare IP or CIDR.
  * Returns a short label (e.g. "iptables INPUT ACCEPT 1.2.3.4") or '' if nothing was applied. A live rule is not
- * persistent on its own — callers also record the IP in csf.allow for durability across a firewall rebuild/reboot.
+ * persistent on its own - callers also record the IP in csf.allow for durability across a firewall rebuild/reboot.
  */
 function smpro_fw_iptables_allow($ip) {
     $ip = trim((string)$ip);
@@ -1696,9 +1696,9 @@ function smpro_fw_iptables_allow($ip) {
     return $present ? ($name . ' INPUT ACCEPT ' . $ip) : '';
 }
 /**
- * Live firewall vs CSF-management state — used to warn about and recover from the dangerous desync where CSF shows
+ * Live firewall vs CSF-management state - used to warn about and recover from the dangerous desync where CSF shows
  * DISABLED (or TESTING, or lfd not running) but its old rules are still loaded, INPUT policy is DROP, and (often)
- * Imunify360 chains keep dropping — so a csf.allow edit never reaches the live chains and you can be locked out.
+ * Imunify360 chains keep dropping - so a csf.allow edit never reaches the live chains and you can be locked out.
  * Read-only. Returns keys: csf_installed, csf_disabled, csf_testing, lfd_active, input_policy, rule_count, chains[],
  * imunify, iptables, desync (bool).
  */
@@ -1718,17 +1718,17 @@ function smpro_fw_sync_state() {
     }
     $imunify = function_exists('smpro_has_bin') && smpro_has_bin('imunify360-agent');
     $csfNotManaging = $csfInstalled && ($csfDisabled || $testing || !$lfdActive);
-    // rules are actively dropping, but CSF is not the thing managing them → a csf.allow edit won't touch the live chains
+    // rules are actively dropping, but CSF is not the thing managing them -> a csf.allow edit won't touch the live chains
     $desync = ($policy === 'DROP' && $ruleCount > 8 && $csfNotManaging);
     return ['csf_installed'=>$csfInstalled, 'csf_disabled'=>$csfDisabled, 'csf_testing'=>$testing, 'lfd_active'=>$lfdActive,
             'input_policy'=>$policy, 'rule_count'=>$ruleCount, 'chains'=>$chains, 'imunify'=>$imunify, 'iptables'=>($bin !== ''), 'desync'=>$desync];
 }
-/** Is CSF in TESTING mode? Then `csf -d` writes csf.deny but does NOT load rules into iptables → NOT enforced. */
+/** Is CSF in TESTING mode? Then `csf -d` writes csf.deny but does NOT load rules into iptables -> NOT enforced. */
 function smpro_csf_testing() {
     $f = '/etc/csf/csf.conf';
     return is_readable($f) && (bool)preg_match('/^\s*TESTING\s*=\s*"?1"?/m', (string)@file_get_contents($f));
 }
-/** Is the IP currently in csf.deny (permanent or temp)? Direct end-state read — the source of truth for "blocked". */
+/** Is the IP currently in csf.deny (permanent or temp)? Direct end-state read - the source of truth for "blocked". */
 function smpro_csf_denied($ip) {
     $ip = trim((string)$ip);
     if ($ip === '') return false;
@@ -1737,7 +1737,7 @@ function smpro_csf_denied($ip) {
     return isset($set[$ip]);
 }
 /**
- * Robustly block an IP in CSF — the deny twin of smpro_csf_allow_add(). Tries `csf -d`, VERIFIES the IP
+ * Robustly block an IP in CSF - the deny twin of smpro_csf_allow_add(). Tries `csf -d`, VERIFIES the IP
  * actually landed in csf.deny, falls back to a direct csf.deny write if csf was a no-op, and reloads CSF
  * when it is enforcing. NEVER trusts csf's stdout. Detects TESTING mode (recorded but NOT enforced).
  * Returns ['ok'=>bool ENFORCED, 'recorded'=>bool, 'testing'=>bool, 'already'=>bool, 'msg'=>string].
@@ -1751,7 +1751,7 @@ function smpro_csf_enabled() {
 /** Is Imunify360's firewall the one actually in charge?
  *  Its worker processes are named im360:/imunify360-*, so `pgrep -x imunify360` finds nothing even when it is
  *  running. Use authoritative evidence instead: the agent answers AND its iptables chain is live (or systemd
- *  reports the unit active). Cached per request — `iptables -S` is not free. */
+ *  reports the unit active). Cached per request - `iptables -S` is not free. */
 function smpro_imunify_fw_available() {
     static $c = null;
     if ($c !== null) return $c;
@@ -1788,7 +1788,7 @@ function smpro_fw_engine() {
     if (trim((string)@shell_exec('command -v ufw 2>/dev/null')) !== ''
         && stripos((string)@shell_exec('ufw status 2>/dev/null'), 'Status: active') !== false)
                                         return $e = ['id'=>'ufw',      'label'=>'ufw',        'how'=>'ufw deny from'];
-    // A managed firewall we recognise but cannot drive — say so rather than guess a CLI and silently fail.
+    // A managed firewall we recognise but cannot drive - say so rather than guess a CLI and silently fail.
     foreach (['pyxsoft' => 'PyxSoft', 'pyxsoft-antimalware' => 'PyxSoft AntiMalware'] as $bin => $lbl)
         if (trim((string)@shell_exec('command -v ' . escapeshellarg($bin) . ' 2>/dev/null')) !== '')
             return $e = ['id'=>'unsupported', 'label'=>$lbl, 'how'=>''];
@@ -1806,16 +1806,16 @@ function smpro_fw_iptables_persist() {
 }
 /**
  * Block an IP with whichever firewall is ACTUALLY enforcing.
- * A server can have CSF installed but disabled while something else owns every rule — writing to csf.deny
+ * A server can have CSF installed but disabled while something else owns every rule - writing to csf.deny
  * there records the block and enforces nothing, which is the worst outcome: the admin believes the attacker
  * is blocked. Pick the live engine; if none can enforce, say so instead of reporting success.
  */
 /**
  * $force skips the verified-crawler shield. It is for a deliberate, informed decision made about a bot the
- * operator is looking at (Bot Guard's own Block button) — never for an automatic response.
+ * operator is looking at (Bot Guard's own Block button) - never for an automatic response.
  */
 function smpro_fw_block_ip($ip, $reason = '', $force = false) {
-    // Accepts a single address OR a CIDR range — every engine below takes both, and the subnet blockers need it.
+    // Accepts a single address OR a CIDR range - every engine below takes both, and the subnet blockers need it.
     $ip = trim((string)$ip);
     $isCidr = (bool)preg_match('#^([0-9a-fA-F:.]+)/(\d{1,3})$#', $ip, $cm) && filter_var($cm[1], FILTER_VALIDATE_IP);
     if (!$isCidr && !filter_var($ip, FILTER_VALIDATE_IP)) return ['ok'=>false,'engine'=>'','recorded'=>false,'msg'=>'invalid IP or CIDR'];
@@ -1833,7 +1833,7 @@ function smpro_fw_block_ip($ip, $reason = '', $force = false) {
 
     // VERIFIED CRAWLER SHIELD. Blocking Googlebot or Bingbot has no error and no symptom: the site simply falls
     // out of the index over the following days, and nothing on this server ever connects the two events. So a
-    // block aimed at a forward-confirmed crawler is refused here, at the one point every block passes through —
+    // block aimed at a forward-confirmed crawler is refused here, at the one point every block passes through -
     // panel buttons, the break-in report, the automatic response in the notify worker, the hub, all of them.
     // A single address only: a range cannot be resolved, and a crawler's own ranges are in the allow-list, which
     // the engines below already honour. A DNS failure reads as "not a crawler", so this can never stand between
@@ -1864,7 +1864,7 @@ function smpro_fw_block_ip($ip, $reason = '', $force = false) {
         }
         $r = smpro_csf_deny_add($ip, $reason); $r['engine'] = 'csf';
         if (!empty($r['ok'])) return $r;
-        // CSF is enabled but not enforcing this (TESTING) — use the next live engine if there is one
+        // CSF is enabled but not enforcing this (TESTING) - use the next live engine if there is one
         if (smpro_imunify_fw_available()) {
             $i = smpro_imunify_block_ip($ip, $reason);
             if (!empty($i['ok'])) return ['ok'=>true,'engine'=>'imunify','recorded'=>true,'testing'=>!empty($r['testing']),
@@ -1913,7 +1913,7 @@ function smpro_fw_block_ip($ip, $reason = '', $force = false) {
                  . ($r['recorded'] ? $ip . ' was recorded in csf.deny, but it will NOT take effect. ' : '')
                  . 'Block ' . $ip . ' from ' . $eng['label'] . '\'s own interface.'];
     }
-    // Nothing is enforcing — record it so it applies if CSF is switched back on, but never claim success.
+    // Nothing is enforcing - record it so it applies if CSF is switched back on, but never claim success.
     $r = smpro_csf_deny_add($ip, $reason);
     return ['ok'=>false,'engine'=>'none','recorded'=>!empty($r['recorded']),
         'msg'=>(!empty($r['recorded']) ? $ip . ' was written to csf.deny, but ' : 'Could not block ' . $ip . ': ')
@@ -1922,7 +1922,7 @@ function smpro_fw_block_ip($ip, $reason = '', $force = false) {
 function smpro_csf_deny_add($ip, $reason = '') {
     $ip = trim((string)$ip);
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return ['ok'=>false,'recorded'=>false,'testing'=>false,'already'=>false,'msg'=>'invalid IP'];
-    // Ultimate backstop: NEVER write a Cloudflare edge IP into csf.deny — it fronts inbound traffic for EVERY site
+    // Ultimate backstop: NEVER write a Cloudflare edge IP into csf.deny - it fronts inbound traffic for EVERY site
     // on the box, so a deny would black-hole all of them. Blocks any direct caller, not just smpro_im_block_ip.
     if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) return ['ok'=>false,'recorded'=>false,'testing'=>false,'already'=>false,'msg'=>'refused: Cloudflare edge IP — blocking it would cut ALL inbound traffic. Block the real client at Cloudflare, not CSF.'];
     $reason = preg_replace('/[^A-Za-z0-9 ._\-\/:()]/', '', mb_substr((string)$reason, 0, 80)) ?: 'smpro';   // parity w/ allow_add: no newlines into csf.deny
@@ -1931,14 +1931,14 @@ function smpro_csf_deny_add($ip, $reason = '') {
     $already = smpro_csf_denied($ip);
     if (!$already && $csf !== '')
         @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -d ' . escapeshellarg($ip) . ' ' . escapeshellarg(($reason !== '' ? $reason : 'smpro') . ' - ' . date('Y-m-d H:i')) . ' 2>&1');
-    if (!smpro_csf_denied($ip)) {                                    // csf absent / no-op (e.g. disabled) → write csf.deny directly
+    if (!smpro_csf_denied($ip)) {                                    // csf absent / no-op (e.g. disabled) -> write csf.deny directly
         $f = '/etc/csf/csf.deny';
         if (is_file($f) && is_writable($f)) @file_put_contents($f, $ip . ' # ' . ($reason !== '' ? $reason : 'smpro') . ' - ' . date('D M j H:i:s Y') . "\n", FILE_APPEND | LOCK_EX);
         if ($csf !== '' && !$testing && smpro_csf_denied($ip)) @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');   // reload only if enforcing
     }
     $recorded = smpro_csf_denied($ip);
     // "Enforced" also requires CSF to be ENABLED. It can be installed, not in TESTING mode, and still disabled
-    // (`csf -x` → /etc/csf/csf.disable), in which case it owns no iptables rules and the deny does nothing.
+    // (`csf -x` -> /etc/csf/csf.disable), in which case it owns no iptables rules and the deny does nothing.
     $csfOn    = smpro_csf_enabled();
     $enforced = $recorded && !$testing && $csf !== '' && $csfOn;
     if (!$recorded) $msg = ($csf === '' ? 'No firewall (CSF) installed — cannot block ' . $ip . '.' : 'Could not write csf.deny for ' . $ip . '.');
@@ -2036,9 +2036,9 @@ function smpro_account_datalist() {
 /**
  * Where an account's files actually are, from /etc/passwd.
  *
- * NOT "/home/$user". A cPanel server spreads accounts across /home, /home1, /home2 … as partitions fill, and this
+ * NOT "/home/$user". A cPanel server spreads accounts across /home, /home1, /home2 ... as partitions fill, and this
  * very box has three. Every feature that guessed the path silently did nothing for every account outside the first
- * one — and reported that as "nothing found", which is the failure this codebase exists to avoid. The scanner that
+ * one - and reported that as "nothing found", which is the failure this codebase exists to avoid. The scanner that
  * hunts phishing was one of them.
  *
  * Returns '' when the account does not exist, which callers must treat as "cannot look", never as "clean".

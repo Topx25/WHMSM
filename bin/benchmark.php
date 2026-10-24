@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/benchmark.php — Hardware benchmark worker. Spawned detached by smpro_bm_start() so the CPU/RAM/disk tests keep
+ * bin/benchmark.php - Hardware benchmark worker. Spawned detached by smpro_bm_start() so the CPU/RAM/disk tests keep
  * running (and results are saved) even if the admin closes the page. Writes progress + results to the state file.
  * Usage: php benchmark.php <disk-mount>
  */

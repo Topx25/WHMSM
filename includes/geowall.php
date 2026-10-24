@@ -1,18 +1,18 @@
 <?php
 /**
- * includes/geowall.php — real prevention: a login door that a disallowed country cannot reach at all.
+ * includes/geowall.php - real prevention: a login door that a disallowed country cannot reach at all.
  *
  * WHAT THIS IS, AND WHY IT IS NOT THE COUNTRY LOGIN LOCK.
  *
  * Country Login Lock reads the login log and closes an address's login ports AFTERWARDS. The first sign-in from
- * a country that is not allowed always succeeds — an operator armed it, signed in over a VPN in a third country,
+ * a country that is not allowed always succeeds - an operator armed it, signed in over a VPN in a third country,
  * and was let straight in, exactly as designed. What was wanted is different: the connection must never reach
  * sshd or the panel in the first place, while ordinary web browsing on 80/443 stays open to the whole world.
  *
  * WHY CSF'S OWN SETTING IS NOT ENOUGH.
  *
  * CC_ALLOW_PORTS looks like the answer and is not. Read in csf's source, it appends ACCEPT rules for the listed
- * countries on the listed ports — an early accept. Everything else falls through to the normal TCP_IN rules and
+ * countries on the listed ports - an early accept. Everything else falls through to the normal TCP_IN rules and
  * is let in as usual. It allows; it does not deny. CC_DENY_PORTS is the mirror image: it denies a list, so
  * getting "everyone except two countries" out of it means naming ~250 countries and leaves every address that is
  * in no zone file allowed anyway.
@@ -21,7 +21,7 @@
  *
  * One ipset holding the address ranges of the allowed countries, and ONE rule per protocol: on the login ports,
  * anything not in that set is dropped. Default-deny, so an address that cannot be placed in any country is
- * refused rather than waved through — the opposite of the reporting features, and deliberately so. A report that
+ * refused rather than waved through - the opposite of the reporting features, and deliberately so. A report that
  * guesses is noise; a door that guesses is an open door.
  *
  * Ports 80 and 443 are never included and cannot be added. A shop stays readable and buyable from every country.
@@ -120,7 +120,7 @@ function smpro_gw_ports(array $cfg): array {
     return array_keys($p);
 }
 
-/** The firewall's own country ranges. Empty means the data is not there — which is "cannot build", not "allow all". */
+/** The firewall's own country ranges. Empty means the data is not there - which is "cannot build", not "allow all". */
 function smpro_gw_ranges(array $ccs): array {
     $out = [];
     foreach ($ccs as $cc) {
@@ -206,7 +206,7 @@ function smpro_gw_arm_check(array $cfg, string $myIp): array {
     return ['ok' => !$p, 'problems' => $p];
 }
 
-/** Is an address inside any of these CIDRs? Plain IPv4 arithmetic — no shelling out for a membership test. */
+/** Is an address inside any of these CIDRs? Plain IPv4 arithmetic - no shelling out for a membership test. */
 function smpro_gw_ip_in(string $ip, array $cidrs): bool {
     $n = ip2long($ip);
     if ($n === false) return false;
@@ -524,7 +524,7 @@ function smpro_gw_fetch(array $ccs, array $ports): array {
     @shell_exec('timeout 240 csf -r >/dev/null 2>&1');
 
     // AND THEN ACTUALLY FETCH. `csf -r` reloads rules; it does NOT download a country's ranges. The download
-    // belongs to lfd, which does it in a scheduled job — so declaring the country and reloading left the zone
+    // belongs to lfd, which does it in a scheduled job - so declaring the country and reloading left the zone
     // file absent for up to a day, the button reported failure, and the failure it reported was "check outbound
     // access" on a server whose outbound access was perfectly fine. Restarting lfd makes it run that job now.
     // Nothing about an lfd restart touches the firewall rules; it is the log daemon.
@@ -570,7 +570,7 @@ function smpro_gw_zones_missing(array $ccs): bool {
  * Can this server reach the place the firewall gets country ranges from?
  *
  * Returns null when the question itself could not be asked, so "we could not check" never passes for "the
- * network is broken" — the same distinction this whole file is built on.
+ * network is broken" - the same distinction this whole file is built on.
  */
 function smpro_gw_source_reachable(): ?bool {
     if (!function_exists('shell_exec')) return null;

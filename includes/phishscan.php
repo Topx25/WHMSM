@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/phishscan.php — phishing-kit scan for one cPanel account, runnable in the BACKGROUND.
+ * includes/phishscan.php - phishing-kit scan for one cPanel account, runnable in the BACKGROUND.
  * The scan greps the whole account home and can take a while, so the module starts a DETACHED worker
  * (bin/phish_scan.php) that keeps running even if the admin closes the page; the page then polls the
  * result file and shows the findings when ready (or the last completed result on the next visit).
@@ -19,7 +19,7 @@ function smpro_ps_scan($path) {
         . ' --include=*.php --include=*.html --include=*.htm ' . escapeshellarg($path) . $excl . ' 2>/dev/null | head -200';
     $rows = [];
     foreach (array_filter(array_map('trim', explode("\n", (string)@shell_exec($cmd)))) as $f) {
-        if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($f)) continue;   // WP Guard's own file / quarantine → not a phishing page
+        if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($f)) continue;   // WP Guard's own file / quarantine -> not a phishing page
         $hasForm = trim((string)@shell_exec('grep -lIEi "<form|password|passwd|action=" ' . escapeshellarg($f) . ' 2>/dev/null')) !== '';
         $hits = trim((string)@shell_exec('grep -oiE ' . escapeshellarg($sig) . ' ' . escapeshellarg($f) . ' 2>/dev/null | tr A-Z a-z | sort -u | head -6'));
         $rows[] = ['file' => $f, 'mtime' => date('Y-m-d H:i', (int)@filemtime($f)), 'form' => $hasForm, 'lures' => array_filter(array_map('trim', explode("\n", $hits)))];
@@ -64,7 +64,7 @@ function smpro_ps_start($account) {
     smpro_ps_write($account, ['state' => 'running', 'started' => time(), 'finished' => 0, 'account' => $account, 'err' => '', 'rows' => [], 'count' => 0]);
     $php = smpro_php_cli_bin();
     $setsid = is_executable('/usr/bin/setsid') ? '/usr/bin/setsid ' : (trim((string)@shell_exec('command -v setsid 2>/dev/null')) !== '' ? 'setsid ' : '');
-    // detach: new session (setsid) + nohup + & → keeps running after this CGI request (the page) ends
+    // detach: new session (setsid) + nohup + & -> keeps running after this CGI request (the page) ends
     @shell_exec($setsid . 'nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($bin) . ' ' . escapeshellarg($account) . ' >/dev/null 2>&1 &');
     return ['ok' => true, 'running' => true, 'msg' => 'Phishing scan started in the background — you can safely leave this page; results will be here when you return.'];
 }

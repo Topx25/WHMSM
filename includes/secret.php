@@ -1,6 +1,6 @@
 <?php
 /**
- * secret.php — encrypt sensitive config values at rest (Telegram/WhatsApp/Pushbullet tokens, SMTP pass).
+ * secret.php - encrypt sensitive config values at rest (Telegram/WhatsApp/Pushbullet tokens, SMTP pass).
  * AES-256-GCM with a per-server key file (0600). Values are stored as "enc:v1:<base64(iv|tag|ct)>".
  * Decrypt is passthrough for non-prefixed (plaintext/legacy) values so migration is seamless.
  */

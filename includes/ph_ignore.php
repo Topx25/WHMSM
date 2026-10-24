@@ -1,16 +1,16 @@
 <?php
 /**
- * Safety Monitor Pro — accounts that must be left unprotected.
+ * Safety Monitor Pro - accounts that must be left unprotected.
  *
  * Some accounts cannot take file hardening. A site with a self-updating installer, a deploy pipeline that writes
- * its own wp-config, a customer who edits core files by hand — for these, locking files is not protection, it is
+ * its own wp-config, a customer who edits core files by hand - for these, locking files is not protection, it is
  * an outage. Force-unprotect exists for that case, and this is the list that makes the decision stick: without it
  * the next automatic pass simply locks the account again and the operator is back where they started, wondering
  * why the protection they removed keeps coming back.
  *
  * It lives in includes/ rather than beside the rest of PHP Harden because the code that must OBEY it does not run
  * on the page. Emergency response runs from the intrusion tick, which is a cron worker, and page modules are not
- * loaded there — a list only the page can read would be a list that automation silently ignores.
+ * loaded there - a list only the page can read would be a list that automation silently ignores.
  *
  * An entry is deliberately never anonymous: it records who added it, when, and why, and nothing prunes it on a
  * timer. An account that stops being protected should stay visible as a decision someone made, not decay into an
@@ -39,7 +39,7 @@ function smpro_ph_ign_all() {
 /**
  * Is this account on the list?
  *
- * $scope is what the CALLER is about to do — 'auto' for an unattended pass (emergency response, auto re-lock),
+ * $scope is what the CALLER is about to do - 'auto' for an unattended pass (emergency response, auto re-lock),
  * 'manual' for an operator pressing Apply on the page. An entry may exclude only automation, so that an admin who
  * deliberately opens the page and applies protection is not silently refused; the default entry excludes both.
  */

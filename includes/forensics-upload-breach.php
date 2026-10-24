@@ -1,13 +1,13 @@
 <?php
 /**
- * includes/forensics-upload-breach.php — one-click UPLOAD-BREACH forensic collector (smpro_ub_*).
+ * includes/forensics-upload-breach.php - one-click UPLOAD-BREACH forensic collector (smpro_ub_*).
  *
- * READ-ONLY evidence collection for the unrestricted-file-upload attack class — e.g. POST /…/uploadimage
+ * READ-ONLY evidence collection for the unrestricted-file-upload attack class - e.g. POST /.../uploadimage
  * accepted with HTTP 200, web-shells dropped into an image dir with image/blank extensions that the
  * *.php-only breach scan (smpro_im_breaches) never sees. Six bounded sections + an orchestrator that reaches
  * an HONEST verdict (live_compromise | planted_inert | attempted_only | clean).
  *
- * The ONLY write is a report JSON under SMPRO_CACHE — NO account files are changed, NO services restarted.
+ * The ONLY write is a report JSON under SMPRO_CACHE - NO account files are changed, NO services restarted.
  * Response actions (quarantine / block IP / harden dir) live in the module, POST+CSRF+confirm-gated, never here.
  * Every shell command is wrapped by smpro_fx_wrap (timeout+nice+ionice) with escapeshellarg on every argument.
  */
@@ -28,7 +28,7 @@ function smpro_ub_band_name($n) { static $r = [0=>'clean',1=>'info',2=>'low',3=>
 /** a path is truly under the account home (realpath, string-prefix). */
 function smpro_ub_under_home($path, $home) { $rp = @realpath((string)$path); $home = rtrim((string)$home, '/'); return $rp && $home !== '' && strpos($rp . '/', $home . '/') === 0 ? $rp : ''; }
 
-/** §0 scope — reuse smpro_fx_scope, then discover the account's upload/image directories. Null if account gone. */
+/** §0 scope - reuse smpro_fx_scope, then discover the account's upload/image directories. Null if account gone. */
 function smpro_ub_scope($account) {
     if (!function_exists('smpro_fx_scope')) return null;
     $s = smpro_fx_scope($account); if (!is_array($s)) return null;
@@ -43,7 +43,7 @@ function smpro_ub_scope($account) {
     return $s;
 }
 
-/** §1 SHELL HUNT (impact) — content-match files (ANY extension) changed since $sinceTs; deep-verdict each. */
+/** §1 SHELL HUNT (impact) - content-match files (ANY extension) changed since $sinceTs; deep-verdict each. */
 function smpro_ub_shell_hunt(array $scope, $sinceTs, array $opts = []) {
     $out = ['candidates'=>[], 'counts'=>['matched'=>0,'deepfiled'=>0,'malicious_band'=>0], 'worst_band'=>'clean', 'truncated'=>false];
     $home = rtrim((string)($scope['home'] ?? ''), '/'); $tokRe = smpro_ub_token_re();
@@ -83,9 +83,9 @@ function smpro_ub_shell_hunt(array $scope, $sinceTs, array $opts = []) {
     return $out;
 }
 
-/** §2 ENDPOINT CODE (how) — locate the upload handler + assess whether it REALLY validates the file. Read-only.
- *  IMPORTANT: getClientOriginalExtension() is NOT validation — using it to build the saved filename TRUSTS the
- *  attacker's extension (upload x.php → saved as <time>.php). Real validation = a server-side content/type check
+/** §2 ENDPOINT CODE (how) - locate the upload handler + assess whether it REALLY validates the file. Read-only.
+ *  IMPORTANT: getClientOriginalExtension() is NOT validation - using it to build the saved filename TRUSTS the
+ *  attacker's extension (upload x.php -> saved as <time>.php). Real validation = a server-side content/type check
  *  (getimagesize / finfo / mimes: whitelist). Re-encoding (Image::make) strips embedded PHP and is a mitigation. */
 function smpro_ub_endpoint_code(array $scope, array $opts = []) {
     $out = ['hits'=>[], 'handlers_found'=>[], 'has_extension_check'=>false, 'uses_client_extension'=>false, 'raw_move'=>false, 'reencode'=>false, 'risk'=>'unknown'];
@@ -117,7 +117,7 @@ function smpro_ub_endpoint_code(array $scope, array $opts = []) {
     return $out;
 }
 
-/** §3 MODSEC PAYLOAD (what) — the flagged upload requests + acceptance counts. */
+/** §3 MODSEC PAYLOAD (what) - the flagged upload requests + acceptance counts. */
 function smpro_ub_modsec_payload(array $scope, $sinceTs, array $opts = []) {
     $out = ['entries'=>[], 'endpoint_counts'=>[], 'accepted_2xx'=>0, 'blocked'=>0];
     $user = (string)($scope['user'] ?? ''); $rows = [];
@@ -143,7 +143,7 @@ function smpro_ub_modsec_payload(array $scope, $sinceTs, array $opts = []) {
     return $out;
 }
 
-/** §4 IS IT LIVE (the decider) — can PHP execute in the upload dirs, and was any uploaded file GET-executed? */
+/** §4 IS IT LIVE (the decider) - can PHP execute in the upload dirs, and was any uploaded file GET-executed? */
 function smpro_ub_is_live(array $scope, array $shellHunt, $sinceTs, array $opts = []) {
     $out = ['php_exec_allowed'=>[], 'protected_dirs'=>[], 'getback_hits'=>[], 'executed'=>false, 'decider'=>'exec_blocked'];
     foreach (array_slice((array)($scope['upload_dirs'] ?? []), 0, 20) as $dir) {
@@ -176,7 +176,7 @@ function smpro_ub_is_live(array $scope, array $shellHunt, $sinceTs, array $opts 
     return $out;
 }
 
-/** §5 BLAST RADIUS + persistence — changed files, cron, authorized_keys, processes, outbound. Read-only. */
+/** §5 BLAST RADIUS + persistence - changed files, cron, authorized_keys, processes, outbound. Read-only. */
 function smpro_ub_blast_radius(array $scope, $sinceTs, array $opts = []) {
     $out = ['changed_files_count'=>0, 'changed_sample'=>[], 'cron_lines'=>[], 'authorized_keys'=>[], 'changed_dotfiles'=>[], 'processes'=>[], 'outbound'=>[]];
     $home = rtrim((string)($scope['home'] ?? ''), '/'); $user = (string)($scope['user'] ?? '');
@@ -199,7 +199,7 @@ function smpro_ub_blast_radius(array $scope, $sinceTs, array $opts = []) {
     return $out;
 }
 
-/** §6 ATTACKER PROFILE — top IPs / /16 subnets / user-agents on the upload endpoints. */
+/** §6 ATTACKER PROFILE - top IPs / /16 subnets / user-agents on the upload endpoints. */
 function smpro_ub_attacker_profile(array $scope, $sinceTs, array $opts = []) {
     $out = ['top_ips'=>[], 'top_subnets_16'=>[], 'top_uas'=>[], 'total_posts'=>0, 'distinct_ips'=>0, 'distinct_subnets'=>0];
     $user = (string)($scope['user'] ?? ''); $ips = []; $subs = []; $uas = []; $n = 0;
@@ -234,7 +234,7 @@ function smpro_ub_attacker_profile(array $scope, $sinceTs, array $opts = []) {
     return $out;
 }
 
-/** ORCHESTRATOR — run all six sections under a shared wall-clock budget, reach a verdict, persist a report JSON. */
+/** ORCHESTRATOR - run all six sections under a shared wall-clock budget, reach a verdict, persist a report JSON. */
 function smpro_ub_report($account, $sinceTs, array $opts = []) {
     $account = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)$account);
     $budgetMs = (int)($opts['budget_ms'] ?? 20000);
@@ -263,7 +263,7 @@ function smpro_ub_report($account, $sinceTs, array $opts = []) {
         'verdict'=>$verdict, 'verdict_reason'=>$reason, 'worst_band'=>$sh['worst_band'],
         'budget_ms_used'=>(int)round((microtime(true) - $t0) * 1000), 'truncated'=>!empty($sh['truncated'])];
 
-    // persist (the ONLY write; a report cache under SMPRO_CACHE — never an account file)
+    // persist (the ONLY write; a report cache under SMPRO_CACHE - never an account file)
     $dir = SMPRO_CACHE . '/upload_breach'; @is_dir($dir) || @mkdir($dir, 0700, true);
     $rid = $account . '-' . gmdate('Ymd_His', $out['generated_at']) . '.json';
     $tmp = @tempnam($dir, 'ub'); if ($tmp) { @file_put_contents($tmp, json_encode($out, JSON_UNESCAPED_SLASHES)); @chmod($tmp, 0600); @rename($tmp, $dir . '/' . $rid); }
@@ -273,7 +273,7 @@ function smpro_ub_report($account, $sinceTs, array $opts = []) {
     return $out;
 }
 
-/** RESPONSE ACTION (NOT part of collection) — drop a REVERSIBLE .htaccess that disables PHP execution in an upload
+/** RESPONSE ACTION (NOT part of collection) - drop a REVERSIBLE .htaccess that disables PHP execution in an upload
  *  dir, so any planted (or future) shell can't run. Confined to the account's OWN docroots via realpath; backs up any
  *  existing .htaccess to SMPRO_VARLIB first; idempotent. Caller must gate this behind POST+CSRF+root+confirm. */
 function smpro_ub_harden_dir($account, $dir) {

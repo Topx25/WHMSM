@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/profiles.php — Protection Profiles (Settings).
+ * modules/profiles.php - Protection Profiles (Settings).
  * Apply a whole-plugin protection posture (Medium / Maximum / AI / Custom) in one click,
  * adapted to this server. Every apply previews the exact changes first and snapshots the
  * current settings to a server-named, dated ARCHIVE entry so you can always roll back.

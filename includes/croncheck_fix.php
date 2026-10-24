@@ -1,15 +1,15 @@
 <?php
 /**
- * Safety Monitor Pro — repairing a schedule that keeps producing stuck jobs.
+ * Safety Monitor Pro - repairing a schedule that keeps producing stuck jobs.
  *
  * Separate from croncheck.php on purpose: that file only reads. This one WRITES to a customer's crontab, which
- * is one of the few places where a mistake is both silent and expensive — a schedule that stops running takes
+ * is one of the few places where a mistake is both silent and expensive - a schedule that stops running takes
  * days to be noticed, and by then whatever it was doing has quietly not happened.
  *
  * So every change here:
  *   • copies the whole crontab first, and refuses to continue if that copy cannot be verified afterwards;
- *   • touches ONLY the entries that run the one script it was asked about, and leaves every other line —
- *     comments, blank lines, unrelated jobs, MAILTO and PATH — exactly as it found them;
+ *   • touches ONLY the entries that run the one script it was asked about, and leaves every other line -
+ *     comments, blank lines, unrelated jobs, MAILTO and PATH - exactly as it found them;
  *   • reads the result back and compares it against what it meant to write, rather than trusting the write;
  *   • puts the account back the way it was if that comparison fails;
  *   • can be undone from the copy at any time.
@@ -21,7 +21,7 @@ function smpro_ccf_backup_dir(string $user): string {
     return SMPRO_VARLIB . '/cron_backups/' . preg_replace('/[^a-z0-9_-]/i', '', $user);
 }
 
-/** Every line of a crontab, comments and blanks included — this is what gets restored, so nothing may be dropped. */
+/** Every line of a crontab, comments and blanks included - this is what gets restored, so nothing may be dropped. */
 function smpro_ccf_read_raw(string $user): array {
     if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/i', $user)) return ['ok' => false, 'lines' => [], 'error' => 'Not a valid account name.'];
     [$rc, $out] = smpro_run_rc('crontab -l -u ' . escapeshellarg($user), 15, ['stderr' => 'discard']);
@@ -74,7 +74,7 @@ function smpro_ccf_repair(string $user, string $script, int $everyMin = 10, int 
     if ($job === '') $job = basename($script);
 
     // Which lines run THIS file. Resolved the same way the detector resolves them, so a relative path written
-    // after a cd is recognised as the same job as an absolute one — that pair is the usual cause of the problem
+    // after a cd is recognised as the same job as an absolute one - that pair is the usual cause of the problem
     // and matching on the text alone would leave one of the two behind.
     $targets = []; $kept = [];
     foreach ($lines as $i => $line) {
@@ -146,9 +146,9 @@ function smpro_ccf_backups(string $user): array {
 function smpro_ccf_undo(string $user, string $backupPath): array {
     $dir = smpro_ccf_backup_dir($user);
     $real = @realpath($backupPath);
-    // Only ever restore from this account's own copies — a path from elsewhere would install someone else's
+    // Only ever restore from this account's own copies - a path from elsewhere would install someone else's
     // schedule under this account, which is worse than the problem being fixed.
-    // Suffix compared by its own length, never a hand-written number — see the note on the same check in
+    // Suffix compared by its own length, never a hand-written number - see the note on the same check in
     // wpcron_fix.php, where a wrong count silently refused every restore.
     $suffix = '.cron';
     $dirReal = @realpath($dir);

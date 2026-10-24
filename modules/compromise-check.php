@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/compromise-check.php — Compromise Check: the marks a break-in leaves, at server level and per account.
+ * modules/compromise-check.php - Compromise Check: the marks a break-in leaves, at server level and per account.
  * Reads are in includes/compcheck.php (what is looked at and why); the fixes and the scheduled scan are in
  * includes/ccfix.php. Every fix backs up first and is audited; the page never runs one without a CSRF token.
  */

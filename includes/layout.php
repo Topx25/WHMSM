@@ -1,6 +1,6 @@
 <?php
 /**
- * layout.php — central page shell with a FIXED, SHARED sidebar that appears
+ * layout.php - central page shell with a FIXED, SHARED sidebar that appears
  * on every page. Driven by includes/menu.php. Local CSS/JS only, no CDN.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -147,7 +147,7 @@ html[dir=rtl] .smpro-link.active{border-right-color:var(--brand)}
 html[dir=rtl] .smpro-link .soon,html[dir=rtl] .smpro-link .smpro-lock{margin-left:0;margin-right:auto}
 html[dir=rtl] .sm-licbtn,html[dir=rtl] .sm-expbtn{margin-left:0;margin-right:auto}
 @media(max-width:860px){html[dir=rtl] .smpro-side{transform:translateX(100%)}html[dir=rtl] .smpro-main{margin-right:0}html[dir=rtl] body.smpro-open .smpro-side{transform:none}}
-/* ---- navy theme (HostGuard brand — matches hostguard.org product mockups) ---- */
+/* ---- navy theme (HostGuard brand - matches hostguard.org product mockups) ---- */
 html[data-theme=dark]{--bg:#0a1428;--card:#0f1d40;--ink:#e7ecf6;--muted:#94a3bd;--line:#1e3358;
  --good-bg:#0c2a1a;--warn-bg:#2e2410;--dang-bg:#33161a;--brand-bg:#12213f;--brand:#3b82f6;--good:#22c55e;--warn:#fbbf24;--dang:#f87171;--side:#0b1730;--side-ink:#c3d2ee;}
 html[data-theme=dark] body{background:#0a1428}
@@ -179,7 +179,7 @@ html[data-theme=dark] input::placeholder,html[data-theme=dark] textarea::placeho
 /* buttons / pills / links used across modules (keep brand/danger ones colored) */
 html[data-theme=dark] [class*="-btn"]:not(.primary):not(.danger),html[data-theme=dark] [class*="-mini"]:not(.fixdb):not(.clean):not(.insp):not(.trash1),html[data-theme=dark] [class*="-lnk"],html[data-theme=dark] .tp-btn:not(.primary){background:#132747 !important;color:#cdd9f0 !important;border-color:#294066 !important}
 /* Dark mode: buttons hard-coded to a WHITE surface for the light theme must not stay white here. Neutral ones get a
- * dark surface; semantic ones keep the color convention — GREEN = safe, ORANGE = elevated/above-normal, RED = danger. */
+ * dark surface; semantic ones keep the color convention - GREEN = safe, ORANGE = elevated/above-normal, RED = danger. */
 html[data-theme=dark] .sm-aibtn,html[data-theme=dark] .sm-decbtn,html[data-theme=dark] .sm-modal-btn{background:#132747 !important;color:#cdd9f0 !important;border-color:#294066 !important}
 html[data-theme=dark] .btn-danger,html[data-theme=dark] .tp-btn.danger,html[data-theme=dark] .dcDel,html[data-theme=dark] .dcClear,html[data-theme=dark] .btn.danger{background:var(--dang-bg) !important;color:var(--dang) !important;border-color:#5a2833 !important}
 html[data-theme=dark] .btn-warning,html[data-theme=dark] .btn.warning,html[data-theme=dark] .tp-btn.warning{background:var(--warn-bg) !important;color:var(--warn) !important;border-color:#5a4718 !important}
@@ -194,7 +194,7 @@ html[data-theme=dark] [class*="prev"],html[data-theme=dark] [class*="snip"]{bord
 html[data-theme=dark] .sm-aiout,html[data-theme=dark] .sm-aiout *{color:var(--ink)}
 html[data-theme=dark] .sm-aibar{background:#102341 !important}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-/* ---- sidebar rail (icon-only collapse) — desktop only; mobile keeps the drawer ---- */
+/* ---- sidebar rail (icon-only collapse) - desktop only; mobile keeps the drawer ---- */
 @media(min-width:861px){
  html.nav-rail{--sidew:66px}
  html.nav-rail .smpro-side{width:66px;overflow:visible;padding-top:8px}
@@ -398,14 +398,14 @@ window.smproPager=function(o){
     document.getElementById('ipmBody').innerHTML='<div class="ipm-spin">Looking up '+esc(ip)+'…</div>';
     open();
     /* URL-encoded, NOT FormData. index.php rebuilds $_POST with parse_str(), which understands only
-       application/x-www-form-urlencoded — FormData sends multipart, parse_str makes nothing of it, so the action
+       application/x-www-form-urlencoded - FormData sends multipart, parse_str makes nothing of it, so the action
        field never arrives, the handler never runs and the request comes back as the whole page. That is what the
        "could not load" message was really reporting, and why this dialog had never worked while every other POST
        in the plugin did: they all encode this way already. */
     var fd=new URLSearchParams();
     fd.set('im_action','ip_lookup'); fd.set('ip',ip); fd.set('smpro_csrf',CSRF);
     /* Read the reply as text first. When it is not JSON the reason is almost always that the WHM session behind
-       this page has expired — WHM answers a fetch with its own sign-in page, which no amount of guarding inside
+       this page has expired - WHM answers a fetch with its own sign-in page, which no amount of guarding inside
        the plugin can turn into JSON. Saying that is far more use than "could not load", which sent people
        looking for a fault in the dialog. */
     fetch('index.cgi?page=intrusion-monitor',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()})
@@ -441,7 +441,7 @@ window.smproPager=function(o){
     var sum=d.summary||{};
     h+='<div class="ipm-sec">Attack History (Database — last 30 days)</div>';
     // This sentence used to read "No attacks recorded for this IP in the database." directly above a list of nine
-    // failed webmail logins — the page disproving itself. The database holds WEB attacks (ModSecurity); failed
+    // failed webmail logins - the page disproving itself. The database holds WEB attacks (ModSecurity); failed
     // logins come from the auth logs and are shown further down. Saying which was searched is the difference
     // between "this address is clean" and "this particular record is empty".
     if(!sum.total){h+='<div class="ipm-empty">No <b>web</b> attacks recorded for this address in the database &mdash; this covers ModSecurity web attacks only. Login attempts are listed below and are read from the server\'s auth logs, not from here.</div>';}
@@ -472,7 +472,7 @@ window.smproPager=function(o){
       h+='</tbody></table></div>';
     }
 
-    /* ── Login & access attempts (SSH / mail / FTP / cPanel) — shows a brute-forcer with no web attacks ── */
+    /* ── Login & access attempts (SSH / mail / FTP / cPanel) - shows a brute-forcer with no web attacks ── */
     var ls=d.login_summary||{}, lg=d.logins||[];
     h+='<div class="ipm-sec">Login &amp; Access Attempts (SSH · mail · FTP · cPanel)</div>';
     if(!lg.length){h+='<div class="ipm-empty">No login attempts from this IP in the auth logs.</div>';}
@@ -502,7 +502,7 @@ window.smproPager=function(o){
 
     /* ── Actions ── */
     // What this address is already known to have done, from what is on THIS panel. On an address with a record
-    // against it, "Add to Allowlist" was the only button left once it was blocked — green, primary, one click, and
+    // against it, "Add to Allowlist" was the only button left once it was blocked - green, primary, one click, and
     // permanent: an allow-listed address is exempt from every future block, by the firewall and by this plugin.
     // The most prominent action on an attacker's page must not be the one that protects it.
     // From the same summary the dialog printed above, not a recount of the visible rows: that list is capped,
@@ -530,7 +530,7 @@ window.smproPager=function(o){
 
   // Allow-listing is not "stop blocking this once": it is permanent and it outranks every later decision, so an
   // address with a record against it gets a confirmation that states the record and the consequence. An address
-  // with nothing against it is allow-listed without ceremony — a dialog nobody needs is a dialog nobody reads.
+  // with nothing against it is allow-listed without ceremony - a dialog nobody needs is a dialog nobody reads.
   window.smproIpAllowConfirm=function(ip,against,nFail,nAttacks){
     if(against>0){
       var what=[];
@@ -557,7 +557,7 @@ window.smproPager=function(o){
   document.addEventListener('click',function(e){
     /* Never hijack a click that landed on a control the page already uses. Testing only the MATCHED ancestor for
        BUTTON/A was not enough: a selection checkbox carrying data-ip matches the selector itself, so ticking it
-       to choose addresses for a bulk unblock opened the profile dialog instead — and since this handler calls
+       to choose addresses for a bulk unblock opened the profile dialog instead - and since this handler calls
        preventDefault(), the tick never registered either, which read as "the checkbox is broken". Testing the
        ORIGINAL target also covers a control nested anywhere inside a data-ip row, which is how these tables are
        normally built. */
@@ -592,7 +592,7 @@ if ($smUnd): $smUndTypes = (array)($smUnd['types'] ?? []); arsort($smUndTypes); 
 </div>
 <script>(function(){try{var k='smpro_bghint_v1',el=document.getElementById('smproBgHint');if(!el)return;if(localStorage.getItem(k)==='1'){el.style.display='none';return;}var x=document.getElementById('smproBgHintX');if(x)x.addEventListener('click',function(){el.style.display='none';try{localStorage.setItem(k,'1');}catch(e){}});}catch(e){}})();</script>
 <?php
-// One-time "what's new" callout — shown the FIRST time this section is opened after an update. Rendered hidden;
+// One-time "what's new" callout - shown the FIRST time this section is opened after an update. Rendered hidden;
 // the nav-badge script (menu.php) reveals it once (same localStorage seen-state "<id>|<version>"), then remembers.
 if (function_exists('smpro_new_feature_note') && function_exists('smpro_new_features')) {
     $nfNote = smpro_new_feature_note($active);
@@ -665,7 +665,7 @@ if (!$smSyncShown && $smGph >= 1 && (($GLOBALS['page'] ?? '') !== 'license')):
 </style>
 <?php endif; ?>
 <?php
-// Mandatory expiry reminder: valid license expiring within 3 days → always-visible banner.
+// Mandatory expiry reminder: valid license expiring within 3 days -> always-visible banner.
 if (function_exists('smpro_lic_is_valid') && smpro_lic_is_valid() && (($GLOBALS['page'] ?? '') !== 'license')):
     $smExp = trim((string)((function_exists('smpro_lic_state') ? smpro_lic_state() : [])['expiry'] ?? ''));
     $smExpTs = $smExp !== '' ? (is_numeric($smExp) ? (int)$smExp : strtotime($smExp)) : 0;
@@ -685,7 +685,7 @@ if (function_exists('smpro_lic_is_valid') && smpro_lic_is_valid() && (($GLOBALS[
 </style>
 <?php endif; endif; ?>
 <?php
-// Multi-Server: a hub has invited THIS server — show a banner everywhere until handled (cheap cached read).
+// Multi-Server: a hub has invited THIS server - show a banner everywhere until handled (cheap cached read).
 if (function_exists('smpro_hub_invites_cached') && (($GLOBALS['page'] ?? '') !== 'multi-server')):
     $smInv = smpro_hub_invites_cached();
     if ($smInv): $smInv0 = $smInv[0];
@@ -702,7 +702,7 @@ if (function_exists('smpro_hub_invites_cached') && (($GLOBALS['page'] ?? '') !==
 </style>
 <?php endif; endif; ?>
 <?php
-// Critical: an attack whose SOURCE is the server's own/local IP (possible local compromise) → always-visible bar.
+// Critical: an attack whose SOURCE is the server's own/local IP (possible local compromise) -> always-visible bar.
 if (function_exists('smpro_im_selfattack_recent') && (($GLOBALS['page'] ?? '') !== 'license')):
     $smSelf = smpro_im_selfattack_recent(6);
     if ($smSelf):
@@ -790,7 +790,7 @@ if (function_exists('smpro_im_selfattack_recent') && (($GLOBALS['page'] ?? '') !
 <?php endif; endif; ?>
 <?php
 // Non-blocking environment warnings: components that are missing on this host.
-// Each only disables its own feature — the rest of the plugin works normally.
+// Each only disables its own feature - the rest of the plugin works normally.
 $smMissing = function_exists('smpro_missing_capabilities') ? smpro_missing_capabilities() : [];
 if ($smMissing):
 ?>
@@ -972,7 +972,7 @@ function smpro_layout_footer() {
 .sm-toploader span{display:block;height:100%;width:40%;background:linear-gradient(90deg,#7c3aed,#4f46e5);animation:smtop 1s ease-in-out infinite}
 @keyframes smtop{0%{margin-left:-40%}100%{margin-left:100%}}
 @media print{.sm-toploader{display:none !important}}
-/* ===== SMPRO modern buttons — global, emitted last so it unifies every module ===== */
+/* ===== SMPRO modern buttons - global, emitted last so it unifies every module ===== */
 .tp-btn,.btn,.fa-lnk{border-radius:10px;font-weight:600;letter-spacing:.005em;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;transition:transform .12s ease,box-shadow .16s ease,filter .16s ease,background .16s ease,border-color .16s ease}
 .tp-btn,.btn{padding:8px 14px;font-size:13px;line-height:1.2;cursor:pointer}
 .tp-btn:hover,.btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(2,8,23,.13);filter:brightness(1.02)}
@@ -984,12 +984,12 @@ function smpro_layout_footer() {
 .btn-success,.btn-danger,.btn-warning,.btn-primary,.dsFix,.tp-btn.danger{box-shadow:0 2px 6px rgba(2,8,23,.10)}
 .btn-success:hover,.btn-danger:hover,.btn-warning:hover,.btn-primary:hover,.dsFix:hover,.tp-btn.danger:hover{box-shadow:0 8px 20px rgba(2,8,23,.18)}
 @media print{.tp-btn,.btn,.fa-lnk{box-shadow:none !important;transform:none !important}}
-/* ===== Unified button colours — one look per STATE, applied to button variant classes only ===== */
+/* ===== Unified button colours - one look per STATE, applied to button variant classes only ===== */
 /* PRIMARY (single brand colour for main actions) */
 .btn-primary,.dsFix,.btn.primary,.tp-btn.primary{background:var(--brand) !important;color:#fff !important;border-color:var(--brand) !important}
 /* SUCCESS = green */
 .btn-success,.btn.success,.tp-btn.success{background:var(--good) !important;color:#fff !important;border-color:var(--good) !important}
-/* DANGER = red (outline → fills on hover) */
+/* DANGER = red (outline -> fills on hover) */
 .btn-danger,.tp-btn.danger,.dcDel,.dcClear,.btn.danger{background:#fff !important;color:var(--dang) !important;border-color:#f0c5c5 !important}
 .btn-danger:hover,.tp-btn.danger:hover,.dcDel:hover,.dcClear:hover,.btn.danger:hover{background:var(--dang) !important;color:#fff !important;border-color:var(--dang) !important}
 /* WARNING = amber */
@@ -1043,10 +1043,10 @@ function smpro_layout_footer() {
     d.querySelector('.cl').addEventListener('click',close);
     return d;
   };
-  // Replace the native blocking alert with a non-blocking styled toast — upgrades every alert() call.
+  // Replace the native blocking alert with a non-blocking styled toast - upgrades every alert() call.
   try{ window.alert=function(m){ return window.smToast(m); }; }catch(e){}
 
-  // Styled async confirm — opt-in:  smConfirm('Delete X?',{danger:true,okText:'Delete'}).then(function(ok){...})
+  // Styled async confirm - opt-in:  smConfirm('Delete X?',{danger:true,okText:'Delete'}).then(function(ok){...})
   window.smConfirm=function(message,opts){
     opts=opts||{};var danger=!!opts.danger;
     return new Promise(function(resolve){
@@ -1065,15 +1065,15 @@ function smpro_layout_footer() {
 </script>
 <script>
 (function(){
-  // Universal non-blocking progress bar: shows for EVERY scan/action — page-load scans (navigation)
-  // and AJAX scans/applies/tests — while excluding the frequent background pollers so it never flickers.
+  // Universal non-blocking progress bar: shows for EVERY scan/action - page-load scans (navigation)
+  // and AJAX scans/applies/tests - while excluding the frequent background pollers so it never flickers.
   var bar=document.getElementById('smTopLoad'); if(!bar)return;
   var n=0;
   function show(){n++;bar.hidden=false;} function dec(){n=Math.max(0,n-1);if(n===0)bar.hidden=true;} function hideAll(){n=0;bar.hidden=true;}
 
   // 1) Any AJAX request shows the bar (debounced 180ms so fast calls don't flash), except known pollers.
   if(window.fetch){var _f=window.fetch;
-    var BG=/live=1|metric=|cool_action=status|cool_action=sources/;   // 3s status/metric polls — no bar
+    var BG=/live=1|metric=|cool_action=status|cool_action=sources/;   // 3s status/metric polls - no bar
     window.fetch=function(input){
       var url=(typeof input==='string')?input:((input&&input.url)||'');
       if(BG.test(url)) return _f.apply(this,arguments);
@@ -1148,7 +1148,7 @@ function smpro_layout_footer() {
 .la-tabpop .hd a{font-weight:700;color:var(--brand);text-decoration:none;font-size:11px}
 .la-tabpop label{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:13px;color:var(--ink);cursor:pointer;white-space:nowrap}
 .la-tabpop label:hover{background:var(--brand-bg)}
-/* ── universal table enhancements (sort + column borders + resize handle) — applied to every .smpro-table ── */
+/* ── universal table enhancements (sort + column borders + resize handle) - applied to every .smpro-table ── */
 .smpro-table th[data-sort]{cursor:pointer;user-select:none}
 .smpro-table th[data-sort]:hover{color:var(--brand)}
 .smpro-table th.sorted-asc::after{content:" \25B2";font-size:8px}
@@ -1268,7 +1268,7 @@ html[data-theme=dark] .smpro-table th,html[data-theme=dark] .smpro-table td{bord
   }
   if(bT)bT.addEventListener('click',function(){run('think','Analyze the current state of the \"'+CTX+'\" section on this cPanel/WHM server: what is happening, the top risks, and what they mean. Be concise and concrete.');});
 
-  // Recommend decisions → structured, EXECUTABLE action buttons (Block/Delete/Clean/Suspend…).
+  // Recommend decisions -> structured, EXECUTABLE action buttons (Block/Delete/Clean/Suspend...).
   function esc(s){var e=document.createElement('div');e.textContent=(s==null?'':String(s));return e.innerHTML;}
   function runDecide(){
     out.hidden=false; out.innerHTML=head('Recommended decisions')+'<div class="sm-aihint">&#129302; Reading live data &amp; working out executable decisions…</div>'+skel(); bindClose();
@@ -1297,7 +1297,7 @@ html[data-theme=dark] .smpro-table th,html[data-theme=dark] .smpro-table td{bord
   }
   if(bD)bD.addEventListener('click',runDecide);
 
-  // Execute a decision button: confirm → POST exec.fields to exec.url (or navigate).
+  // Execute a decision button: confirm -> POST exec.fields to exec.url (or navigate).
   if(out)out.addEventListener('click',function(e){
     var b=e.target.closest('.sm-decbtn');if(!b)return;
     var ds=window.__smDecs||[];var d=ds[+b.getAttribute('data-i')];if(!d||!d.exec)return;
@@ -1346,7 +1346,7 @@ html[data-theme=dark] .smpro-table th,html[data-theme=dark] .smpro-table td{bord
     syncTheme();
   });
 
-  /* language switcher removed — the plugin renders in English (its source language) on every page */
+  /* language switcher removed - the plugin renders in English (its source language) on every page */
   try{ if(localStorage.getItem('smpro_lang'))localStorage.removeItem('smpro_lang'); }catch(e){}
   d.setAttribute('dir','ltr'); d.setAttribute('lang','en');
 })();

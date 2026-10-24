@@ -1,10 +1,10 @@
 <?php
 /**
- * bin/cleanscan.php — detached worker for the per-account disk-cleanup scan.
+ * bin/cleanscan.php - detached worker for the per-account disk-cleanup scan.
  * Runs to completion even if the admin closes the page; the finished report waits for them on return.
  * The only thing that stops it is an explicit cancel from the UI (which sets cancelled=1 in the job file).
  */
-define('SMPRO_BOOT', 1);   // MUST precede the requires — every include exits('forbidden') without it
+define('SMPRO_BOOT', 1);   // MUST precede the requires - every include exits('forbidden') without it
 $root = dirname(__DIR__);
 foreach (['defines', 'helpers', 'maintenance', 'disk_scan'] as $m) {
     $f = $root . '/includes/' . $m . '.php';
@@ -28,7 +28,7 @@ $job = smpro_ds_scan_read($acct);
 $job['account'] = $acct; $job['phase'] = 'scanning'; $job['done'] = false;
 $job['heartbeat'] = time(); $job['msg'] = 'Scanning ' . $acct . ' for large files, archives, logs and cache…';
 if (empty($job['started_at'])) $job['started_at'] = time();
-smpro_ds_scan_write($acct, $job);   // heartbeat FIRST — the launcher waits on exactly this
+smpro_ds_scan_write($acct, $job);   // heartbeat FIRST - the launcher waits on exactly this
 
 if ($lf && !@flock($lf, LOCK_EX | LOCK_NB)) {
     $job['done'] = true; $job['phase'] = 'error'; $job['msg'] = 'Another scan for this account is already running.';
@@ -45,7 +45,7 @@ register_shutdown_function(function () use ($acct) {
 
 $res = smpro_ds_cleanscan($acct);
 
-// Honour an explicit cancel that arrived while we were scanning — the admin's cancel wins, and we do NOT
+// Honour an explicit cancel that arrived while we were scanning - the admin's cancel wins, and we do NOT
 // overwrite it with a finished report.
 $now = smpro_ds_scan_read($acct);
 if (!empty($now['cancelled'])) { if (function_exists('smpro_audit')) smpro_audit('disk_cleanscan', ['account' => $acct, 'cancelled' => 1]); exit(0); }

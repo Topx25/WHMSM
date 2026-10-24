@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/fw_allow_sync.php — background worker for the firewall allow-list AUTO-UPDATE. Installed as
+ * bin/fw_allow_sync.php - background worker for the firewall allow-list AUTO-UPDATE. Installed as
  * /etc/cron.d/smpro-fwallow ONLY while at least one provider has auto-update enabled. For each such provider it
  * fetches the current IP ranges from the provider feed and reconciles csf.allow (adds new, drops our-tagged stale).
  */

@@ -1,8 +1,8 @@
 <?php
 /**
- * includes/notify.php — central Notifications layer for Safety Monitor Pro.
+ * includes/notify.php - central Notifications layer for Safety Monitor Pro.
  *
- * One API — smpro_notify($type, $subject, $body, $meta) — that every module can
+ * One API - smpro_notify($type, $subject, $body, $meta) - that every module can
  * call. The admin configures, in Notifications:
  *   • channels   : Email (sendmail) and/or Telegram (bot token + chat id)
  *   • event types: which alerts are on, and which channel(s) each one uses
@@ -77,7 +77,7 @@ function smpro_ntf_default_config() {
         'types'    => $types,
         'thresholds' => ['disk_pct' => 90, 'load' => 20, 'failed_logins' => 60, 'spam_events' => 300, 'db_injections' => 1, 'remind_hours' => 12,
                          // Outbound bulk-mail: "large volume" = more than mail_out_hour emails in one hour,
-                         // OR at least mail_out_12h emails over 12 hours. Below both → treated as normal (not spam),
+                         // OR at least mail_out_12h emails over 12 hours. Below both -> treated as normal (not spam),
                          // unless the Spam & Phishing content scan flags the messages as actual spam.
                          'mail_out_hour' => 100, 'mail_out_12h' => 300,
                          // Inbound spam: alert when at least this many incoming spam-scored/rejected mails are seen;
@@ -90,7 +90,7 @@ function smpro_ntf_default_config() {
 function smpro_ntf_secret_paths() { return [['telegram', 'token'], ['whatsapp', 'api_key'], ['pushbullet', 'token'], ['email', 'smtp', 'pass']]; }
 
 /** Ensure the WhatsApp gateway's IP(s) are in the firewall allowlist so our own auto-block / CSF never
- *  blocks the gateway host — which would silently break WhatsApp alerts. Resolves a hostname to its IPs,
+ *  blocks the gateway host - which would silently break WhatsApp alerts. Resolves a hostname to its IPs,
  *  is idempotent, and degrades safely if CSF is absent (plugin allowlist only). Returns the IPs allow-listed. */
 function smpro_ntf_wa_allowlist($baseUrl) {
     $baseUrl = trim((string)$baseUrl);
@@ -103,7 +103,7 @@ function smpro_ntf_wa_allowlist($baseUrl) {
     else { $r = @gethostbynamel($host); if (is_array($r)) $ips = $r; }
     $done = [];
     foreach (array_slice(array_values(array_unique($ips)), 0, 4) as $ip) {
-        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) { $done[] = $ip; continue; }   // private/reserved are never auto-blocked — count as covered, no CSF churn
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) { $done[] = $ip; continue; }   // private/reserved are never auto-blocked - count as covered, no CSF churn
         $res = smpro_im_allow_ip($ip); if (!empty($res['ok'])) $done[] = $ip;
     }
     if ($done && function_exists('smpro_audit')) smpro_audit('whatsapp_gateway_allowlist', ['host' => $host, 'ips' => $done]);
@@ -171,7 +171,7 @@ function smpro_ntf_send_smtp($smtp, $from, array $to, $subject, $body) {
     $host = trim((string)($smtp['host'] ?? '')); $port = (int)($smtp['port'] ?? 587); $secure = (string)($smtp['secure'] ?? 'tls');
     if ($host === '') return [false, 'SMTP host not configured'];
     $he = gethostname();
-    // smpro_host_port() brackets an IPv6 literal — an admin who enters a bare v6 SMTP address would
+    // smpro_host_port() brackets an IPv6 literal - an admin who enters a bare v6 SMTP address would
     // otherwise get "connection failed" with no hint that the address itself was mis-parsed.
     $target = ($secure === 'ssl' ? 'ssl://' : '')
             . (function_exists('smpro_host_port') ? smpro_host_port((string)$host, (int)$port) : $host . ':' . $port);
@@ -231,7 +231,7 @@ function smpro_ntf_send_pushbullet($token, $title, $body) {
  *  IPv4 is itself private/reserved (PHP's NO_RES_RANGE does not catch the mapped form). $ip is an
  *  already-FILTER_VALIDATE_IP-valid address. Returns a reason string, or '' if the address is allowed. */
 function smpro_ntf_ip6_unsafe($ip) {
-    if (strpos($ip, ':') === false) return '';                    // IPv4 — handled by the caller's own checks
+    if (strpos($ip, ':') === false) return '';                    // IPv4 - handled by the caller's own checks
     $b = @inet_pton($ip);
     if ($b === false || strlen($b) !== 16) return '';             // not a 16-byte IPv6 address
     if ($b === str_repeat("\0", 15) . "\x01") return 'IPv6 loopback (::1) not allowed';
@@ -239,7 +239,7 @@ function smpro_ntf_ip6_unsafe($ip) {
     $o = function ($i) use ($b) { return ord($b[$i]); };
     if ($o(0) === 0xfe && ($o(1) & 0xc0) === 0x80) return 'IPv6 link-local (fe80::/10) not allowed';
     if (($o(0) & 0xfe) === 0xfc)                   return 'IPv6 unique-local (fc00::/7) not allowed';
-    // IPv4-mapped ::ffff:a.b.c.d — re-validate the embedded IPv4 against the private/reserved ranges.
+    // IPv4-mapped ::ffff:a.b.c.d - re-validate the embedded IPv4 against the private/reserved ranges.
     if (substr($b, 0, 10) === str_repeat("\0", 10) && $o(10) === 0xff && $o(11) === 0xff) {
         $v4 = $o(12) . '.' . $o(13) . '.' . $o(14) . '.' . $o(15);
         if (!filter_var($v4, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)
@@ -281,7 +281,7 @@ function smpro_ntf_wa_request($base, $key, $method, $path, $body = null, $timeou
     $res = smpro_http($base . $path, ['method' => $method, 'timeout' => (int)$timeout, 'headers' => $headers, 'body' => $payload]);
     return [$res['code'], json_decode($res['body'], true), $res['body']];
 }
-/** Normalise a recipient to a WhatsApp chat id: digits → "<digits>@c.us". */
+/** Normalise a recipient to a WhatsApp chat id: digits -> "<digits>@c.us". */
 function smpro_ntf_wa_chat($v) {
     $v = trim((string)$v);
     if ($v === '' || strpos($v, '@') !== false) return $v;
@@ -365,15 +365,15 @@ function smpro_ntf_send_telegram($token, $chatId, $text) {
         return [false, 'no response from Telegram'];
     };
     // Telegram hard-limits a message to 4096 chars. Truncating AFTER HTML assembly (the old code) cut
-    // mid-tag/entity → Telegram rejected the whole message ("can't parse entities") and the alert was
-    // silently dropped — precisely the biggest digests. Truncate the source well under the limit, add a
+    // mid-tag/entity -> Telegram rejected the whole message ("can't parse entities") and the alert was
+    // silently dropped - precisely the biggest digests. Truncate the source well under the limit, add a
     // marker, and close any left-open <pre> so the HTML stays valid.
     $limit = 3900;
     $html = mb_substr($text, 0, $limit);
     if (mb_strlen($text) > $limit) $html .= "\n…(truncated)";
     if (substr_count($html, '<pre>') > substr_count($html, '</pre>')) $html .= '</pre>';
     [$ok, $msg] = $send($html, true);
-    if (!$ok && stripos($msg, 'parse') !== false) {          // HTML parse failure → resend as plain text
+    if (!$ok && stripos($msg, 'parse') !== false) {          // HTML parse failure -> resend as plain text
         $plain = trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
         [$ok, $msg] = $send(mb_substr($plain, 0, $limit), false);
     }
@@ -454,11 +454,11 @@ function smpro_notify($type, $subject, $body, array $meta = [], $force = false) 
 }
 
 /* Self-heal an older notify cron that was installed WITHOUT flock/timeout (pre-1.0.57). Without a lock a
- * long run + the next 15-min tick overlap and pile up → resource exhaustion. Rewrites the line once to add
+ * long run + the next 15-min tick overlap and pile up -> resource exhaustion. Rewrites the line once to add
  * `flock -n` (skip tick if a run is still going) + an outer `timeout`. Safe no-op if already healed/absent. */
 /** INSTALL the periodic checker cron (every 15 min). This worker runs BOTH the notification checks AND the
  *  Intrusion-Monitor scan + emergency auto-block, so it must exist whenever auto-checks OR emergency/auto-block
- *  is enabled — not only when the admin flips "Auto-checks" on the Notifications page. Idempotent. */
+ *  is enabled - not only when the admin flips "Auto-checks" on the Notifications page. Idempotent. */
 /**
  * The book of alerts that went NOWHERE. A server with no channel switched on fired hundreds of auto-block notices
  * into the void and the operator learned of a blocked editor from the editor. Every page shows a red bar while
@@ -496,17 +496,17 @@ function smpro_ntf_cron_install() {
  *  Notifications "Auto-check" manages the cron file directly; this covers the intrusion auto-response case
  *  that previously had NO scheduler at all. */
 function smpro_ntf_cron_wanted() {
-    // ALWAYS. This worker is not "the notifier" — it is the detection engine: foreign logins, File Manager writes
+    // ALWAYS. This worker is not "the notifier" - it is the detection engine: foreign logins, File Manager writes
     // from abroad, decoy logins, breaches, upload clusters, service-down, disk, backups all run inside it. It used to
     // be scheduled only when the admin had toggled "Auto-checks" on the Notifications page or enabled intrusion
-    // auto-block; on a production server (2026-09-08) neither had ever been touched, so an account takeover through
-    // File Manager from a foreign address — exactly the case the detector exists for — was never even looked at,
+    // auto-block; on a production server neither had ever been touched, so an account takeover through
+    // File Manager from a foreign address - exactly the case the detector exists for - was never even looked at,
     // and every page read as clean. Detection must not depend on an optional toggle. Delivery is still governed by
-    // the channels (email/Telegram/…), and Plugin Control → Disabled stops the worker itself.
+    // the channels (email/Telegram/...), and Plugin Control -> Disabled stops the worker itself.
     return !(function_exists('smpro_ctl_disabled') && smpro_ctl_disabled());
 }
 /** Boot-time self-heal: make sure the checker cron EXISTS whenever it's wanted (so emergency auto-block runs
- *  even if the admin never opened the Notifications page). Never removes it here — that's the toggle's job. */
+ *  even if the admin never opened the Notifications page). Never removes it here - that's the toggle's job. */
 function smpro_ntf_cron_sync() {
     // A test must never install a live cron. The shared writer refuses too, but a test that loads only
     // this file has no shared writer to refuse - function_exists() is false and the fallback writes
@@ -517,9 +517,9 @@ function smpro_ntf_cron_sync() {
 }
 function smpro_ntf_cron_heal() {
     $f = '/etc/cron.d/smpro-notify';
-    if (!is_file($f)) return;                                   // auto-checks not enabled → nothing to heal
+    if (!is_file($f)) return;                                   // auto-checks not enabled -> nothing to heal
     $cur = (string)@file_get_contents($f);
-    if (strpos($cur, 'flock') !== false) return;                // already has a lock → done
+    if (strpos($cur, 'flock') !== false) return;                // already has a lock -> done
     $php = smpro_php_cli_bin();   // canonical: cron's PATH may not resolve a bare `php`
     $bin = SMPRO_BASE . '/bin/notify_check.php';
     $lock = SMPRO_VARLIB . '/locks/notify.lock';
@@ -542,7 +542,7 @@ function smpro_ntf_state_save($s) { @is_dir(SMPRO_NTF_DIR) || @mkdir(SMPRO_NTF_D
 /**
  * Time-windowed mail analysis from exim logs (read-only, bounded).
  * OUTBOUND: count locally-originated messages (script `cwd=/home/<acct>` or authenticated `A=<id>`)
- *           per account in the last 1 hour and last 12 hours — so "bulk" is judged by real rate, not a
+ *           per account in the last 1 hour and last 12 hours - so "bulk" is judged by real rate, not a
  *           fixed log-line count. INBOUND SPAM: count incoming mail that SpamAssassin scored as spam or
  *           that exim rejected as spam/RBL within the given lookback window.
  * Returns: ['out_hour'=>[acct=>n], 'out_12h'=>[acct=>n], 'inbound_spam'=>n, 'inbound_samples'=>[...]].
@@ -554,17 +554,17 @@ function smpro_ntf_mail_scan(int $inboundLookbackSecs = 21600): array {
 
     // --- outbound: count locally-originated messages by account, time-windowed ---
     // cPanel/exim logs TWO distinct line types for local origin:
-    //   • script sends → a standalone line  "<ts> cwd=/home/<acct> N args: /usr/sbin/sendmail …"  (P=local)
-    //   • authenticated (webmail/SMTP AUTH) → an arrival line  "<ts> … <= … A=dovecot_login:<user> …"
+    //   • script sends -> a standalone line  "<ts> cwd=/home/<acct> N args: /usr/sbin/sendmail ..."  (P=local)
+    //   • authenticated (webmail/SMTP AUTH) -> an arrival line  "<ts> ... <= ... A=dovecot_login:<user> ..."
     // These are disjoint (a script send is P=local, not A=), so counting both does not double-count.
     if (is_readable($log)) {
         // Streamed: this runs in the notify worker under cPanel's 128M CLI cap, and 80k exim lines held as string+array
-        // is enough to kill it silently (the same failure that blanked Account Audit, 2026-09-07).
+        // is enough to kill it silently (the same failure that once blanked Account Audit).
         $it = function_exists('smpro_run_lines') ? smpro_run_lines("sh -c " . escapeshellarg("tail -n 300000 " . escapeshellarg($log) . " 2>/dev/null | grep -aE 'cwd=/home[0-9]*/| <= .* A=' | tail -n 80000"), 30) : [];
         foreach ($it as $l) {
             if ($l === '') continue;
             $ts = strtotime(substr($l, 0, 19));
-            if (!$ts || $ts < $cut12h) continue;                      // older than 12h → ignore
+            if (!$ts || $ts < $cut12h) continue;                      // older than 12h -> ignore
             if (preg_match('#cwd=/home[0-9]*/([^/ ]+)#', $l, $m)) {
                 $acct = $m[1];                                         // script-sent: home account that ran it
             } elseif (strpos($l, ' <= ') !== false && preg_match('#\bA=[^\s:]+:([^\s]+)#', $l, $m)) {
@@ -600,11 +600,11 @@ function smpro_ntf_mail_scan(int $inboundLookbackSecs = 21600): array {
         if (count($out['inbound_samples']) < 5) $out['inbound_samples'][] = trim(mb_substr($l, 20, 180));
         // WHO was it from / to? (so the admin can warn the targeted local mailbox)
         if (preg_match('/\bF=<([^>]+)>/', $l, $m)) { $s = strtolower($m[1]); $out['inbound_senders'][$s] = ($out['inbound_senders'][$s] ?? 0) + 1; }
-        // \b only anchors 'for' (word char); '=>'/'->' start with non-word chars so they need no boundary — keep them literal
+        // \b only anchors 'for' (word char); '=>'/'->' start with non-word chars so they need no boundary - keep them literal
         if (preg_match('/(?:\bfor|=>|->)\s+<?([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/', $l, $m)) { $r = strtolower(rtrim($m[1], '>')); $out['inbound_recips'][$r] = ($out['inbound_recips'][$r] ?? 0) + 1; }
-        if (preg_match('/\b([0-9A-Za-z]{6}-[0-9A-Za-z]{6}-[0-9A-Za-z]{2})\b/', $l, $m)) $ids[$m[1]] = 1;   // exim message id → resolve recipient below
+        if (preg_match('/\b([0-9A-Za-z]{6}-[0-9A-Za-z]{6}-[0-9A-Za-z]{2})\b/', $l, $m)) $ids[$m[1]] = 1;   // exim message id -> resolve recipient below
     }
-    // Resolve the local RECIPIENT for spam message-ids that had none on the matched line — exim's arrival line
+    // Resolve the local RECIPIENT for spam message-ids that had none on the matched line - exim's arrival line
     // ("<id> <= <sender> ... for <rcpt>") carries it. One bounded grep over the mainlog tail.
     $need = array_slice(array_keys($ids), 0, 60);
     if ($need && is_readable($log)) {
@@ -621,7 +621,7 @@ function smpro_ntf_mail_scan(int $inboundLookbackSecs = 21600): array {
 }
 
 /** Human-readable label for an outbound "sender" identity + whether it's the SERVER (not a customer).
- *  cPanel authenticates its own notification/service mail as __cpanel__service__auth__<svc>__… — that is
+ *  cPanel authenticates its own notification/service mail as __cpanel__service__auth__<svc>__... - that is
  *  the server sending, not a customer, so we show a plain label instead of the raw token. Returns [label, isSystem]. */
 function smpro_ntf_friendly_sender(string $acct): array {
     if (strpos($acct, '__cpanel__service__auth__icontact') === 0) return ['Server notifications (cPanel iContact)', true];
@@ -640,7 +640,7 @@ function smpro_ntf_friendly_sender(string $acct): array {
  */
 /**
  * Map an LVE id to a REAL cPanel account name, or '' if it isn't one. lveinfo reports reserved/system LVE
- * contexts too (e.g. id 255 = a non-account context that showed 5,491 IO faults on a live box) — those are
+ * contexts too (e.g. id 255 = a non-account context that showed 5,491 IO faults on a live box) - those are
  * not customer accounts, can't be acted on ("raise the plan"), and must be filtered out of tenant alerts.
  */
 function smpro_ntf_lve_acct($uid) {
@@ -682,7 +682,7 @@ function smpro_notify_run_checks($verbose = false) {
     };
     $maybe = function ($type, $sig, $subject, $body, $meta = [], $remindOverride = 0) use (&$st, &$fired, $cfg, $chanSig, $remindSecs, $now) {
         if (empty($cfg['types'][$type]['on'])) return;
-        if ((int)($cfg['types'][$type]['mute_until'] ?? 0) > $now) return;   // snoozed → suppress; state is left untouched so it re-evaluates (and fires once if still active) when the snooze expires
+        if ((int)($cfg['types'][$type]['mute_until'] ?? 0) > $now) return;   // snoozed -> suppress; state is left untouched so it re-evaluates (and fires once if still active) when the snooze expires
         /*
          * One alert TYPE can be fed by several independent checks (foreign_login: the SSH scan and the
          * cPanel/webmail scan; mem_pressure: the host and the CloudLinux tenants). They used to share ONE state
@@ -699,7 +699,7 @@ function smpro_notify_run_checks($verbose = false) {
         $prev = $st[$slot] ?? ($st[$type] ?? null);   // the legacy shared slot answers once, so the upgrade itself re-sends nothing
         if (is_string($prev)) $prev = ['sig' => $prev, 'ch' => '', 'ts' => 0];   // migrate legacy state
         $ch = $chanSig($type);
-        if ($ch === '') return;                                   // no channel yet → keep pending, fire when one turns on
+        if ($ch === '') return;                                   // no channel yet -> keep pending, fire when one turns on
         $window   = $remindOverride > 0 ? $remindOverride : $remindSecs;
         $sameSig  = $prev && ($prev['sig'] ?? null) === $sig;
         $sameChan = $prev && ($prev['ch']  ?? '')   === $ch;
@@ -725,7 +725,7 @@ function smpro_notify_run_checks($verbose = false) {
         // list" even after the file has been cleaned/quarantined/deleted from disk, so counting the raw
         // list produces a STALE "currently-malicious" alert naming already-cleaned accounts. Mirror the
         // Reports module's staleness test (imunify360-reports.php): a file resource still under /home
-        // whose path no longer exists on disk was already handled — drop it. (DB injections are covered
+        // whose path no longer exists on disk was already handled - drop it. (DB injections are covered
         // by the separate db_injection check below, so they don't belong in the file count.)
         // Files Imunify left as "found" (on-demand / rescan finds are never auto-cleaned by Imunify) are handed to
         // Imunify's own cleanup when the operator chose cleanup there (includes/imclean.php); they leave the count.
@@ -738,8 +738,8 @@ function smpro_notify_run_checks($verbose = false) {
             if (($r['resource_type'] ?? '') === 'db') continue;
             $p = (string)($r['file'] ?? '');
             if (($r['status'] ?? 'found') !== 'found') continue;                   // cleanup_done / cleanup_removed: Imunify already cleaned it (the file may remain, emptied or clean)
-            if ($p !== '' && !@is_file($p)) continue;                               // already cleaned/gone → stale (any home root, not only /home)
-            if ($p !== '' && function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($p)) continue;   // WP Guard's own / already-neutralized file → not a "possible compromise"
+            if ($p !== '' && !@is_file($p)) continue;                               // already cleaned/gone -> stale (any home root, not only /home)
+            if ($p !== '' && function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($p)) continue;   // WP Guard's own / already-neutralized file -> not a "possible compromise"
             $live[] = $r;
         }
         $n = count($live);
@@ -822,11 +822,11 @@ function smpro_notify_run_checks($verbose = false) {
         else $maybe('intrusion_upload_cluster', 'clear', '', '');
         if (isset($al['autoblock'])) $maybe('intrusion_autoblock', $al['autoblock']['sig'], $al['autoblock']['subject'], $al['autoblock']['body'], ['severity' => 'high']);
         if (isset($al['emergency'])) $maybe('intrusion_emergency', $al['emergency']['sig'], $al['emergency']['subject'], $al['emergency']['body'], ['severity' => 'critical']);
-        // routine scanner auto-blocks → low-urgency grouped digest via the Auto-block type (INFO, not CRITICAL)
+        // routine scanner auto-blocks -> low-urgency grouped digest via the Auto-block type (INFO, not CRITICAL)
         if (isset($al['emergency_blocks'])) $maybe('intrusion_autoblock', $al['emergency_blocks']['sig'], $al['emergency_blocks']['subject'], $al['emergency_blocks']['body'], ['severity' => 'info']);
     }
 
-    // 5) PHP Harden drift (locked files that lost immutability) — self-contained lsattr check
+    // 5) PHP Harden drift (locked files that lost immutability) - self-contained lsattr check
     if (is_dir(SMPRO_VARLIB . '/php_harden')) {
         $checked[] = 'harden_drift';
         $isLocked = function ($p) {
@@ -858,7 +858,7 @@ function smpro_notify_run_checks($verbose = false) {
         $scan = smpro_ntf_mail_scan($inboundRemind);
 
         // 6a) OUTBOUND bulk: flag an account that sent > mail_out_hour in the last hour, OR >= mail_out_12h over 12h.
-        //     Below both → not treated as spam here (volume is normal); the Spam & Phishing AI scan judges content.
+        //     Below both -> not treated as spam here (volume is normal); the Spam & Phishing AI scan judges content.
         $checked[] = 'spam_outbreak';
         $perHour = max(1, (int)($thr['mail_out_hour'] ?? 100));
         $per12h  = max(1, (int)($thr['mail_out_12h'] ?? ($thr['spam_events'] ?? 300)));
@@ -883,7 +883,7 @@ function smpro_notify_run_checks($verbose = false) {
                 $title, $body, ['severity' => $custN > 0 ? 'high' : 'medium']);
         } else $maybe('spam_outbreak', 'clear', '', '');
 
-        // 6b) INBOUND spam: any spam-scored / spam-rejected incoming mail in the window → alert at least every 6h.
+        // 6b) INBOUND spam: any spam-scored / spam-rejected incoming mail in the window -> alert at least every 6h.
         $checked[] = 'inbound_spam';
         $minIn = max(1, (int)($thr['inbound_spam_min'] ?? 1));
         if ((int)$scan['inbound_spam'] >= $minIn) {
@@ -905,7 +905,7 @@ function smpro_notify_run_checks($verbose = false) {
         } else $maybe('inbound_spam', 'clear', '', '');
     }
 
-    // 7) backup failed (JetBackup5 — a job whose last run did not complete)
+    // 7) backup failed (JetBackup5 - a job whose last run did not complete)
     if (is_executable('/usr/bin/jetbackup5api')) {
         $checked[] = 'backup_failed';
         $api = function ($func, $data = '') {
@@ -919,9 +919,9 @@ function smpro_notify_run_checks($verbose = false) {
             $id = (string)($j['_id'] ?? ''); if ($id === '') continue;
             $full = $api('getBackupJob', '_id=' . $id)['data'] ?? $j;
             if (!empty($full['running'])) continue;
-            // 'disabled', NOT 'state' — a live enabled job reports state:0, so keying off state silenced the
+            // 'disabled', NOT 'state' - a live enabled job reports state:0, so keying off state silenced the
             // backup alert for EVERY job (same misread as the retry worker had).
-            if (!empty($full['disabled'])) continue;   // job intentionally disabled — the retry worker skips it too, so don't alert on its last failure
+            if (!empty($full['disabled'])) continue;   // job intentionally disabled - the retry worker skips it too, so don't alert on its last failure
             $lr = (is_numeric($full['last_run'] ?? '') ? (int)($full['last_run'] ?? 0) : (strtotime((string)($full['last_run'] ?? '')) ?: 0));
             $lc = (is_numeric($full['last_completed'] ?? '') ? (int)($full['last_completed'] ?? 0) : (strtotime((string)($full['last_completed'] ?? '')) ?: 0));
             if ($lr > 0 && $lc < $lr) $failed[] = (string)($full['name'] ?? $id);
@@ -931,7 +931,7 @@ function smpro_notify_run_checks($verbose = false) {
         else $maybe('backup_failed', 'clear', '', '');
     }
 
-    // 7b) server reboot — alert once per boot; classify clean/administrative vs unexpected (crash/power loss).
+    // 7b) server reboot - alert once per boot; classify clean/administrative vs unexpected (crash/power loss).
     $checked[] = 'server_reboot';
     $bootTs = strtotime(trim((string)@shell_exec('uptime -s 2>/dev/null'))) ?: 0;
     if ($bootTs > 0) {
@@ -955,7 +955,7 @@ function smpro_notify_run_checks($verbose = false) {
         }
     }
 
-    // 7c) foreign successful login — a successful SSH login from OUTSIDE the home region (compromise signal).
+    // 7c) foreign successful login - a successful SSH login from OUTSIDE the home region (compromise signal).
     if (function_exists('smpro_geo_foreign')) {
         $sec = is_readable('/var/log/secure') ? '/var/log/secure' : (is_readable('/var/log/auth.log') ? '/var/log/auth.log' : '');
         if ($sec !== '') {
@@ -973,7 +973,7 @@ function smpro_notify_run_checks($verbose = false) {
                 $method = $mm[1]; $user = $mm[2]; $ip = $mm[3];
                 if (function_exists('smpro_is_server_ip') && smpro_is_server_ip($ip)) continue;
                 $g = smpro_geo_foreign($ip);
-                if (empty($g['foreign'])) continue;            // local / home-region / unknown → not flagged
+                if (empty($g['foreign'])) continue;            // local / home-region / unknown -> not flagged
                 $cl = function_exists('smpro_deploy_classify') ? smpro_deploy_classify($ip, $method) : ['class' => ($method === 'publickey' ? 'key' : 'password'), 'provider' => ''];
                 if ($cl['class'] === 'deploy') {
                     $k = $user . '|' . $cl['provider'];
@@ -1011,7 +1011,7 @@ function smpro_notify_run_checks($verbose = false) {
     }
 
     // 7c-a) A setup gap is a finding too. The product ships with NO home region (it is sold into any market), and
-    // until one is set the location-based checks below deliberately classify nothing — silence there would look
+    // until one is set the location-based checks below deliberately classify nothing - silence there would look
     // like "no foreign logins" when the truth is "nothing was checked". So say it, once, with the suggestion.
     if (function_exists('smpro_im_home_configured') && !smpro_im_home_configured()) {
         $checked[] = 'home_region_unset';
@@ -1069,7 +1069,7 @@ function smpro_notify_run_checks($verbose = false) {
     // 7c-bis) foreign successful logins through the cPanel panel / webmail, and per-account travel anomalies.
     // The ssh scan above only sees /var/log/secure; the panel and webmail are where stolen cPanel passwords are
     // actually used, and they log elsewhere. Both feed the SAME foreign_login alert so the operator has one place
-    // to look, with the door named. Reported the same aggregated, deduped way — one line per source, never a flood.
+    // to look, with the door named. Reported the same aggregated, deduped way - one line per source, never a flood.
     if (function_exists('smpro_foreign_success_logins')) {
         $checked[] = 'login_geo_anomaly';
         $r = smpro_foreign_success_logins(168, 2, 3);
@@ -1137,7 +1137,7 @@ function smpro_notify_run_checks($verbose = false) {
         }
     }
 
-    // 7d) memory / swap pressure — available RAM nearly gone AND swap filling → OOM risk.
+    // 7d) memory / swap pressure - available RAM nearly gone AND swap filling -> OOM risk.
     $checked[] = 'mem_pressure';
     $mi = (string)@file_get_contents('/proc/meminfo');
     if ($mi !== '') {
@@ -1158,7 +1158,7 @@ function smpro_notify_run_checks($verbose = false) {
                 $maybe('mem_pressure', 'mem:crit', 'Memory pressure — OOM risk', $body, ['severity' => 'high']);
             } else {
                 // On CloudLinux, HOST RAM is usually healthy while individual accounts hit their per-tenant LVE
-                // memory limit (OOM is per-tenant, not global) — a global reading alone is misleading. When the host
+                // memory limit (OOM is per-tenant, not global) - a global reading alone is misleading. When the host
                 // looks fine, surface accounts hitting LVE memory faults instead (probed only here, off the hot path).
                 $lve = is_executable('/usr/sbin/lveinfo') ? '/usr/sbin/lveinfo' : (is_executable('/usr/bin/lveinfo') ? '/usr/bin/lveinfo' : '');
                 $faults = [];   // uid => memory faults (PMemF + VMemF) in the last hour
@@ -1167,7 +1167,7 @@ function smpro_notify_run_checks($verbose = false) {
                     // physical/virtual memory-limit fault counts.
                     $raw = (string)@shell_exec('timeout 20 ' . escapeshellarg($lve) . ' --period=1h --limit 200 --show-columns=id,PMemF,VMemF 2>/dev/null');
                     foreach (explode("\n", $raw) as $l) {
-                        // id, PMemF, VMemF — \D*$ swallows the trailing box-drawing "│" (multibyte) so the anchor
+                        // id, PMemF, VMemF - \D*$ swallows the trailing box-drawing "│" (multibyte) so the anchor
                         // holds without the /u flag; header rows (ID/PMemF/VMemF text) have no 3-number pattern.
                         if (preg_match('/(\d+)\D+(\d+)\D+(\d+)\D*$/', trim($l), $m)) {
                             $f = (int)$m[2] + (int)$m[3];
@@ -1177,7 +1177,7 @@ function smpro_notify_run_checks($verbose = false) {
                 }
                 arsort($faults);
                 // Threshold so this is a MONITOR, not noise: a big shared box always has a couple of accounts
-                // brushing their default 1 GB limit in brief bursts — that is normal background, not an incident.
+                // brushing their default 1 GB limit in brief bursts - that is normal background, not an incident.
                 // Alert only on a real pattern: many accounts faulting at once, OR one account faulting heavily
                 // (sustained per-tenant pressure = a likely leak/runaway). Both tunable in Notifications thresholds.
                 $accThr = (int)($thr['lve_mem_accounts'] ?? 5);
@@ -1202,7 +1202,7 @@ function smpro_notify_run_checks($verbose = false) {
 
     // 7e) CloudLinux LVE resource faults (CPU / IO / entry-processes / processes). Real-world lesson from a
     //     live 1,845-account box: the per-tenant limits accounts ACTUALLY hit are IO-throttle and CPU-throttle
-    //     (far more than memory OOM) — this is what "my site is slow" usually is on shared hosting. Surface which
+    //     (far more than memory OOM) - this is what "my site is slow" usually is on shared hosting. Surface which
     //     accounts are constrained and on what, so the host can raise a plan or spot an abuser. (Memory faults are
     //     covered by mem_pressure above.) Thresholds keep it a monitor, not noise.
     $lvebin = is_executable('/usr/sbin/lveinfo') ? '/usr/sbin/lveinfo' : (is_executable('/usr/bin/lveinfo') ? '/usr/bin/lveinfo' : '');
@@ -1223,7 +1223,7 @@ function smpro_notify_run_checks($verbose = false) {
             if ((int)$c[5] > 0) $cat['IO'][$uid] = (int)$c[5];
         }
         $manyThr = (int)($thr['lve_accounts'] ?? 8);    // alert when this many accounts hit ONE limit type in the hour
-        $oneThr  = (int)($thr['lve_faults'] ?? 200);    // …or a single account hitting a limit this hard (abuse / struggling site)
+        $oneThr  = (int)($thr['lve_faults'] ?? 200);    // ...or a single account hitting a limit this hard (abuse / struggling site)
         $lines = [];
         foreach ($cat as $type => $map) {
             if (!$map) continue;
@@ -1246,7 +1246,7 @@ function smpro_notify_run_checks($verbose = false) {
         } else $maybe('lve_resource', 'clear', '', '');
     }
 
-    // 8) license expiry — MANDATORY reminders (2 days, 1 day, then at expiry). Force-sent,
+    // 8) license expiry - MANDATORY reminders (2 days, 1 day, then at expiry). Force-sent,
     //    bypasses the per-type on/off toggle. Each threshold fires once per license/expiry.
     if (function_exists('smpro_lic_state')) {
         $checked[] = 'license_expiry';
@@ -1273,7 +1273,7 @@ function smpro_notify_run_checks($verbose = false) {
                     $fired[] = 'license_expiry';
                 }
             } else {
-                $st['license_expiry'] = 'clear';   // > 2 days away → reset so the cycle re-fires next renewal period
+                $st['license_expiry'] = 'clear';   // > 2 days away -> reset so the cycle re-fires next renewal period
             }
         }
     }

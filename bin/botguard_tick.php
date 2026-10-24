@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/botguard_tick.php — Bot Guard worker (installed as /etc/cron.d/smpro-botguard while Bot Guard is enabled).
+ * bin/botguard_tick.php - Bot Guard worker (installed as /etc/cron.d/smpro-botguard while Bot Guard is enabled).
  * Verifies crawlers, gray-lists attackers, auto-blocks past the threshold. See includes/botguard.php.
  */
 define('SMPRO_BOOT', 1);

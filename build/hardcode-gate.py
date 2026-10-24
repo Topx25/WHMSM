@@ -49,7 +49,7 @@ HOST_RE  = re.compile(r'(?<![\w.$(!)+\-*])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9]
 EMAIL_RE = re.compile(r'\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b', re.I)
 HOME_RE  = re.compile(r"['\"/]home/([a-z][a-z0-9_.-]{2,31})(?=/|['\"\s])")
 HOME_PLACEHOLDERS = {'user', 'username', 'account', 'acct', 'example', 'cpuser', 'owner', 'someuser', 'demoacct', 'acctone', 'accttwo',
-                     # cPanel's own system directories under /home — not accounts
+                     # cPanel's own system directories under /home - not accounts
                      'backup', 'virtfs', 'cpeasyapache', 'cprestore', 'cpbackup', 'cpbackuptmp', 'cpmove'}
 # Things that LOOK like hosts/IPs but are not: CSS class chains (.a.info{), binary magic, UA versions, chat-id suffixes.
 NOISE_RE = re.compile(r'(?:\.[a-z][a-z0-9-]*\.(?:info|ok|err|good|warn|bad|crit|dang|muted)\b)|MaxMind\.com|Chrome/\d+\.\d+\.\d+\.\d+|@c\.us|com\.sa', re.I)
@@ -119,7 +119,7 @@ for item in SHIPPED:
         for f in fn:
             if f.endswith(('.php', '.cgi', '.sh', '.js')): scan(os.path.join(dp, f))
 
-# and the notes, which are prose rather than code — scanned by the same rules, since a name is a name
+# and the notes, which are prose rather than code - scanned by the same rules, since a name is a name
 import glob as _glob
 for f in sorted(_glob.glob(os.path.join(ROOT, NOTES_GLOB))):
     scan(f)

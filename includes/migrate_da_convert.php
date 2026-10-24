@@ -1,9 +1,9 @@
 <?php
 /**
- * Safety Monitor Pro — DirectAdmin → cpmove converter (metadata).
+ * Safety Monitor Pro - DirectAdmin -> cpmove converter (metadata).
  *
  * Stage two of the DirectAdmin route. It writes the parts of a cPanel cpmove archive that DESCRIBE the account,
- * translated from DirectAdmin's own files. The bulk — home directory, mail store, SQL dumps — is copied by the
+ * translated from DirectAdmin's own files. The bulk - home directory, mail store, SQL dumps - is copied by the
  * caller; there is no format question in moving bytes, and all of the risk lives here in the translation.
  *
  * The output is handed to cPanel's own restore, so cPanel validates this converter's work rather than this code
@@ -37,7 +37,7 @@ function smpro_mig_da_max($v) {
  * Build the cpmove metadata tree from an extracted DirectAdmin backup.
  *
  * $localIp matters: DirectAdmin records the address the account lived on at the SOURCE, and carrying that over
- * produces an account bound to an address this server does not hold — it restores without complaint and then
+ * produces an account bound to an address this server does not hold - it restores without complaint and then
  * serves nothing. The destination's own IP is written instead, and the original is kept only as a note.
  *
  * Returns ['ok','dest','user','files'=>int,'warnings'=>[]].
@@ -76,7 +76,7 @@ function smpro_mig_da_build_meta(string $metaDir, string $destDir, string $local
         @chmod($root . '/' . $rel, 0600); $files++; return true;
     };
 
-    /* ---- cp/<user> — the file cPanel actually reads to recreate the account ---- */
+    /* ---- cp/<user> - the file cPanel actually reads to recreate the account ---- */
     $created = strtotime((string)($uc['date_created'] ?? '')) ?: time();
     $suspended = (($uc['suspended'] ?? 'no') === 'yes') || (($uc['account'] ?? 'ON') === 'OFF');
     $cp = [
@@ -148,7 +148,7 @@ function smpro_mig_da_build_meta(string $metaDir, string $destDir, string $local
             $pw = (string)($p['passwd'] ?? '');
             if ($pw === '') { $warn[] = 'Database user "' . $k . '" has no password in the backup and will need one set.'; continue; }
             // The hash is carried across as-is so no password is invented. The syntax matters: IDENTIFIED BY
-            // PASSWORD was REMOVED in MySQL 8.0, so a grants file written that way is a syntax error there — the
+            // PASSWORD was REMOVED in MySQL 8.0, so a grants file written that way is a syntax error there - the
             // databases come back with no user able to reach them, the site is down, and nothing in the restore
             // log calls it a failure. IDENTIFIED WITH ... AS is accepted by MySQL 5.7, MySQL 8 and MariaDB.
             if (!preg_match('/^\*[0-9A-Fa-f]{40}$/', $pw)) {
@@ -194,13 +194,13 @@ function smpro_mig_da_build_meta(string $metaDir, string $destDir, string $local
             $put('sslkeys/' . $dom, $key);
             // apache_tls/<domain> is what cPanel's restore installs the certificate FROM: private key first,
             // then the certificate, then the issuer chain. Writing only sslcerts/ and sslkeys/ leaves the site
-            // on the self-signed certificate cPanel generates for a new account — HTTPS answers, the site
+            // on the self-signed certificate cPanel generates for a new account - HTTPS answers, the site
             // serves, and every browser reports the wrong certificate.
             //
             // The name is cPanel's own datastore, not a statement about Apache: it is the same store whether
             // the server runs EA4 Apache, Apache behind ea-nginx, or LiteSpeed, because all three take their
             // TLS from cPanel rather than holding their own copy. Nothing here requires Apache to be installed
-            // — this only writes a file into the archive, and cPanel decides where it lands.
+            // - this only writes a file into the archive, and cPanel decides where it lands.
             $put('apache_tls/' . $dom, rtrim($key) . "\n" . rtrim($crt) . "\n" . ($cab !== '' ? rtrim($cab) . "\n" : ''));
             if ($cab === '') {
                 $warn[] = 'Domain ' . $dom . ' has a certificate but no issuer chain in the backup. It will serve HTTPS, but some clients will not trust it until the chain is supplied or a new certificate is issued.';
@@ -209,13 +209,13 @@ function smpro_mig_da_build_meta(string $metaDir, string $destDir, string $local
             $warn[] = 'Domain ' . $dom . ' had SSL enabled but no certificate is in the backup, so it will come back on plain HTTP until one is issued.';
         }
 
-        // Forwarders: DirectAdmin "alias: target" → cPanel's vf/<domain> "alias: target" (same shape).
+        // Forwarders: DirectAdmin "alias: target" -> cPanel's vf/<domain> "alias: target" (same shape).
         if (is_file($dir . '/email/aliases')) $put('vf/' . $dom, (string)@file_get_contents($dir . '/email/aliases'));
         if (is_file($dir . '/email/vacation.conf')) $put('va/' . $dom, (string)@file_get_contents($dir . '/email/vacation.conf'));
 
         // Mailbox passwords. DirectAdmin keeps them in email/passwd as "<name>:$6$salt$hash" and ships no shadow
         // file at all; cPanel reads them from homedir/etc/<domain>/shadow as "<name>:<hash>:<days>::::::".
-        // Without this the mailboxes restore with their mail intact and nobody able to sign in — and the owner
+        // Without this the mailboxes restore with their mail intact and nobody able to sign in - and the owner
         // finds out when a customer cannot read their email, not during the migration.
         $pwFile = $dir . '/email/passwd';
         if (is_file($pwFile)) {
@@ -233,7 +233,7 @@ function smpro_mig_da_build_meta(string $metaDir, string $destDir, string $local
                 $put('homedir/etc/' . $dom . '/shadow', $shadow);
                 if (is_file($dir . '/email/quota')) $put('homedir/etc/' . $dom . '/quota', (string)@file_get_contents($dir . '/email/quota'));
                 // The matching passwd file carries the account's numeric uid, which does not exist until the
-                // account is created — a guessed one is worse than none, so cPanel rebuilds that side itself.
+                // account is created - a guessed one is worse than none, so cPanel rebuilds that side itself.
                 $warn[] = $boxes . ' mailbox password(s) for ' . $dom . ' were carried over. Sign in to one after the restore to confirm they took, because a mailbox with its mail but a broken login looks completely normal until someone tries to read it.';
             }
         } elseif (is_dir($dir . '/email')) {
@@ -242,7 +242,7 @@ function smpro_mig_da_build_meta(string $metaDir, string $destDir, string $local
     }
     if (!$domCount) $warn[] = 'No domain was found in the backup, so the converted account would serve nothing.';
 
-    /* ---- meta/ — what cPanel checks before it will accept the archive ---- */
+    /* ---- meta/ - what cPanel checks before it will accept the archive ---- */
     $put('meta/version', "2\n");
     $put('meta/hostname', (string)php_uname('n') . "\n");
     $put('meta/mailserver', "dovecot\n");

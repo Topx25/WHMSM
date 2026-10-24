@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 ###############################################################################
-# Safety Monitor Pro (smpro) — adaptive production installer
+# Safety Monitor Pro (smpro) - adaptive production installer
 #
 # Works on ANY cPanel & WHM server regardless of the underlying distro
-# (AlmaLinux / CentOS / CloudLinux / Rocky / RHEL / Ubuntu — cPanel supports
+# (AlmaLinux / CentOS / CloudLinux / Rocky / RHEL / Ubuntu - cPanel supports
 # Ubuntu too). cPanel is detected by the presence of /usr/local/cpanel, NOT by
 # the OS name. Missing optional components (Imunify360, CSF, Exim, JetBackup,
-# chattr, curl, whois) do NOT stop the install — they are reported as warnings
+# chattr, curl, whois) do NOT stop the install - they are reported as warnings
 # and surfaced in the plugin header so you can enable them later if you want.
 #
 # Usage:   sudo bash install.sh
@@ -55,7 +55,7 @@ fi
 # --- 4. install plugin files (always) --------------------------------------
 say "Installing plugin to ${DEST}"
 mkdir -p "$DEST" || die "Cannot create ${DEST} (is this a cPanel server?)."
-# Edition guard: never overlay a WHM-only package on a cPanel-user-edition (Safety Lock) install — it would remove
+# Edition guard: never overlay a WHM-only package on a cPanel-user-edition (Safety Lock) install - it would remove
 # the helpers the account-side root worker needs while leaving its cron and the customers' page in place.
 if [ -f "${DEST}/includes/spqueue.php" ] && [ ! -f "${SRC}/${PLUGIN}/includes/spqueue.php" ] && [ "${SMPRO_FORCE_EDITION:-}" != "1" ]; then
   die "This server runs the cPanel-user edition of SM Pro (Safety Lock). This package is the WHM-only build; installing it would break the account-side worker. Use the cPanel-user release, or set SMPRO_FORCE_EDITION=1 if you really mean to replace it."
@@ -132,7 +132,7 @@ if ! have sensors; then
 fi
 
 # --- 7c. best-effort install of cpulimit (Cooler mode / Auto-Load-Guard CPU cap) ----
-# Without cpulimit the guard can only lower priority (renice/ionice) — which does NOT reduce the
+# Without cpulimit the guard can only lower priority (renice/ionice) - which does NOT reduce the
 # load average. With it, a runaway process is throttled to a hard CPU % (held under the cap), so
 # the load actually comes down. cpulimit lives in EPEL on RHEL-family. Non-blocking best-effort.
 if ! have cpulimit; then
@@ -150,7 +150,7 @@ if ! have cpulimit; then
 fi
 
 # --- 7d. best-effort install of small helper tools (never blocking) ----------
-# whois (IP intelligence), curl (AI/Telegram/WhatsApp), e2fsprogs→chattr (PHP-Harden file locking).
+# whois (IP intelligence), curl (AI/Telegram/WhatsApp), e2fsprogs->chattr (PHP-Harden file locking).
 for pair in "whois:whois:whois" "curl:curl:curl" "chattr:e2fsprogs:e2fsprogs"; do
   bin="${pair%%:*}"; deb="$(printf '%s' "$pair" | cut -d: -f2)"; rpm="$(printf '%s' "$pair" | cut -d: -f3)"
   have "$bin" && continue
@@ -163,7 +163,7 @@ for pair in "whois:whois:whois" "curl:curl:curl" "chattr:e2fsprogs:e2fsprogs"; d
   have "$bin" && ok "${bin} installed" || true
 done
 
-# --- 8. detect OPTIONAL components → warnings (never blocking) --------------
+# --- 8. detect OPTIONAL components -> warnings (never blocking) --------------
 say "Checking optional components"
 chk() { if have "$1" || [ -x "/usr/sbin/$1" ] || [ -x "/usr/local/cpanel/3rdparty/bin/$1" ]; then ok "$2: present"; else warn "$2 not installed — $3"; fi; }
 chk sensors          "lm-sensors"   "header CPU/board TEMP shows '—' (install lm-sensors; VMs may have no sensor)."

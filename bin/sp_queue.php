@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/sp_queue.php — perform the file-lock requests accounts make from cPanel.
+ * bin/sp_queue.php - perform the file-lock requests accounts make from cPanel.
  *
  * Runs every two minutes from /etc/cron.d/smpro-siteprotection. The account page cannot set the immutable bit,
  * so it writes a request into its own home and this worker carries it out as root. The rules that make that safe
@@ -8,7 +8,7 @@
  * out for itself which of that account's files the verb applies to.
  *
  * Two jobs per run: carry out what is waiting, then restore any lock whose one-hour unlock has expired. The
- * second is why the interval is short — an hour that quietly becomes three is a promise broken in the direction
+ * second is why the interval is short - an hour that quietly becomes three is a promise broken in the direction
  * that leaves a site unprotected.
  */
 define('SMPRO_BOOT', 1);

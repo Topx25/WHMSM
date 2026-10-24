@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/lic_refresh.php — detached background license re-check.
+ * bin/lic_refresh.php - detached background license re-check.
  * Spawned (non-blocking) from a page load when the cached verdict is getting stale,
  * so active browsing keeps the license "seen" within the 10-min window WITHOUT adding
  * latency to the page. Does one /api/check and persists the fresh signed verdict.

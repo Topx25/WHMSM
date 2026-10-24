@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/sysupd_tick.php — every 30 minutes: check for updates when the check is due; in automatic mode, apply at the
+ * bin/sysupd_tick.php - every 30 minutes: check for updates when the check is due; in automatic mode, apply at the
  * chosen hour (once a day, packages only, never a reboot). The check runs whatever the mode: "manual" means
  * shown and told, not unseen.
  */

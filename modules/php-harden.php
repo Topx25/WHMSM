@@ -1,12 +1,12 @@
 <?php
 /**
- * modules/php-harden.php — PHP Harden / Safety Lock (per cPanel account).
+ * modules/php-harden.php - PHP Harden / Safety Lock (per cPanel account).
  *
  * Smart stack detection (WordPress, Laravel, OpenCart, Joomla, Drupal, Magento,
  * CodeIgniter, generic PHP) + two protection modes:
- *   • Fast Protection  — chattr +i the critical files of the detected stack and
+ *   • Fast Protection  - chattr +i the critical files of the detected stack and
  *     drop+lock a .htaccess "deny exec" guard inside upload/cache/log folders.
- *   • Custom Protection — a file/folder browser with live lock status (lsattr),
+ *   • Custom Protection - a file/folder browser with live lock status (lsattr),
  *     lock/unlock selected items, permanent or temporary (auto-relock) unlock.
  *
  * Every mutation is POST + CSRF + root + audit, backs up touched files OUTSIDE
@@ -34,12 +34,12 @@ function smpro_ph_actor() { $a = function_exists('smpro_current_actor') ? smpro_
 
 
 /* The file-lock helpers (home/run/has/chattr/chattr_many/locked/locked_map/roots) live in
-   includes/phlock.php — bin/sp_queue.php needs them from cron, and a page module cannot be required
+   includes/phlock.php - bin/sp_queue.php needs them from cron, and a page module cannot be required
    from cron because it runs its router at include time. */
 
 /* ---------------- stack detection ---------------- */
 /* Stack detection (read_head / de / fe / php_count / detect / standard_files / upload_dirs) moved to
-   includes/phstack.php — the account-side plugin needs the same answer and a second copy would drift. */
+   includes/phstack.php - the account-side plugin needs the same answer and a second copy would drift. */
 function smpro_ph_profile($u) {
     $profile = [];
     foreach (smpro_ph_roots($u) as $row) {
@@ -206,7 +206,7 @@ function smpro_ph_remove_htaccess($dir) {
  * Apply protection. $postLockRoots names document roots whose FOLDER should also be locked.
  *
  * Locking a folder is a different promise from locking a file: the immutable attribute on a directory stops any
- * new entry being created in it, so a web shell cannot be dropped there at all — the dc1 takeover of 2026-09-08
+ * new entry being created in it, so a web shell cannot be dropped there at all - a real account takeover
  * began with exactly that, a file added at the top of the site by someone holding the account password. It is not
  * applied by default and never to an arbitrary directory: only to a site's own document root, because that is the
  * only place where "no new file may appear here" is both true and explainable. Uploads live below it and keep
@@ -238,7 +238,7 @@ function smpro_ph_apply($u, $mode, array $postFiles, array $postDirs, array $ext
 
     // Open every root before doing anything else. A folder carrying the immutable attribute cannot accept a new
     // .htaccess or a restored file, so without this a second run would fail against the protection the first one
-    // applied — and would report those failures as if the files were the problem.
+    // applied - and would report those failures as if the files were the problem.
     if ($accountRoots) smpro_ph_chattr_many('-i', $accountRoots);
     // Unlock the whole set, back every file up, then lock the whole set: the same order per file, but two
     // processes for the set instead of two for each file.
@@ -275,7 +275,7 @@ function smpro_ph_apply($u, $mode, array $postFiles, array $postDirs, array $ext
     smpro_audit('php_harden_apply', ['user' => $u, 'mode' => $mode, 'files' => count($fileRows), 'dirs' => count($dirRows), 'errors' => count($errors)]);
     return ['ok' => count($errors) === 0, 'files' => count($fileRows), 'dirs' => count($dirRows), 'roots' => count($rootRows), 'errors' => $errors, 'backup_dir' => $backupDir];
 }
-/** Unlock selected files/folders. $until>0 → temporary (records auto-relock time). */
+/** Unlock selected files/folders. $until>0 -> temporary (records auto-relock time). */
 function smpro_ph_unlock($u, array $postFiles, array $postDirs, $until = 0) {
     $files = []; $dirs = [];
     foreach ($postFiles as $f) { $f = (string)$f; if (smpro_ph_inside($u, $f) && is_file($f)) $files[] = realpath($f) ?: $f; }
@@ -283,7 +283,7 @@ function smpro_ph_unlock($u, array $postFiles, array $postDirs, $until = 0) {
     $done = 0;
     $done += (int)smpro_ph_chattr_many('-i', array_unique($files))['done'];
     // A locked folder is part of what "unlock" means. Leaving it set would keep new files impossible while the
-    // page reported the account released — the same false statement force-unprotect exists to prevent.
+    // page reported the account released - the same false statement force-unprotect exists to prevent.
     $mNow = smpro_ph_load($u) ?: [];
     $rootDirs = array_values(array_filter(array_map(fn($r) => is_array($r) ? (string)($r['dir'] ?? '') : (string)$r, (array)($mNow['locked_roots'] ?? []))));
     if ($rootDirs) { $done += (int)smpro_ph_chattr_many('-i', $rootDirs)['done']; }
@@ -307,7 +307,7 @@ function smpro_ph_unlock($u, array $postFiles, array $postDirs, $until = 0) {
  * The ordinary unlock only touches the paths the browser posted, which is right when an operator is unlocking a
  * few files by hand. It is wrong as a way out of trouble: the caller has to already know what is locked, and a
  * path that was locked but is no longer listed stays locked forever with nothing pointing at it. This takes the
- * opposite approach — it unlocks the union of everything recorded in the manifest and everything the live scan
+ * opposite approach - it unlocks the union of everything recorded in the manifest and everything the live scan
  * can still see locked, and then reports what it could NOT clear rather than reporting a total.
  *
  * That last part is the point. A file with the immutable bit set on a filesystem that has since been remounted
@@ -317,11 +317,11 @@ function smpro_ph_unlock($u, array $postFiles, array $postDirs, $until = 0) {
 function smpro_ph_force_unprotect($u, array $profile, $reason, $by, $scope = 'all') {
     $files = []; $dirs = [];
 
-    // Everything the manifest remembers locking — authoritative, and the only record of paths the current scan
+    // Everything the manifest remembers locking - authoritative, and the only record of paths the current scan
     // no longer proposes (a stack that changed, a folder that was renamed).
     $m = smpro_ph_load($u) ?: [];
     // smpro_ph_apply writes these as protected_files[].path and deny_php_dirs[].dir. Reading 'files'/'dirs'
-    // instead would find nothing and still report success — the exact failure this function exists to avoid.
+    // instead would find nothing and still report success - the exact failure this function exists to avoid.
     foreach ((array)($m['protected_files'] ?? []) as $f) { $p = is_array($f) ? (string)($f['path'] ?? '') : (string)$f; if ($p !== '') $files[] = $p; }
     foreach ((array)($m['deny_php_dirs']   ?? []) as $d) { $p = is_array($d) ? (string)($d['dir']  ?? '') : (string)$d; if ($p !== '') $dirs[]  = $p; }
     // A locked document root is cleared with the files: chattr treats a directory the same way, and leaving one
@@ -380,8 +380,8 @@ function smpro_ph_force_unprotect($u, array $profile, $reason, $by, $scope = 'al
  * has passed is re-locked now (chattr +i on files, deny-.htaccess restored on dirs), and its status
  * flipped back to `locked`. Previously nothing ever consumed `pending_relock`, so a "temporary"
  * unlock stayed open forever while the UI promised auto-relock. Returns the number of accounts re-locked.
- * (php-harden's helpers only load when this page is rendered, so this runs at render — the earliest
- * point the functions exist — closing the gap at latest when an admin opens the page.)
+ * (php-harden's helpers only load when this page is rendered, so this runs at render - the earliest
+ * point the functions exist - closing the gap at latest when an admin opens the page.)
  */
 function smpro_ph_relock_due() {
     $now = time(); $relocked = 0;
@@ -392,7 +392,7 @@ function smpro_ph_relock_due() {
         if (!is_array($pr) || (int)($pr['until'] ?? 0) === 0 || (int)$pr['until'] > $now) continue;   // not due yet
         $u = (string)($m['user'] ?? basename($mf, '.json'));
         // Force-unprotected since the temporary unlock was granted. Re-locking now would quietly reverse a later,
-        // more deliberate decision — so the pending re-lock is dropped and recorded instead of being carried out.
+        // more deliberate decision - so the pending re-lock is dropped and recorded instead of being carried out.
         if (function_exists('smpro_ph_ign_has') && smpro_ph_ign_has($u, 'auto')) {
             $m['status'] = 'unlocked'; $m['unlock_until'] = ''; unset($m['pending_relock']);
             smpro_ph_save($u, $m);
@@ -481,10 +481,10 @@ function smpro_ph_ww_rows(array $rows) {
 }
 /**
  * SAFE fix: clear ONLY the o+w bit (chmod o-w) on files found by a FRESH server-side
- * scan — a client-supplied path list is never trusted. Runs as root, so EVERY path
+ * scan - a client-supplied path list is never trusted. Runs as root, so EVERY path
  * must pass smpro_path_safe() (rejects symlinks + realpath-confines to /home/<u>)
  * immediately before its own chmod; anything that fails is skipped, never chmod'ed.
- * Per-file on the validated set — never a blanket recursive chmod. Previous modes
+ * Per-file on the validated set - never a blanket recursive chmod. Previous modes
  * are saved to a manifest under the backup dir (same reversibility convention as
  * the apply/unlock backups).
  */
@@ -495,20 +495,20 @@ function smpro_ph_ww_fix($u) {
     $acctUid = function_exists('posix_getpwnam') ? (int)(@posix_getpwnam($u)['uid'] ?? -1) : -1;
     foreach ($rows as $r) {
         $safe = function_exists('smpro_path_safe') ? smpro_path_safe($r['path'], [smpro_user_home($u)]) : '';
-        if ($safe === '' || is_link($safe) || !is_file($safe)) { $skipped++; continue; }  // symlink / escapes the account → NEVER chmod
+        if ($safe === '' || is_link($safe) || !is_file($safe)) { $skipped++; continue; }  // symlink / escapes the account -> NEVER chmod
         clearstatcache(true, $safe);
         $perms = @fileperms($safe);
         if ($perms === false) { $skipped++; continue; }
-        if (!($perms & 0002)) continue;                          // already clean (raced) — nothing to do
+        if (!($perms & 0002)) continue;                          // already clean (raced) - nothing to do
         // SECURITY (privesc, race): chmod() follows a symlink. A customer can swap $safe's leaf for a
-        // symlink → /etc/shadow between the checks above and the chmod below, turning a 0000 root file
+        // symlink -> /etc/shadow between the checks above and the chmod below, turning a 0000 root file
         // world-readable. Re-verify identity IMMEDIATELY before chmod: still not a symlink, SAME inode as
         // resolve time, and account-owned (never root uid 0, never another account). The owner check also
         // neutralises the hardlink-to-root vector on hosts where fs.protected_hardlinks=0 (a hardlink keeps
-        // the root file's uid 0 → refused), so this no longer depends solely on the kernel's protections.
+        // the root file's uid 0 -> refused), so this no longer depends solely on the kernel's protections.
         $v = @lstat($safe);
         if ($v === false || ($v['mode'] & 0170000) === 0120000) { $skipped++; continue; }   // gone / became a symlink
-        if ((int)$v['uid'] === 0 || ($acctUid >= 0 && (int)$v['uid'] !== $acctUid)) { $skipped++; continue; }  // root/foreign-owned → refuse
+        if ((int)$v['uid'] === 0 || ($acctUid >= 0 && (int)$v['uid'] !== $acctUid)) { $skipped++; continue; }  // root/foreign-owned -> refuse
         $perms = (int)$v['mode'] & 0777;
         if (!($perms & 0002)) continue;
         if (@chmod($safe, $perms & ~0002)) {
@@ -748,7 +748,7 @@ smpro_layout_header('PHP Harden');
 
 <?php
 /* The state has to be readable where the reader is looking. The "ignored" pill sits in the hero above, and the
-   list that explains it was at the very bottom of a long page, past two large tables — so an operator who had
+   list that explains it was at the very bottom of a long page, past two large tables - so an operator who had
    just excluded an account looked at the top of the page and reasonably concluded nothing had happened. This
    says it in full, in place, and offers the way out from here. */
 $igNow = smpro_ph_ign_get($u);
@@ -1267,7 +1267,7 @@ if ($igNow): ?>
 </script>
 <?php endif; ?>
 <script>
-/* The ignore list is server-wide, so it renders with or without an account selected — its removal handler
+/* The ignore list is server-wide, so it renders with or without an account selected - its removal handler
    cannot live inside the per-account script above, which is not emitted when no account is chosen. */
 (function(){
   var CSRF=<?= json_encode($csrf) ?>;
@@ -1344,7 +1344,7 @@ tr.fw-pghide{display:none !important}
 </style>
 <script>
 (function(){
-  // make every section card collapsible — click its header to open/close; the choice is remembered per section
+  // make every section card collapsible - click its header to open/close; the choice is remembered per section
   var KEY='smpro:php-harden:open', SEL='.card > .ph-card-h', EXTRA='';
   var open={};
   try{ open=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(err){ open={}; }

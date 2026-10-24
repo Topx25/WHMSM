@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/slmaint.php — Safety Lock and the panel's own maintenance.
+ * includes/slmaint.php - Safety Lock and the panel's own maintenance.
  *
  * WHY. Safety Lock keeps an account's .htaccess and the other files a break-in rewrites immutable (chattr +i), which
  * root itself cannot write through. cPanel's PHP update hook (009-phpconf.pl, run by dnf for every PHP package) and

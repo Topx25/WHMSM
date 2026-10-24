@@ -1,10 +1,10 @@
 <?php
 /**
- * modules/ai-providers.php — AI Providers page.
+ * modules/ai-providers.php - AI Providers page.
  * Configure the AI provider used across Safety Monitor Pro for analysis & recommendations.
  * The free-first provider catalog (with usage) renders first; the full engine (live model
  * fetch / testing) is under "Advanced". All config + API keys are stored encrypted inside the
- * plugin's own data directory — nothing is read from or written to any other product's folders.
+ * plugin's own data directory - nothing is read from or written to any other product's folders.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 

@@ -1,14 +1,14 @@
 <?php
 /**
- * modules/forensics-audit.php — Forensics / Audit (read-only investigation).
+ * modules/forensics-audit.php - Forensics / Audit (read-only investigation).
  *
  * A full investigation section, shared-hosting safe:
  *  - Findings dashboard: consolidated, explained findings (severity, confidence,
- *    what-it-means, recommended action, evidence) from LIGHT sources only —
+ *    what-it-means, recommended action, evidence) from LIGHT sources only -
  *    Imunify360 active threats + persistence checks (cron / SSH keys / dotfiles).
  *    Cached (5 min) so navigation is instant; "Re-scan" forces a fresh sweep.
  *  - Saved Reports: snapshot findings to disk (90-day retention), multi-select
- *    delete (AJAX), export CSV / HTML / PDF — same pattern as Account Audit.
+ *    delete (AJAX), export CSV / HTML / PDF - same pattern as Account Audit.
  *  - Deep file scans (recent PHP / PHP-in-uploads / .htaccess) stay ON-DEMAND,
  *    single-account, throttled (timeout + nice + ionice). Never auto-scans /home.
  */
@@ -54,7 +54,7 @@ function smpro_fa_path($user) { if ($user === 'all' || $user === '') return '/ho
 function smpro_fa_wrap($inner, $t = 90) { return 'timeout ' . $t . ' nice -n ' . SMPRO_SCAN_NICE . ' ionice -c3 ' . $inner; }
 
 /* ===========================================================================
- *  FINDINGS — the consolidated, explained investigation data (light sources).
+ *  FINDINGS - the consolidated, explained investigation data (light sources).
  *  Each finding: sev, conf, cat, account, title, evidence, ref, means, action.
  * ========================================================================= */
 function smpro_fa_sevrank($s) { return ['critical'=>4,'high'=>3,'medium'=>2,'info'=>1][$s] ?? 0; }
@@ -63,7 +63,7 @@ function smpro_fa_collect_findings($user) {
     $f = [];
     $scope = ($user === 'all' || $user === '') ? '' : $user;
 
-    /* 1) Imunify360 active malware — CRITICAL, high confidence */
+    /* 1) Imunify360 active malware - CRITICAL, high confidence */
     if (is_executable('/usr/bin/imunify360-agent')) {
         $j = json_decode((string)@shell_exec('timeout 30 /usr/bin/imunify360-agent malware malicious list --limit 500 --json 2>/dev/null'), true);
         foreach (($j['items'] ?? []) as $r) {
@@ -71,8 +71,8 @@ function smpro_fa_collect_findings($user) {
             if ($scope !== '' && $acct !== $scope) continue;
             $fam = preg_match('/SMW-[A-Z]+-\d+-(.+?)-\d+$/', (string)($r['type'] ?? ''), $m) ? $m[1] : ((string)($r['type'] ?? '') ?: 'malware');
             $mfile = (string)($r['file'] ?? '');
-            if ($mfile !== '' && function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($mfile)) continue;   // trusted WP Guard file / neutralized quarantine → not a finding
-            // Imunify keeps CLEANED files on the malicious list with status "cleanup_done" — the file still
+            if ($mfile !== '' && function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($mfile)) continue;   // trusted WP Guard file / neutralized quarantine -> not a finding
+            // Imunify keeps CLEANED files on the malicious list with status "cleanup_done" - the file still
             // exists on disk but the infection is gone. Reporting those as live CRITICAL malware buried the
             // real detections under a mass of false alarms (they dominate the list on a cleaned server).
             $mStatus = strtolower((string)($r['status'] ?? ''));
@@ -96,7 +96,7 @@ function smpro_fa_collect_findings($user) {
         }
     }
 
-    /* 2) Cron persistence — CRITICAL when high-confidence pattern matches */
+    /* 2) Cron persistence - CRITICAL when high-confidence pattern matches */
     $sus = '/base64|\beval\b|\/tmp\/|\/dev\/shm|\/dev\/tcp|\bnc\b\s+-|python\s+-c|perl\s+-e|\bcurl\b[^|\n]*\|\s*(?:ba)?sh|\bwget\b[^|\n]*\|\s*(?:ba)?sh|\/\.[a-z0-9_.-]+\.(?:sh|php|pl|py)\b/i';
     $cronFiles = $scope === '' ? array_merge(glob('/var/spool/cron/*') ?: [], ['/etc/crontab'], glob('/etc/cron.d/*') ?: []) : ['/var/spool/cron/' . $scope];
     foreach ($cronFiles as $cf) {
@@ -118,7 +118,7 @@ function smpro_fa_collect_findings($user) {
         }
     }
 
-    /* 3) SSH authorized_keys — passwordless access / persistence (trusted keys suppressed) */
+    /* 3) SSH authorized_keys - passwordless access / persistence (trusted keys suppressed) */
     $allow = smpro_fa_allow_load();
     $keyFiles = $scope === '' ? array_merge(['/root/.ssh/authorized_keys'], glob('/home/*/.ssh/authorized_keys') ?: []) : [smpro_user_home($scope) . '/.ssh/authorized_keys'];
     foreach ($keyFiles as $kf) {
@@ -129,8 +129,8 @@ function smpro_fa_collect_findings($user) {
         foreach (file($kf, FILE_IGNORE_NEW_LINES) ?: [] as $ln) {
             $ln = trim($ln); if ($ln === '' || $ln[0] === '#') continue;
             if (!preg_match('/^(?:[a-z0-9-]+\s+)?(ssh-\S+|ecdsa-\S+|sk-\S+)\s+\S+\s*(.*)$/i', $ln, $m)) continue;
-            if (stripos($ln, 'smpro') !== false) continue;             // our own management key — known-good, never flag
-            if (isset($allow[smpro_fa_key_sig($acct, $ln)])) continue;   // user-trusted — do not flag
+            if (stripos($ln, 'smpro') !== false) continue;             // our own management key - known-good, never flag
+            if (isset($allow[smpro_fa_key_sig($acct, $ln)])) continue;   // user-trusted - do not flag
             $cmt = trim($m[2]) ?: '(no comment)';
             $f[] = [
                 'sev'=> $isRoot ? 'high' : 'medium','conf'=>'medium','cat'=>'SSH key access','account'=>$acct,
@@ -149,7 +149,7 @@ function smpro_fa_collect_findings($user) {
         }
     }
 
-    /* 4) Shell-init / PHP-ini injections — login-time exec */
+    /* 4) Shell-init / PHP-ini injections - login-time exec */
     $dsus = '/curl|wget|base64|eval|python\s+-c|perl\s+-e|\bnc\b|\/dev\/tcp|history\s*-c|chattr|auto_prepend|auto_append/i';
     $homes = $scope === '' ? array_slice(glob('/home/*', GLOB_ONLYDIR) ?: [], 0, 600) : [smpro_user_home($scope)];
     foreach ($homes as $h) {
@@ -178,7 +178,7 @@ function smpro_fa_collect_findings($user) {
 }
 
 /* ===========================================================================
- *  REMEDIATION — executable, reversible actions on a finding.
+ *  REMEDIATION - executable, reversible actions on a finding.
  *  Safety rails: allowed-path whitelist, backup before edit, preserve owner/
  *  mode, never touch the Safety Monitor management key, audit + CSRF + root.
  * ========================================================================= */
@@ -186,7 +186,7 @@ define('SMPRO_FA_QUAR', SMPRO_VARLIB . '/quarantine/forensics');
 define('SMPRO_FA_MANIFEST', SMPRO_VARLIB . '/quarantine/forensics/manifest.json');
 
 function smpro_fa_allowed_target($action, $file) {
-    // SECURITY: reject a symlink target outright — a customer owns /home/<acct>/ and could replace
+    // SECURITY: reject a symlink target outright - a customer owns /home/<acct>/ and could replace
     // .bashrc / .ssh/authorized_keys with a symlink to /root/... or /etc/shadow; the backup-copy would
     // then leak that root file. (Also blocks a symlinked path component via the realpath re-check below.)
     if (is_link($file)) return false;
@@ -195,13 +195,13 @@ function smpro_fa_allowed_target($action, $file) {
     elseif ($action === 'dotfile_comment')  $ok = (bool)preg_match('#^/home/[^/]+/\.(bashrc|bash_profile|profile|user\.ini)$#', $file);
     elseif ($action === 'sshkey_remove')    $ok = (bool)preg_match('#^(?:/root|/home/[^/]+)/\.ssh/authorized_keys$#', $file);
     if (!$ok) return false;
-    // the resolved real path must STILL equal the (canonical) allowed path — any symlink/.. resolution = reject
+    // the resolved real path must STILL equal the (canonical) allowed path - any symlink/.. resolution = reject
     $rp = @realpath($file);
     if ($rp === false) return false;
     if ($rp === $file) return true;
     // Allow a SERVER-LEVEL /home symlink (e.g. /home -> /home2, or accounts on /home2/home3): resolve ONLY
     // the /home prefix and keep the account + suffix literal. An attacker symlink (a parent dir or the
-    // target pointing at /root or another account) makes the fully-resolved $rp differ from this → rejected.
+    // target pointing at /root or another account) makes the fully-resolved $rp differ from this -> rejected.
     if (strpos($file, '/home/') === 0) {
         $homeReal = @realpath('/home');
         if ($homeReal !== false && $homeReal !== '/home' && $rp === $homeReal . substr($file, 5)) return true;
@@ -252,16 +252,16 @@ function smpro_fa_backup($file) {
 }
 function smpro_fa_rewrite($file, $lines) {
     // SECURITY: the account owner controls their /home dir. The old code wrote to a PREDICTABLE
-    // "$file.smprotmp" via symlink-following file_put_contents — an account could pre-plant that path as a
+    // "$file.smprotmp" via symlink-following file_put_contents - an account could pre-plant that path as a
     // symlink to /root/.ssh/authorized_keys and have root write the (still attacker-controlled) rewritten
     // content through it = root SSH. Now: reject a symlinked target, and write to an UNPREDICTABLE O_EXCL
     // temp (a planted symlink makes fopen 'xb' fail rather than being followed), then atomic-rename.
     if (is_link($file)) return false;
     // SECURITY (privesc, race): smpro_fa_allowed_target() validated the parent's realpath in a SEPARATE
     // earlier function, with a file-read window in between. A customer could swap a directory component
-    // (e.g. .ssh → /root/.ssh) during that window and redirect the O_EXCL-temp + rename below into a root
+    // (e.g. .ssh -> /root/.ssh) during that window and redirect the O_EXCL-temp + rename below into a root
     // dir = root SSH overwrite. Re-verify the parent HERE, at write time: realpath(dirname) must equal the
-    // literal parent (only a server-level /home → /home2 symlink is tolerated, same rule as allowed_target).
+    // literal parent (only a server-level /home -> /home2 symlink is tolerated, same rule as allowed_target).
     $dir = dirname($file); $rpDir = @realpath($dir);
     if ($rpDir === false) return false;
     $okDir = ($rpDir === $dir);
@@ -274,7 +274,7 @@ function smpro_fa_rewrite($file, $lines) {
     if (is_link($file)) return false;                // leaf swapped to a symlink after the parent check
     $uid = @fileowner($file); $gid = @filegroup($file); $perm = @fileperms($file) & 0777;
     $tmp = $file . '.smpro-' . substr(bin2hex(@random_bytes(6) ?: pack('N', mt_rand())), 0, 12) . '.tmp';
-    $fh = @fopen($tmp, 'xb');                                        // O_CREAT|O_EXCL → fails on a planted symlink/file
+    $fh = @fopen($tmp, 'xb');                                        // O_CREAT|O_EXCL -> fails on a planted symlink/file
     if ($fh === false) return false;
     $ok = @fwrite($fh, implode("\n", $lines) . "\n") !== false;
     @fclose($fh);
@@ -286,7 +286,7 @@ function smpro_fa_rewrite($file, $lines) {
     return true;
 }
 function smpro_fa_remediate($action, $file, $rawLine, $imid) {
-    /* Imunify cleanup — ASYNC (queued). Keeps an original backup, restorable via restore-original. */
+    /* Imunify cleanup - ASYNC (queued). Keeps an original backup, restorable via restore-original. */
     if ($action === 'malware_quarantine') {
         if (!is_executable('/usr/bin/imunify360-agent')) return ['ok'=>false,'msg'=>'Imunify360 not available.'];
         $id = preg_replace('/[^0-9]/', '', (string)$imid);
@@ -295,13 +295,13 @@ function smpro_fa_remediate($action, $file, $rawLine, $imid) {
         $j = json_decode($out, true);
         $err = is_array($j) ? (($j['success'] ?? null) === false) : (stripos($out, 'error') !== false || trim($out) === '');
         if ($err) return ['ok'=>false,'msg'=>'Imunify cleanup command failed.'];
-        // cleanup runs in the background — report the queue status so the user knows it is processing
+        // cleanup runs in the background - report the queue status so the user knows it is processing
         $st = json_decode((string)@shell_exec('timeout 25 /usr/bin/imunify360-agent malware cleanup status --json 2>/dev/null'), true);
         $status = $st['items']['status'] ?? 'queued';
         smpro_fa_manifest_add(['kind'=>'imunify','action'=>'malware_quarantine','imid'=>$id,'file'=>(string)$file,'account'=>$file?smpro_fx_file_owner($file):'', 'label'=>'Imunify cleanup (file ' . basename((string)$file) . ')']);
         return ['ok'=>true,'msg'=>'Cleanup queued in Imunify (async, status: ' . $status . '). Press Re-scan in ~1 min to confirm. If the file was ALREADY cleaned and only flagged for leftover traces, use “Remove from list” instead.'];
     }
-    /* Remove the entry from Imunify's malicious list WITHOUT touching the file — for already-cleaned / reviewed files. */
+    /* Remove the entry from Imunify's malicious list WITHOUT touching the file - for already-cleaned / reviewed files. */
     if ($action === 'malware_removelist') {
         if (!is_executable('/usr/bin/imunify360-agent')) return ['ok'=>false,'msg'=>'Imunify360 not available.'];
         $id = preg_replace('/[^0-9]/', '', (string)$imid);
@@ -410,7 +410,7 @@ function smpro_fa_summary($findings) {
 }
 
 /* ===========================================================================
- *  PHASE 4 — Incident timeline + IOC export.
+ *  PHASE 4 - Incident timeline + IOC export.
  *  Pulls every thread (malware, persistence, keys, foreign logins) into one
  *  chronological story and a copy/paste-ready IOC list for blocking & sharing.
  * ========================================================================= */
@@ -536,7 +536,7 @@ th{background:var(--bg);font-size:10px;text-transform:uppercase;color:#475569}
        . "<div class=\"c\"><div class=\"l\">Persistence</div><div class=\"v\">" . (int)$s['persist'] . "</div></div>"
        . "<div class=\"c\"><div class=\"l\">Accounts</div><div class=\"v\">" . (int)$s['accounts'] . "</div></div></div>";
 
-    // Affected accounts — per-account rollup (mirrors the live page)
+    // Affected accounts - per-account rollup (mirrors the live page)
     if (!empty($s['by_account'])) {
         echo "<h2 class=\"sec\">Affected accounts</h2><table><thead><tr><th>Account</th><th>Findings</th><th>Categories</th></tr></thead><tbody>";
         foreach ($s['by_account'] as $acct => $info) {
@@ -556,7 +556,7 @@ th{background:var(--bg);font-size:10px;text-transform:uppercase;color:#475569}
     }
     echo "</tbody></table>";
 
-    // Incident timeline — chronological story
+    // Incident timeline - chronological story
     echo "<h2 class=\"sec\">Incident timeline</h2>";
     if (!$incidents) echo "<p class=\"emptynote\">No dated events for this scope.</p>";
     else {
@@ -569,7 +569,7 @@ th{background:var(--bg);font-size:10px;text-transform:uppercase;color:#475569}
         echo "</tbody></table>";
     }
 
-    // Foreign logins — outside home countries, with IP intel
+    // Foreign logins - outside home countries, with IP intel
     echo "<h2 class=\"sec\">Foreign logins (outside home countries)</h2>";
     if (!$timeline) echo "<p class=\"emptynote\">No foreign login attempts in the reviewed window.</p>";
     else {
@@ -627,10 +627,10 @@ function smpro_fa_scan($type, $user, $path, $days) {
         $target = ($user === 'all' || $user === '') ? '/home/*/public_html' : escapeshellarg($path);
         $base = 'find ' . $target . " -maxdepth 6 " . $prune . " -name '.htaccess' -print0 2>/dev/null | head -z -n 20000";
         // ONE grep over all .htaccess (file:line:content). The normal cPanel handler is in nearly every file,
-        // so a candidate pre-filter would overflow — instead grep all matching lines once, then classify in PHP.
+        // so a candidate pre-filter would overflow - instead grep all matching lines once, then classify in PHP.
         $grepCmd = smpro_fa_wrap($base . " | xargs -0 -r grep -HnEi 'auto_prepend_file|auto_append_file|php_value[[:space:]]+auto|AddHandler.*php|SetHandler.*php' 2>/dev/null | head -20000", 150);
         $matches = array_filter(array_map('trim', explode("\n", (string)@shell_exec($grepCmd))));
-        // standard PHP extensions — a handler that only maps these is the normal cPanel/MultiPHP version selector, NOT a threat
+        // standard PHP extensions - a handler that only maps these is the normal cPanel/MultiPHP version selector, NOT a threat
         $stdExt = ['php','php4','php5','php52','php53','php54','php55','php56','php7','php70','php71','php72','php73','php74','php8','php80','php81','php82','php83','phtml','phps'];
         $classify = function ($L) use ($stdExt) {
             $L = trim($L);
@@ -640,7 +640,7 @@ function smpro_fa_scan($type, $user, $path, $days) {
             if (preg_match('/(?:Add|Set)Handler/i', $L) && stripos($L, 'php') !== false) {
                 preg_match_all('/\.([a-z0-9]+)\b/i', $L, $mm);
                 $bad = array_values(array_diff(array_map('strtolower', $mm[1]), $stdExt));
-                if (!$bad) return null;   // maps only real PHP extensions → normal cPanel handler, ignore
+                if (!$bad) return null;   // maps only real PHP extensions -> normal cPanel handler, ignore
                 return ['Handler maps non-PHP type', 'Forces ' . implode(', ', array_map(fn($e) => '.' . $e, $bad)) . ' to execute as PHP — a common trick to run a web shell disguised as an image / text / odd-extension file.'];
             }
             return null;
@@ -690,7 +690,7 @@ function smpro_fa_scan($type, $user, $path, $days) {
     }
     // WP Guard allowlist: drop this product's OWN verified security files + what it already neutralized
     // (mu-plugins/wp-guard.php, plugins/wp-guard/, hostguard-quarantine/**, its log & "engine off" .htaccess).
-    // uploads/*.php, Protector.php and injected index.php are NOT trusted — they stay flagged.
+    // uploads/*.php, Protector.php and injected index.php are NOT trusted - they stay flagged.
     $wgExcluded = 0;
     if ($rows && function_exists('smpro_wpguard_trusted')) {
         $rows = array_values(array_filter($rows, function ($r) use (&$wgExcluded) {
@@ -704,7 +704,7 @@ function smpro_fa_scan($type, $user, $path, $days) {
 
 function smpro_fa_is_local_ip($ip) {
     if ($ip === '' || $ip === '::1' || strpos($ip, '127.') === 0) return true;
-    if (filter_var($ip, FILTER_VALIDATE_IP) === false) return true;                 // not a real IP → noise
+    if (filter_var($ip, FILTER_VALIDATE_IP) === false) return true;                 // not a real IP -> noise
     if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) return true; // private/reserved
     return false;
 }
@@ -718,7 +718,7 @@ function smpro_fa_login_timeline($limit = 40) {
     foreach (array_reverse(explode("\n", $raw)) as $l) {
         $l = trim($l); if ($l === '') continue;
         $ip = ''; $svc = ''; $user = ''; $time = '';
-        // ONE dash — current cPanel writes  [ts] lvl [svc] IP - user "REQUEST" MSG  (the old pattern demanded a
+        // ONE dash - current cPanel writes  [ts] lvl [svc] IP - user "REQUEST" MSG  (the old pattern demanded a
         // second dash and so matched none of the log, leaving the foreign-login timeline blank).
         if (preg_match('/^\[([^\]]+)\]\s+\S+\s+\[([^\]]+)\]\s+(\S+)\s+-\s+(\S+)\s+/', $l, $m)) { $time=$m[1]; $svc=$m[2]; $ip=$m[3]; $user=rawurldecode($m[4]); }
         elseif (preg_match('/^(\S+)\s+\S+\s+(\S+)\s+\[([^\]]+)\]\s+"([^"]*)"\s+(.+)$/', $l, $m)) { $svc = preg_match('/\b([a-z0-9_]+):/i',$m[5],$s)?$s[1]:'cpanel'; $time=$m[3]; $ip=$m[1]; $user=rawurldecode($m[2]); }
@@ -735,7 +735,7 @@ function smpro_fa_login_timeline($limit = 40) {
     foreach ($cand as $c) {
         $intel = function_exists('smpro_ip_intel') ? smpro_ip_intel($c['ip']) : ['country'=>'','provider'=>'','asn'=>''];
         $cc = strtoupper(trim((string)($intel['country'] ?? '')));
-        if (in_array($cc, smpro_im_home_regions(), true)) { $hiddenArab++; continue; }   // configured home regions — not foreign
+        if (in_array($cc, smpro_im_home_regions(), true)) { $hiddenArab++; continue; }   // configured home regions - not foreign
         $c['country']  = $intel['country']  ?? '';
         $c['provider'] = $intel['provider'] ?? '';
         $c['asn']      = $intel['asn']      ?? '';
@@ -778,7 +778,7 @@ function smpro_fa_scan_card($scan, $result, $user, $scanTypes) {
     <?php
 }
 
-/** Aggregate Imunify360 detection HISTORY (all events, incl DB injections) — cached 5 min. */
+/** Aggregate Imunify360 detection HISTORY (all events, incl DB injections) - cached 5 min. */
 function smpro_fa_imunify_history($scope = '') {
     if (!is_executable('/usr/bin/imunify360-agent')) return null;
     $key = SMPRO_FA_CACHE . '/imhist_' . ($scope === '' ? 'all' : preg_replace('/[^a-zA-Z0-9._-]/','',$scope)) . '.json';
@@ -823,7 +823,7 @@ if (($_GET['ajax'] ?? '') === 'scan') {
     } else { echo '<div class="fa-empty">Unknown scan type.</div>'; }
     exit;
 }
-/* ---- AJAX: Imunify history aggregation (lazy panel — heavy, loaded after the page) ---- */
+/* ---- AJAX: Imunify history aggregation (lazy panel - heavy, loaded after the page) ---- */
 if (($_GET['ajax'] ?? '') === 'imhist') {
     smpro_fa_render_imhist(smpro_fa_imunify_history($user === 'all' ? '' : $user), $user);
     exit;
@@ -891,7 +891,7 @@ if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'ai_analyze') {
         $acct = trim((string)($_POST['acct'] ?? '')); $ev = trim((string)($_POST['ev'] ?? '')); $ref = (string)($_POST['ref'] ?? '');
         $excerpt = '';
         // SECURITY: only ever read a file the SCANNER ACTUALLY FLAGGED (ref must match a current finding) AND not a
-        // sensitive system file — otherwise $_POST['ref'] would be an "read any root file → ship to external AI" oracle.
+        // sensitive system file - otherwise $_POST['ref'] would be an "read any root file -> ship to external AI" oracle.
         if ($ref !== '' && is_file($ref) && is_readable($ref) && @filesize($ref) < 3000000) {
             $rp = realpath($ref);
             $allowed = [];
@@ -958,7 +958,7 @@ if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'delete_malware') {
     echo json_encode(['ok'=>true,'msg'=>'File DELETED. Backed up outside the account → ' . $bak . ' · report #' . $rid . ' (restorable).'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
-/* ---- AJAX: AI decision plan — structured, executable recommendations per finding ---- */
+/* ---- AJAX: AI decision plan - structured, executable recommendations per finding ---- */
 if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'ai_decide') {
     smpro_require_valid_csrf('fa_remediate'); smpro_require_root();
     header('Content-Type: application/json');
@@ -1228,7 +1228,7 @@ $faNav = array_values(array_filter([
 <nav class="fw-nav" id="fwNav"><?php foreach ($faNav as [$id, $lbl]): ?><a href="#<?= $id ?>" data-go="<?= $id ?>"><?= $lbl ?></a><?php endforeach; ?><span class="sp"></span><button type="button" class="fw-navx" id="fwOpenAll">expand all</button><button type="button" class="fw-navx" id="fwCloseAll">collapse all</button></nav>
 
 <?php
-/* ===== Comprehensive Account Forensics — flagged-file deep report ("Open Forensics") ===== */
+/* ===== Comprehensive Account Forensics - flagged-file deep report ("Open Forensics") ===== */
 $fxUser = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_GET['fx_user'] ?? ''));
 $fxFile = (string)($_GET['fx_file'] ?? '');
 $fxFile = ($fxUser !== '' && $fxFile !== '' && function_exists('smpro_path_safe')) ? smpro_path_safe($fxFile, [smpro_user_home($fxUser)]) : '';   // resolved, no .., no link, inside the home
@@ -1557,7 +1557,7 @@ function smpro_fa_render_imhist($imHist, $user) {
     <table class="smpro-table"><tbody>
       <?php
       // Auth/system/mail logs are named differently across the OS families cPanel supports (RHEL-like:
-      // secure / messages / maillog — Ubuntu: auth.log / syslog / mail.log). Show whichever this server
+      // secure / messages / maillog - Ubuntu: auth.log / syslog / mail.log). Show whichever this server
       // actually uses, so an Ubuntu box does not render three "no" rows that read as missing logs while
       // its real ones are never listed at all.
       $lgList = ['/usr/local/cpanel/logs/access_log', '/usr/local/cpanel/logs/login_log'];
@@ -1634,7 +1634,7 @@ html[data-theme=dark] .smpro-table tbody tr:nth-child(even) td{background:rgba(2
 .fa-afflbl{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px}
 .fa-chip{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:4px 11px;text-decoration:none;color:var(--ink)}
 .fa-chip:hover{border-color:var(--brand);background:var(--brand-bg)}.fa-chipn{background:var(--dang-bg);color:var(--dang);border-radius:20px;padding:0 7px;font-weight:700;font-size:11px}
-/* Affected-accounts card — contained, searchable, worst-first (replaces the unbounded chip wall) */
+/* Affected-accounts card - contained, searchable, worst-first (replaces the unbounded chip wall) */
 .fa-affcard{padding:14px 16px;margin:14px 0}
 .fa-affhd{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .fa-affhd b{font-size:14px}
@@ -1828,7 +1828,7 @@ button.fa-scan{text-align:left;font:inherit}
       else{b.disabled=false;b.innerHTML=lbl;alert((j&&j.msg)||(j&&j.error)||'Failed');}
     }).catch(function(){b.disabled=false;b.innerHTML=lbl;alert('Request failed');});
   });
-  // per-finding AI verdict — rendered INLINE in the decision panel (no popup)
+  // per-finding AI verdict - rendered INLINE in the decision panel (no popup)
   document.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('.faAsk'); if(!b)return;
     inlShow('<div class="fa-aispin">&#129302; Analyzing this finding…</div>'); if(inlMeta)inlMeta.textContent='';

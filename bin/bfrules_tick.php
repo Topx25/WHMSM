@@ -1,13 +1,13 @@
 <?php
 /**
- * bin/bfrules_tick.php — Break-in rules worker.
+ * bin/bfrules_tick.php - Break-in rules worker.
  *
  * Installed as /etc/cron.d/smpro-bfrules while the rules are enabled, removed when they are turned off. This is
  * the whole point of the rules: an attack that starts at 3am is blocked at 3am, not when somebody next opens the
  * Break-in Report.
  *
- * It rebuilds the networks from this server's own logs through includes/breakin.php — the same code the page
- * uses — so the worker and the page can never hold two different opinions about what an attack is. Nothing here
+ * It rebuilds the networks from this server's own logs through includes/breakin.php - the same code the page
+ * uses - so the worker and the page can never hold two different opinions about what an attack is. Nothing here
  * takes a number from anywhere else.
  *
  * A run that could not read the logs exits without blocking and says so in the record. "Could not look" is not

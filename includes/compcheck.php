@@ -1,6 +1,6 @@
 <?php
 /**
- * compcheck.php — Compromise Check: is this server, and are these accounts, showing the marks a break-in leaves?
+ * compcheck.php - Compromise Check: is this server, and are these accounts, showing the marks a break-in leaves?
  *
  * WHERE THIS COMES FROM. Two things cPanel's own support material says, and one thing the attackers in it did:
  *

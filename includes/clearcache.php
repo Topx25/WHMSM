@@ -1,13 +1,13 @@
 <?php
 /**
- * includes/clearcache.php — Site Doctor "Clear application cache" (smpro_inv_clearcache*). Platform-aware,
+ * includes/clearcache.php - Site Doctor "Clear application cache" (smpro_inv_clearcache*). Platform-aware,
  * drop-to-user cache clear (never root), shared-store aware, with an OPT-IN targeted CageFS remount.
  * Required after investigate.php (reuses smpro_inv_resolve/detect + smpro_path_safe).
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 /* ============================================================================
- * SITE DOCTOR — CLEAR APPLICATION CACHE (sd_action=clearcache)
+ * SITE DOCTOR - CLEAR APPLICATION CACHE (sd_action=clearcache)
  * Engine lives in includes/investigate.php (SMPRO_BOOT already guarded at top).
  * Clears ONLY regenerable cache, RUNNING AS THE SITE USER (privilege-dropped),
  * per-platform whitelisted, shared-store-safe, path-guarded, bounded & audited.
@@ -24,7 +24,7 @@ function smpro_inv_cc_php($phpver) {
     if (preg_match_all('/\d/', (string)$phpver, $mm)) $nn = implode('', $mm[0]);
     if ($nn !== '') { $cand = '/opt/cpanel/ea-php' . $nn . '/root/usr/bin/php'; if (is_executable($cand)) return $cand; }
     if (is_executable('/usr/local/bin/php')) return '/usr/local/bin/php';
-    return 'php';                                               // last resort — resolved in the user's PATH inside the cage
+    return 'php';                                               // last resort - resolved in the user's PATH inside the cage
 }
 
 /** Which privilege-drop launcher this box has. We NEVER run cache mutation as root,
@@ -44,9 +44,9 @@ function smpro_inv_cc_drop_method() {
  *  (or clearing caches for) root/nobody/mysql/cpanel or a stray /home dir. */
 function smpro_inv_cc_user_ok($user) {
     $user = (string)$user;
-    // CRITICAL(2): strict account-name shape — first char [a-z0-9_], then up to 30 of [a-z0-9_-].
+    // CRITICAL(2): strict account-name shape - first char [a-z0-9_], then up to 30 of [a-z0-9_-].
     if (!preg_match('/^[a-z0-9_][a-z0-9_-]{0,30}$/', $user)) return false;
-    // ADDED: refuse SUSPENDED accounts — su/runuser into them is unreliable and pointless.
+    // ADDED: refuse SUSPENDED accounts - su/runuser into them is unreliable and pointless.
     if (is_file('/var/cpanel/suspended/' . $user)) return false;
     // CRITICAL(2): POSITIVELY confirm cPanel account-ness (not a hardcoded uid>=1000 that would
     // refuse legit old-cPanel UID 500-999 accounts). /var/cpanel/users/<user> is the authority;
@@ -59,7 +59,7 @@ function smpro_inv_cc_user_ok($user) {
         }
         if (!$ok) return false;
     }
-    // Resolve uid/gid/home — posix first, then getent/passwd fallback (posix may be absent on CLI SAPI).
+    // Resolve uid/gid/home - posix first, then getent/passwd fallback (posix may be absent on CLI SAPI).
     $uid = -1; $gid = -1; $home = '';
     if (function_exists('posix_getpwnam')) {
         $pw = @posix_getpwnam($user);
@@ -89,8 +89,8 @@ function smpro_inv_cc_user_ok($user) {
 function smpro_inv_cc_run($user, $script, $timeout, $cwd = '') {
     $t   = max(5, (int)$timeout);
     $cpu = max(5, $t - 5);                                      // CPU-seconds cap just under the wall clock
-    // Inner wrapper — ulimit -t is the FIRST token; cd fails CLOSED; nice/ionice de-prioritize the work.
-    // Deliberately NO `ulimit -v` here (unlike smpro_inv_optimize_run_tool) — LVE caps RAM on CloudLinux.
+    // Inner wrapper - ulimit -t is the FIRST token; cd fails CLOSED; nice/ionice de-prioritize the work.
+    // Deliberately NO `ulimit -v` here (unlike smpro_inv_optimize_run_tool) - LVE caps RAM on CloudLinux.
     $inner = 'ulimit -t ' . $cpu . ' 2>/dev/null; ';
     if ($cwd !== '') $inner .= 'cd ' . escapeshellarg($cwd) . ' 2>/dev/null || exit 3; ';
     $inner .= 'nice -n ' . SMPRO_SCAN_NICE . ' ionice -c' . SMPRO_SCAN_IONICE_CLASS . ' ' . $script;
@@ -99,7 +99,7 @@ function smpro_inv_cc_run($user, $script, $timeout, $cwd = '') {
     if ($method === '' || !preg_match('/^[a-z0-9_][a-z0-9_-]{0,30}$/', (string)$user))
         return ['out' => '', 'rc_note' => 'refused: cannot drop privileges safely (no runuser/su) — never run as root'];
     $esc = escapeshellarg($inner);                             // the whole wrapper -> one single-quoted -c argument
-    // NOTE: NO `setsid` — `timeout` (non-foreground) already creates its own process group and group-kills every
+    // NOTE: NO `setsid` - `timeout` (non-foreground) already creates its own process group and group-kills every
     // descendant on expiry. setsid would move the worker into a NEW session outside timeout's group, so an I/O-bound
     // find or a hung artisan (low CPU, so ulimit -t doesn't bite) would ORPHAN and outlive the timeout. Keep the
     // worker in timeout's killable group (mirrors smpro_inv_optimize_run_tool).
@@ -126,7 +126,7 @@ function smpro_inv_cc_du($dir) {
 /** Build the AS-USER inner command that empties ONE cache dir and re-creates ONLY its
  *  top-level anti-listing sentinels. CRITICAL(4)/CHANGE-2(b): `-mindepth 1 -delete` drops
  *  EVERYTHING inside (so WP Super Cache's nested index.html page cache is actually cleared),
- *  then we re-create the sentinel at the TOP LEVEL ONLY — never tree-wide. -xdev per CHANGE-7. */
+ *  then we re-create the sentinel at the TOP LEVEL ONLY - never tree-wide. -xdev per CHANGE-7. */
 function smpro_inv_cc_fs_inner($dir, $recreate) {
     $e   = escapeshellarg($dir);
     $cmd = 'find ' . $e . ' -mindepth 1 -xdev -delete 2>/dev/null';
@@ -139,9 +139,9 @@ function smpro_inv_cc_fs_inner($dir, $recreate) {
 
 /** Pure mapping platform -> (filesystem cache dirs to empty) + (CLI cache commands to attempt).
  *  Encodes the per-platform whitelist. CRITICAL(4). Note detect() only emits WordPress/Laravel/
- *  Magento/Drupal/Joomla/PHP/static (match case exactly) — it NEVER returns PrestaShop/OpenCart,
+ *  Magento/Drupal/Joomla/PHP/static (match case exactly) - it NEVER returns PrestaShop/OpenCart,
  *  so those branches are intentionally ABSENT (dead code otherwise). Generic PHP/static/unknown
- *  return NOTHING (no auto-clear — opt-in only), per CHANGE-6.
+ *  return NOTHING (no auto-clear - opt-in only), per CHANGE-6.
  *  Each cli entry: label,cmd(with @PHP@ token),cwd,store(bool),cond(''|'env'),stack,role,tool[,file]. */
 function smpro_inv_cc_targets($platform, $docroot, $approot, $home) {
     $docroot = rtrim((string)$docroot, '/');
@@ -150,13 +150,13 @@ function smpro_inv_cc_targets($platform, $docroot, $approot, $home) {
     switch ($platform) {                                       // CRITICAL: exact case from smpro_inv_detect()
         case 'WordPress':
             // Regenerable page/asset caches. uploads/cache is DELIBERATELY excluded (non-regenerable
-            // user data — opt-in only), per CRITICAL(4) / CHANGE-2(a).
+            // user data - opt-in only), per CRITICAL(4) / CHANGE-2(a).
             foreach (['/wp-content/cache', '/wp-content/cache/wp-rocket', '/wp-content/cache/min',
                       '/wp-content/cache/autoptimize', '/wp-content/litespeed', '/wp-content/et-cache'] as $d)
                 $dirs[] = $docroot . $d;
-            // Object cache flush — a STORE flush (guarded by the shared-store probe). NO --allow-root.
+            // Object cache flush - a STORE flush (guarded by the shared-store probe). NO --allow-root.
             $cli[] = ['label' => 'WordPress object cache (wp cache flush)', 'cmd' => 'wp cache flush --path=' . escapeshellarg($docroot), 'cwd' => '', 'store' => true, 'cond' => '', 'stack' => 'wp', 'role' => 'solo', 'tool' => 'wp'];
-            // Page-cache plugin purges — optional, non-fatal, file-based (not a shared external store).
+            // Page-cache plugin purges - optional, non-fatal, file-based (not a shared external store).
             $cli[] = ['label' => 'LiteSpeed cache purge', 'cmd' => 'wp litespeed-purge all --path=' . escapeshellarg($docroot), 'cwd' => '', 'store' => false, 'cond' => '', 'stack' => 'wp-ls', 'role' => 'solo', 'tool' => 'wp'];
             $cli[] = ['label' => 'WP Rocket clean',      'cmd' => 'wp rocket clean --confirm --path=' . escapeshellarg($docroot), 'cwd' => '', 'store' => false, 'cond' => '', 'stack' => 'wp-rk', 'role' => 'solo', 'tool' => 'wp'];
             $cli[] = ['label' => 'W3 Total Cache flush', 'cmd' => 'wp w3-total-cache flush all --path=' . escapeshellarg($docroot), 'cwd' => '', 'store' => false, 'cond' => '', 'stack' => 'wp-w3', 'role' => 'solo', 'tool' => 'wp'];
@@ -170,7 +170,7 @@ function smpro_inv_cc_targets($platform, $docroot, $approot, $home) {
             // config/route cache clear ONLY when a readable .env exists (guards a config:cache-only deploy).
             $cli[] = ['label' => 'artisan config:clear',   'cmd' => '@PHP@ artisan config:clear -n',   'cwd' => $approot, 'store' => false, 'cond' => 'env', 'stack' => 'lar-cfg', 'role' => 'solo',     'tool' => 'artisan'];
             $cli[] = ['label' => 'artisan route:clear',    'cmd' => '@PHP@ artisan route:clear -n',    'cwd' => $approot, 'store' => false, 'cond' => 'env', 'stack' => 'lar-rt',  'role' => 'solo',     'tool' => 'artisan'];
-            // Filesystem fallback (artisan absent/broken) — mirrors smpro_inv_fix_laravel_cache (investigate.php:1395).
+            // Filesystem fallback (artisan absent/broken) - mirrors smpro_inv_fix_laravel_cache (investigate.php:1395).
             foreach (['/storage/framework/cache/data', '/storage/framework/views', '/bootstrap/cache'] as $d)
                 $dirs[] = $approot . $d;
             break;
@@ -195,7 +195,7 @@ function smpro_inv_cc_targets($platform, $docroot, $approot, $home) {
             foreach (['/cache', '/administrator/cache'] as $d) $dirs[] = $docroot . $d;
             break;
         default:
-            // 'PHP' / 'static' / 'unknown' — NO auto-clear (CHANGE-6). A dir named cache/tmp for an
+            // 'PHP' / 'static' / 'unknown' - NO auto-clear (CHANGE-6). A dir named cache/tmp for an
             // unidentified app may hold sessions, uploads, generated docs or a SQLite store.
             break;
     }
@@ -234,7 +234,7 @@ function smpro_inv_cc_shared_store_probe($platform, $docroot, $approot) {
         // issue an UNSCOPED flushdb()/flush() that ignores the prefix (the prefix only namespaces per-key get/put).
         // A shared REDIS_CACHE_DB index also doesn't distinguish co-tenants (default installs all land on it). So
         // default redis/memcached to SHARED (skip the global flush; filesystem-only) and downgrade ONLY on provable
-        // per-tenant isolation — a dedicated per-account unix-socket instance.
+        // per-tenant isolation - a dedicated per-account unix-socket instance.
         $dedicated = false;
         if ($drv === 'redis' && preg_match('/^REDIS_HOST\s*=\s*(\S+)/mi', $e, $mh)) {
             $host = strtolower(trim($mh[1], " \"'"));
@@ -309,7 +309,7 @@ function smpro_inv_clearcache_plan($target) {
     if (strpos($approot, '/home/') !== 0) $approot = $docroot;
 
     $tg = smpro_inv_cc_targets($platform, $docroot, $approot, $home);
-    // Size each EXISTING target — path_safe FIRST so du can't follow a planted symlink out of the account.
+    // Size each EXISTING target - path_safe FIRST so du can't follow a planted symlink out of the account.
     $targets = []; $total = 0;
     foreach ($tg['dirs'] as $dir) {
         $safe = smpro_path_safe($dir, [$home]);
@@ -329,7 +329,7 @@ function smpro_inv_clearcache_plan($target) {
     ];
     $shared = smpro_inv_cc_shared_store_probe($platform, $docroot, $approot);
     $cacheable = in_array($platform, ['WordPress', 'Laravel', 'Magento', 'Drupal', 'Joomla'], true);
-    // Safety note the confirm card shows — DOWNGRADED to a warning when a shared store is detected.
+    // Safety note the confirm card shows - DOWNGRADED to a warning when a shared store is detected.
     $note = 'Deletes only regenerable cache inside ' . $home . '/ (never source, config, uploads or the database) and runs as the site user. The app rebuilds its cache on the next request.';
     if ($shared['shared']) $note = 'WARNING: ' . $shared['detail'] . ' Only on-disk cache will be cleared.';
     return [
@@ -346,7 +346,7 @@ function smpro_inv_clearcache_plan($target) {
  *  site user to clear the detected platform's cache (CLI-first with the shared-store guard, filesystem
  *  fallback always), measures freed bytes, then does the OPTIONAL, non-gating targeted CageFS remount.
  *  Records NO undo entry (cache is regenerable); audits everything. $doRemount defaults OFF (CRITICAL(6)).
- *  $optDirs = operator-opted-in extra dirs for a generic/unknown platform (CHANGE-6 — no auto-clear). */
+ *  $optDirs = operator-opted-in extra dirs for a generic/unknown platform (CHANGE-6 - no auto-clear). */
 function smpro_inv_clearcache($target, $doRemount = false, array $optDirs = array()) {
     $plan = smpro_inv_clearcache_plan($target);
     if (empty($plan['ok'])) return $plan;                      // refusal / not-resolved is passed straight through
@@ -359,7 +359,7 @@ function smpro_inv_clearcache($target, $doRemount = false, array $optDirs = arra
     if (smpro_inv_cc_drop_method() === '')
         return ['ok' => false, 'msg' => 'Refusing: cannot drop privileges safely (no runuser/su) — will not clear cache as root.'];
 
-    // CRITICAL(7): per-user LOCK_NB flock — no concurrent double-run (second admin tab / auto-optimize overlap).
+    // CRITICAL(7): per-user LOCK_NB flock - no concurrent double-run (second admin tab / auto-optimize overlap).
     @is_dir(SMPRO_LOCKS) || @mkdir(SMPRO_LOCKS, 0700, true);
     $lockPath = SMPRO_LOCKS . '/sitedoctor-clearcache-' . $user . '.lock';   // $user is regex-validated
     $lk = @fopen($lockPath, 'c');
@@ -397,7 +397,7 @@ function smpro_inv_clearcache($target, $doRemount = false, array $optDirs = arra
         elseif ($tool === 'magento')    $present = $have['magento'] && $have['php'];
         elseif ($tool === 'php')        $present = $have['php'] && $have['joomla_cli'];
         if (!$present) continue;
-        // CRITICAL(3): SHARED STORE GUARD — skip any global store-flush on a shared/unprefixed redis/memcached.
+        // CRITICAL(3): SHARED STORE GUARD - skip any global store-flush on a shared/unprefixed redis/memcached.
         if (!empty($c['store']) && !empty($shared['shared'])) {
             $cleared[] = ['label' => $c['label'], 'method' => 'cli', 'freed_bytes' => 0, 'human' => '0 B',
                           'note' => 'skipped — object/app cache is on a shared ' . $shared['store'] . ' with no key prefix (a global flush would wipe co-tenants + sessions)'];
@@ -430,17 +430,17 @@ function smpro_inv_clearcache($target, $doRemount = false, array $optDirs = arra
                       'note' => $success ? ('flushed via ' . ($tool === 'drushfile' ? 'drush' : $tool)) : ('CLI reported: ' . ($errLine !== '' ? $errLine : 'error'))];
     }
 
-    // ---- Filesystem cache dirs (always run — belt-and-suspenders, covers plugins with no CLI). ----
+    // ---- Filesystem cache dirs (always run - belt-and-suspenders, covers plugins with no CLI). ----
     // For a generic/unknown platform tg['dirs'] is EMPTY (no auto-clear); only operator-opted-in $optDirs apply.
     $fsDirs = $tg['dirs'];
     foreach ($optDirs as $od) { $od = rtrim((string)$od, '/'); if ($od !== '' && strpos($od, $home . '/') === 0) $fsDirs[] = $od; }
     $freedTotal = 0; $rootOwned = false;
     foreach ($fsDirs as $dir) {
-        // CRITICAL(5): path_safe BEFORE the delete — rejects a symlink and requires realpath under /home/<user>.
+        // CRITICAL(5): path_safe BEFORE the delete - rejects a symlink and requires realpath under /home/<user>.
         $safe = smpro_path_safe($dir, [$home]);
         if ($safe === '' || !is_dir($safe)) continue;
         $before = smpro_inv_cc_du($safe);
-        // Capture top-level sentinels to re-create afterwards (anti-listing) — top level ONLY, never tree-wide.
+        // Capture top-level sentinels to re-create afterwards (anti-listing) - top level ONLY, never tree-wide.
         $recreate = ['index_php' => is_file($safe . '/index.php'), 'index_html' => is_file($safe . '/index.html')];
         $res = smpro_inv_cc_run($user, smpro_inv_cc_fs_inner($safe, $recreate), 60, $home);
         if ($res['rc_note'] !== '') { @flock($lk, LOCK_UN); @fclose($lk); return ['ok' => false, 'msg' => $res['rc_note']]; }

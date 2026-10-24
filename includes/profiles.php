@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/profiles.php — Protection Profiles engine.
+ * includes/profiles.php - Protection Profiles engine.
  *
  * A "profile" is a named snapshot of the plugin's PROTECTION behaviour (Intrusion Monitor
  * automation + alert thresholds). Applying a profile writes those values into the live
@@ -8,7 +8,7 @@
  * allowlist and breach-exclude paths are NEVER touched by a profile.
  *
  * Built-ins: medium, maximum. Plus: AI profile (generated from the environment), the
- * current/custom settings ("Profile 1"), and an ARCHIVE — every apply first snapshots the
+ * current/custom settings ("Profile 1"), and an ARCHIVE - every apply first snapshots the
  * current settings (named after the server + date) so you can always roll back.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }

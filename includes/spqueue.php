@@ -1,6 +1,6 @@
 <?php
 /**
- * Safety Monitor Pro — the account-side request queue.
+ * Safety Monitor Pro - the account-side request queue.
  *
  * The account page cannot set the immutable bit: chattr is root's. So the page does not try. It writes a REQUEST
  * into the account's own home, and a root worker reads the request and performs the work. This is the shape the
@@ -39,7 +39,7 @@ function smpro_spq_verbs() {
  * Which verbs run on their own, and which wait for the operator.
  *
  * Protecting runs immediately; releasing does not. An account can always make itself SAFER without asking anyone,
- * and refusing that would be friction with no security behind it — nothing bad happens when a customer locks
+ * and refusing that would be friction with no security behind it - nothing bad happens when a customer locks
  * their own files. Taking protection away is the opposite: an account able to release itself is an account that
  * can switch its own protection off the moment somebody breaks into it, which would make the whole thing
  * decorative. The asymmetry is deliberate and runs in exactly one direction.
@@ -53,7 +53,7 @@ function smpro_spq_needs_approval($verb) {
  *
  * An account may ASK to be excluded; it may never exclude itself. The difference is the whole point: a compromised
  * account that could add itself to the ignore list would simply switch its own protection off, and the list would
- * mean nothing. So this queue only records the ask — the operator decides in WHM, and only that decision writes to
+ * mean nothing. So this queue only records the ask - the operator decides in WHM, and only that decision writes to
  * the real ignore list.
  */
 function smpro_spq_asks_path() { return SMPRO_VARLIB . '/php_harden/ignore_requests.json'; }
@@ -128,7 +128,7 @@ function smpro_spq_reqdir($home) { return smpro_spq_dir($home) . '/requests'; }
  *
  * The re-lock deadline used to live in the account's home, which was wrong and provably so: the account owns the
  * parent directory, so it can rename or replace the whole thing and the deadline simply disappears. Tested on a
- * real account — `mv ~/.siteprotection ~/.sp_real` succeeds, and after it a one-hour unlock never ends. A promise
+ * real account - `mv ~/.siteprotection ~/.sp_real` succeeds, and after it a one-hour unlock never ends. A promise
  * that the site will be protected again in an hour cannot be stored where the site's owner can delete it.
  */
 function smpro_spq_state_path() { return SMPRO_VARLIB . '/php_harden/sp_queue_state.json'; }
@@ -164,7 +164,7 @@ function smpro_spq_state_save(array $st) {
  * rather than assumed to be /home/<user>, since a server with a second home partition would otherwise be served
  * silently by a worker that found no queues and reported success. And `.siteprotection` must not be a symlink:
  * the account can replace it with a link to anywhere, and root would then create directories and write files at
- * the far end of it. Tested — the account can do this, so it is refused here rather than trusted.
+ * the far end of it. Tested - the account can do this, so it is refused here rather than trusted.
  *
  * Returns '' when the account's queue must not be touched.
  */
@@ -276,7 +276,7 @@ function smpro_spq_uid($user) {
  *
  * The directories are handed to the ACCOUNT after being created. Root creating them and keeping them is not a
  * detail: `.siteprotection` is the account's own queue, and a root-owned 0700 directory in the middle of it locks
- * the account out of its own home — the page can then no longer write a request, and the only symptom is a button
+ * the account out of its own home - the page can then no longer write a request, and the only symptom is a button
  * that quietly does nothing. Seen for real: an account that had never opened the page could not use it at all,
  * because the server had already written an answer there first.
  */
@@ -315,7 +315,7 @@ function smpro_spq_answer($home, $id, array $result) {
  *
  * This is the half the account has no influence over. The document roots come from the server's own record of who
  * owns which domain, the application is detected by reading the root, and the file list is the one the WHM plugin
- * already uses — so the account-side and operator-side sides of this product protect exactly the same files.
+ * already uses - so the account-side and operator-side sides of this product protect exactly the same files.
  */
 function smpro_spq_targets($user) {
     if (!function_exists('smpro_ph_roots') || !function_exists('smpro_ph_detect')) return [];
@@ -401,7 +401,7 @@ function smpro_spq_run_one($user, array $req) {
  * Turn the account's RELATIVE selections into absolute paths root is willing to touch.
  *
  * This is the boundary. The account chose names; root decides what they mean. The document root comes from the
- * server's own records for this account — the `root` field in the request is only MATCHED against that list, never
+ * server's own records for this account - the `root` field in the request is only MATCHED against that list, never
  * used as a path. Each item must then resolve inside that document root, be a plain file or directory rather than
  * a link, and belong to the account. Anything else is dropped: a request that argues about paths has already gone
  * wrong, and the safe answer is to do less than asked rather than more.
@@ -526,7 +526,7 @@ function smpro_spq_relock_due() {
         $done = (int)smpro_ph_chattr_many('+i', $again)['done'];
         unset($st[$user]); $changed = true; $n++;
 
-        // Tell the account what happened, best effort. If its home is gone or unsafe the re-lock still stands —
+        // Tell the account what happened, best effort. If its home is gone or unsafe the re-lock still stands -
         // the protection is what matters, and it is not conditional on being able to leave a note.
         $home = smpro_spq_safe_home($user);
         if ($home !== '') {
@@ -557,7 +557,7 @@ function smpro_spq_cron_sync() {
              // Every minute, not every two. The customer presses Protect and then waits for this worker, so the
              // interval IS the response time they experience. A tick that finds nothing costs one directory read plus
              // a lookup and two stats per account and spawns no process at all, and the file work it does when there
-             // IS something is now batched — so halving the wait costs nothing worth measuring. `flock -n` still
+             // IS something is now batched - so halving the wait costs nothing worth measuring. `flock -n` still
              // means a slow run can never overlap the next one.
              . "* * * * * root $flock -n " . $ld . "/sp_queue.cron.lock timeout 120 $php " . SMPRO_BASE . "/bin/sp_queue.php >/dev/null 2>&1\n";
     // The hooks that lift Safety Lock's locks around cPanel's PHP updates and upcp, and put them back (slmaint.php).
@@ -570,7 +570,7 @@ function smpro_spq_cron_sync() {
  * Give the operator's rules a chance to decide a pending release.
  *
  * Kept separate from the request handling on purpose. Approving is the same work whoever triggers it, and a rule
- * that took a different path through the code from a human's click would drift away from it — the two would stop
+ * that took a different path through the code from a human's click would drift away from it - the two would stop
  * agreeing about what "approved" means, and only one of them would be tested.
  *
  * Returns ['done'=>bool,'ok'=>bool,'count'=>int,'msg'=>string]. done=false simply means it stays pending.

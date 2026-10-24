@@ -1,7 +1,7 @@
 <?php
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 /**
- * disk_scan.php — per-account disk-cleanup scan, run as a BACKGROUND job.
+ * disk_scan.php - per-account disk-cleanup scan, run as a BACKGROUND job.
  *
  * Standing rule: an action the admin starts must finish even if the page is closed, and the result must be
  * waiting when they come back. The only thing that stops it is the admin explicitly cancelling. The scan used
@@ -22,11 +22,11 @@ function smpro_ds_cleanscan($acct) {
     // NEVER offer to delete mail, sessions or the off-site backup dir
     $excl = " -not -path '*/.snapshots/*' -not -ipath '*/mail/*' -not -path '/home/backup/*' -not -ipath '*/.trash/*'";
     $out = ['large'=>[], 'arch'=>[], 'logs'=>[], 'cache'=>[], 'mail'=>0];
-    // large files (>40MB) — mail excluded (deleting customer mail = data loss)
+    // large files (>40MB) - mail excluded (deleting customer mail = data loss)
     foreach (explode("\n", (string)@shell_exec(smpro_ds_wrap("find " . escapeshellarg($home) . " -type f -size +40M" . $excl . " -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' 2>/dev/null | sort -rn | head -40"))) as $l) {
         if (trim($l)==='') continue; $p = explode("\t",$l,3); if (count($p)<3) continue; $out['large'][] = ['size'=>(int)$p[0],'mtime'=>$p[1],'file'=>$p[2]];
     }
-    // mail storage size (info only — managed via webmail/account, never bulk-deleted here)
+    // mail storage size (info only - managed via webmail/account, never bulk-deleted here)
     if (is_dir($home . '/mail')) $out['mail'] = (int)trim((string)@shell_exec(smpro_ds_wrap('du -sb ' . escapeshellarg($home . '/mail') . " 2>/dev/null | cut -f1", 50)));
     // archives / DB dumps / backups (>5MB)
     foreach (explode("\n", (string)@shell_exec(smpro_ds_wrap("find " . escapeshellarg($home) . " -type f \\( -iname '*.zip' -o -iname '*.tar' -o -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.gz' -o -iname '*.sql' -o -iname '*.bak' -o -iname '*.old' -o -iname '*.7z' -o -iname '*.rar' \\) -size +5M" . $excl . " -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' 2>/dev/null | sort -rn | head -40"))) as $l) {
@@ -53,7 +53,7 @@ function smpro_ds_scan_job_path($acct): string { return smpro_ds_scan_dir() . '/
 function smpro_ds_scan_read($acct): array { $j = smpro_mnt_jread(smpro_ds_scan_job_path($acct)); return is_array($j) ? $j : []; }
 function smpro_ds_scan_write($acct, array $j): void { $j['updated_at'] = time(); smpro_mnt_jwrite(smpro_ds_scan_job_path($acct), $j); }
 
-/** Every account that currently has a scan on file (running or finished) — used to restore the panel on return. */
+/** Every account that currently has a scan on file (running or finished) - used to restore the panel on return. */
 function smpro_ds_scan_all(): array {
     $rows = [];
     foreach (glob(smpro_ds_scan_dir() . '/*.json') ?: [] as $f) {
@@ -92,7 +92,7 @@ function smpro_ds_scan_launch($acct): array {
     return ['ok' => false, 'msg' => 'The scan worker did not start. Check that PHP CLI is available.'];
 }
 
-/** Explicit admin cancel — the ONLY thing that stops a started scan. */
+/** Explicit admin cancel - the ONLY thing that stops a started scan. */
 function smpro_ds_scan_cancel($acct): array {
     $acct = smpro_ds_scan_safe_acct($acct);
     $j = smpro_ds_scan_read($acct);

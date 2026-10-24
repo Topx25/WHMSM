@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/reports-center.php — Reports Center.
+ * modules/reports-center.php - Reports Center.
  * Two things: (1) a comprehensive per-IP report pulling everything the plugin knows about
  * an address (geo/ASN/reputation, firewall status, 30-day web-attack profile from the index),
  * with Block / Allow / export; and (2) a directory of every saved report across all sections.
@@ -59,7 +59,7 @@ function smpro_rc_ip_live($ip, $limit = 150) {
     usort($rows, fn($a, $b) => $b['ts'] <=> $a['ts']);
     return array_slice($rows, 0, $limit);
 }
-/** Parse ?from / ?to (YYYY-MM-DD) → [sinceTs, untilTs] (0 = open). */
+/** Parse ?from / ?to (YYYY-MM-DD) -> [sinceTs, untilTs] (0 = open). */
 function smpro_rc_range() {
     $f = isset($_GET['from']) && $_GET['from'] !== '' ? strtotime($_GET['from'] . ' 00:00:00') : 0;
     $t = isset($_GET['to']) && $_GET['to'] !== '' ? strtotime($_GET['to'] . ' 23:59:59') : 0;
@@ -74,7 +74,7 @@ function smpro_rc_op_label($a) {
     ];
     return $map[$a] ?? ucfirst(str_replace('_', ' ', (string)$a));
 }
-/** Every audited OPERATION performed on/about this IP (block, allow, emergency, …), within the window. */
+/** Every audited OPERATION performed on/about this IP (block, allow, emergency, ...), within the window. */
 function smpro_rc_ip_operations($ip, $sinceTs = 0, $untilTs = 0, $limit = 200) {
     if (!defined('SMPRO_AUDIT_LOG') || !is_file(SMPRO_AUDIT_LOG)) return [];
     $since = $sinceTs ?: (time() - 90 * 86400); $until = $untilTs ?: time();
@@ -122,7 +122,7 @@ function smpro_rc_ip_report($ip, $sinceTs = 0, $untilTs = 0) {
     ];
 }
 
-/* ---------------- Incident analysis — read the logs for an outage window and infer the cause ---------------- */
+/* ---------------- Incident analysis - read the logs for an outage window and infer the cause ---------------- */
 function smpro_rc_logcmd($cmd) { return (string)@shell_exec('timeout 25 ' . $cmd . ' 2>/dev/null'); }
 function smpro_rc_has($bin) { return trim(smpro_rc_logcmd('command -v ' . escapeshellarg($bin))) !== ''; }
 
@@ -164,7 +164,7 @@ function smpro_rc_outage_analyze($fromTs, $toTs) {
         foreach (array_filter(array_map('trim', explode("\n", $mg))) as $l) $add($fromTs, 'warn', 'messages', $l);
     }
 
-    // 3) OOM via dmesg (timestamps may be relative — informational)
+    // 3) OOM via dmesg (timestamps may be relative - informational)
     $oom = smpro_rc_logcmd('dmesg -T 2>/dev/null | grep -iE "out of memory|killed process|oom-kill" | tail -8');
     foreach (array_filter(array_map('trim', explode("\n", $oom))) as $l) $add($fromTs, 'critical', 'dmesg', $l);
 
@@ -181,7 +181,7 @@ function smpro_rc_outage_analyze($fromTs, $toTs) {
         $rep['continuity'] = $cont > 3;
     }
 
-    // 6) sar history (sysstat) — load / memory / network around the window
+    // 6) sar history (sysstat) - load / memory / network around the window
     if (smpro_rc_has('sar')) {
         // Point sar at the DAILY file for the window's date (-f). Without it, sar always reads TODAY's
         // file, so analyzing yesterday's outage showed today's numbers as "evidence" (and fed them to the AI).
@@ -195,7 +195,7 @@ function smpro_rc_outage_analyze($fromTs, $toTs) {
         $rep['sar']['net']  = trim(smpro_rc_logcmd('sar ' . $fArg . '-n DEV -s ' . $h1 . ' -e ' . $h2 . ' 2>/dev/null | grep -iE "eth0|ens|enp|bond" | tail -16'));
     }
 
-    // 6b) DEEP read — every relevant log for the window, not just kernel/firewall
+    // 6b) DEEP read - every relevant log for the window, not just kernel/firewall
     $win = function ($cmd) { return smpro_rc_logcmd($cmd); };
     $grab = function ($lines, $sev, $src, $max = 6) use (&$add, $fromTs) {
         $n = 0; foreach (array_filter(array_map('trim', explode("\n", (string)$lines))) as $l) { if ($n++ >= $max) break; $add($fromTs, $sev, $src, $l); }
@@ -205,7 +205,7 @@ function smpro_rc_outage_analyze($fromTs, $toTs) {
         $grab($win('systemctl --failed --no-legend 2>/dev/null | head -8'), 'critical', 'services', 8);
         $grab($win('journalctl --since ' . escapeshellarg($fromStr) . ' --until ' . escapeshellarg($toStr) . ' --no-pager 2>/dev/null | grep -iE "Failed with result|core-dump|segfault|Main process exited|Start request repeated|Stopping|entered failed" | head -20'), 'warn', 'services', 8);
     }
-    // MySQL / MariaDB crashes — multi-day date pattern (both ymd + Y-m-d formats, every day in the window)
+    // MySQL / MariaDB crashes - multi-day date pattern (both ymd + Y-m-d formats, every day in the window)
     $myDays = []; $md = strtotime(date('Y-m-d', $fromTs)); $mn = 0;
     while ($md <= $toTs && $mn++ < 40) { $myDays[date('ymd', $md)] = 1; $myDays[date('Y-m-d', $md)] = 1; $md += 86400; }
     $myPat = implode('|', array_keys($myDays));
@@ -291,7 +291,7 @@ function smpro_rc_reboot_attribution($bootTs) {
     // who initiated a CLEAN shutdown/reboot? (sudo command in auth log, or systemd-logind)
     $who = ''; $howClean = ''; $bad = ['reboot','shutdown','poweroff','halt','system','systemctl','init'];
     foreach (['/var/log/secure', '/var/log/auth.log'] as $sf) if (is_readable($sf)) {
-        // only REAL sudo reboot/shutdown commands — capture the invoking user (before " : "), not the run-as USER=
+        // only REAL sudo reboot/shutdown commands - capture the invoking user (before " : "), not the run-as USER=
         $s = smpro_rc_logcmd('grep -iE "COMMAND=\\S*(reboot|shutdown|poweroff|halt)|systemctl[[:space:]]+(reboot|poweroff|halt)" ' . escapeshellarg($sf) . ' 2>/dev/null | tail -8');
         if (trim($s) !== '') { $ev[] = trim($s);
             if (preg_match('/\bsudo:\s*([a-z_][a-z0-9_\-]*)\s*:.*COMMAND=/i', $s, $m) && !in_array(strtolower($m[1]), $bad, true)) { $who = $m[1]; $howClean = 'sudo reboot/shutdown command'; }
@@ -327,7 +327,7 @@ function smpro_rc_reboot_attribution($bootTs) {
 function smpro_rc_build_fixes($rep) {
     $fixes = []; $txt = strtolower(implode(' ', array_map(fn($e) => $e['txt'], $rep['events'] ?? [])));
     $has = fn($n) => strpos($txt, $n) !== false;
-    // OOM → guided (adding swap/limits is invasive; explain, no auto-button)
+    // OOM -> guided (adding swap/limits is invasive; explain, no auto-button)
     if ($has('out of memory') || $has('oom') || $has('killed process'))
         $fixes[] = ['id' => 'oom', 'sev' => 'critical', 'title' => 'Out of memory', 'action' => '',
             'desc' => 'The kernel killed processes for lack of RAM. Reduce risk: add a swap file, raise/relax LVE or php-fpm memory limits, and find the memory hog in Top Processes.', 'manual' => true];
@@ -335,13 +335,13 @@ function smpro_rc_build_fixes($rep) {
     if ($has('no space left') || $has('disk full'))
         $fixes[] = ['id' => 'disk', 'sev' => 'critical', 'title' => 'Disk full', 'action' => '',
             'desc' => 'A filesystem hit 100% — services fail when they cannot write. Clear logs/old backups; check Disk / Storage.', 'manual' => true];
-    // a crashed cPanel service → one-click restart
+    // a crashed cPanel service -> one-click restart
     $svcMap = ['mysql'=>'mysql','mariadb'=>'mysql','httpd'=>'httpd','apache'=>'httpd','exim'=>'exim','dovecot'=>'dovecot','named'=>'named','lsws'=>'lsws','litespeed'=>'lsws','cpsrvd'=>'cpsrvd'];
     foreach ($svcMap as $needle => $svc) if ($has($needle . ' ') && ($has('failed') || $has('crash') || $has('segfault') || $has('killed'))) {
         $fixes['svc_' . $svc] = ['id' => 'svc_' . $svc, 'sev' => 'warn', 'title' => 'Restart ' . $svc, 'action' => 'restart_service', 'svc' => $svc,
             'desc' => ucfirst($svc) . ' looks like it failed/crashed in this window. Restart it via the plugin (safe).', 'manual' => false];
     }
-    // sysstat missing → one-click install (better future analysis)
+    // sysstat missing -> one-click install (better future analysis)
     if (empty($rep['sar']['load']) && empty($rep['sar']['mem']))
         $fixes[] = ['id' => 'sysstat', 'sev' => 'info', 'title' => 'Install sysstat (sar) for deeper history', 'action' => 'install_sysstat',
             'desc' => 'sar/sysstat was not available, so load/memory/network history for the outage is missing. Install it so the next incident has full resource timelines.', 'manual' => false];
@@ -350,7 +350,7 @@ function smpro_rc_build_fixes($rep) {
 
 /**
  * Explain WHY a specific IP is (or isn't) firewall-blocked. Reads csf -g (authoritative),
- * csf.deny comment, the LFD trigger history, GeoIP, csf.allow, and CC_ALLOW — then gives a
+ * csf.deny comment, the LFD trigger history, GeoIP, csf.allow, and CC_ALLOW - then gives a
  * plain verdict + fix. Built for the "this IP got blocked though it should be allow-listed"
  * case: it tells you the LFD reason AND whether CC_ALLOW covers the IP's country. Read-only.
  */
@@ -362,8 +362,8 @@ function smpro_rc_block_reason($ip) {
             'imunify'=>['present'=>false, 'lists'=>[], 'graylisted'=>false, 'blacklisted'=>false, 'whitelisted'=>false, 'incidents'=>[], 'console'=>[], 'webshield'=>null]];
     if (!$rep['valid']) { $rep['verdict'] = 'Enter a valid IP address.'; return $rep; }
 
-    // 1) csf -g — authoritative: shows every place the IP is matched (csf.deny / temp ban / iptables / csf.allow).
-    //    Use the resolved binary path — a bare "csf" isn't on the CGI PATH, so it returned nothing and the
+    // 1) csf -g - authoritative: shows every place the IP is matched (csf.deny / temp ban / iptables / csf.allow).
+    //    Use the resolved binary path - a bare "csf" isn't on the CGI PATH, so it returned nothing and the
     //    verdict below wrongly fell through to "BLOCKED" for IPs that were not blocked at all.
     $csfBin = function_exists('smpro_csf_bin') ? smpro_csf_bin() : 'csf';
     $rep['csf_g'] = $csfBin ? trim(smpro_rc_logcmd(escapeshellarg($csfBin) . ' -g ' . escapeshellarg($ip))) : '';
@@ -447,7 +447,7 @@ function smpro_rc_block_reason($ip) {
         unset($im);
     }
 
-    // 6) CC_ALLOW (country never-block) from csf.conf — does it cover this IP's country?
+    // 6) CC_ALLOW (country never-block) from csf.conf - does it cover this IP's country?
     $cc = trim(smpro_rc_logcmd("grep -E '^CC_ALLOW(_FILTER)? *=' /etc/csf/csf.conf 2>/dev/null"));
     $rep['cc_allow']  = $cc;
     $rep['cc_covers'] = $rep['country'] !== '' && (bool)preg_match('/\b' . preg_quote($rep['country'], '/') . '\b/i', $cc);
@@ -469,7 +469,7 @@ function smpro_rc_block_reason($ip) {
         $rep['verdict'] = 'This IP is allow-listed (csf.allow) and not blocked. If traffic still fails, the block is upstream (Cloudflare / provider), not CSF.';
     } elseif (!$rep['blocked'] && !$rep['csf_ok']) {
         // csf -g produced no output (csf unavailable/timed out) AND the IP is not in csf.deny/csf.allow files.
-        // Do NOT claim it is blocked — that was the false-positive. Report the inconclusive state honestly.
+        // Do NOT claim it is blocked - that was the false-positive. Report the inconclusive state honestly.
         $rep['verdict'] = 'Could not confirm firewall status — the IP is not in csf.deny or csf.allow, but the live CSF lookup returned nothing (csf may be unavailable). Check the Firewall page.';
     } else {
         $reason = $rep['comment'] ?: ($rep['lfd'] ? 'LFD trigger — see history below' : 'manual or temporary block');
@@ -544,7 +544,7 @@ function smpro_rc_incidents_auto($days = 7) {
         'cooler_start'            => ['info', 'Load cooler throttled a runaway process', 'maintenance'],
         'cooler_guard_fire'       => ['info', 'Load guard throttled a runaway process', 'maintenance'],
     ];
-    // Turn the raw audit JSON into one plain sentence — never show the raw {"pids":[…]} to the admin.
+    // Turn the raw audit JSON into one plain sentence - never show the raw {"pids":[...]} to the admin.
     $humanize = function ($action, $d) {
         $d = is_array($d) ? $d : [];
         $n = is_array($d['pids'] ?? null) ? count($d['pids']) : null;
@@ -570,7 +570,7 @@ function smpro_rc_incidents_auto($days = 7) {
     }
     // RECURRING LOAD PRESSURE: when an auto-throttle keeps firing, the same long-lived processes are usually
     // behind it. Tally which PIDs recur across the events, resolve the ones still alive to process + owning
-    // (cPanel) account, and raise ONE actionable finding — so the admin fixes the cause instead of watching the
+    // (cPanel) account, and raise ONE actionable finding - so the admin fixes the cause instead of watching the
     // guard fire forever. (Read-only /proc lookups, only the few most-frequent PIDs.)
     foreach (['cooler_start', 'cooler_guard_fire'] as $ca) {
         if (empty($byAction[$ca]) || count($byAction[$ca]) < 12) continue;   // must be persistent to be a pattern
@@ -601,7 +601,7 @@ function smpro_rc_incidents_auto($days = 7) {
     }
     foreach ($byAction as $action => $evts) {
         $meta = $sev[$action]; $type = $meta[2] ?? 'security';
-        if (count($evts) > 3) {                                  // recurring → collapse into one grouped incident
+        if (count($evts) > 3) {                                  // recurring -> collapse into one grouped incident
             usort($evts, fn($a, $b) => ($b['ts'] ?? 0) <=> ($a['ts'] ?? 0));
             $last = (int)$evts[0]['ts']; $first = (int)end($evts)['ts'];
             $span = max(1, $last - $first);
@@ -617,7 +617,7 @@ function smpro_rc_incidents_auto($days = 7) {
     if (function_exists('smpro_im_selfattack_recent')) foreach (smpro_im_selfattack_recent(24) as $s) {
         $out[] = ['id' => 'self' . $s['ip'], 'ts' => (int)($s['last'] ?? time()), 'type' => 'self-attack', 'severity' => 'critical', 'source' => 'intrusion', 'title' => 'Web attack from local IP ' . $s['ip'], 'detail' => (int)$s['n'] . ' events on ' . (int)$s['domains'] . ' domain(s) — possible local compromise', 'actor' => ''];
     }
-    // Reboots/crashes are real incidents — surface them automatically WITH the inferred cause.
+    // Reboots/crashes are real incidents - surface them automatically WITH the inferred cause.
     foreach (smpro_rc_reboot_events($days) as $r) $out[] = $r;
     usort($out, fn($a, $b) => ($b['ts'] ?? 0) <=> ($a['ts'] ?? 0));   // newest first
     return $out;
@@ -1383,7 +1383,7 @@ function rcMd(t){
 </details>
 
 <?php elseif ($tab === 'moves'):
-  /* Account moves — history of home-directory relocations between partitions (written by bin/home_move.php). */
+  /* Account moves - history of home-directory relocations between partitions (written by bin/home_move.php). */
   $mvRows = function_exists('smpro_ds_home_history') ? smpro_ds_home_history(100) : [];
   $mvH = function ($b) { $b = (float)$b; $u = ['B','KB','MB','GB','TB']; $i = 0; while ($b >= 1024 && $i < 4) { $b /= 1024; $i++; } return round($b, $i > 1 ? 1 : 0) . ' ' . $u[$i]; };
   $mvDur = function ($s) { $s = (int)$s; if ($s <= 0) return '—'; if ($s < 60) return $s . 's'; if ($s < 3600) return floor($s/60) . 'm ' . ($s%60) . 's'; return floor($s/3600) . 'h ' . floor(($s%3600)/60) . 'm'; };
@@ -1501,7 +1501,7 @@ function rcMd(t){
 })();
 </script>
 <script>
-/* Live IP Watch — poll the IP's requests across all domains every 10s */
+/* Live IP Watch - poll the IP's requests across all domains every 10s */
 (function(){
   var body=document.getElementById('rcLiveBody');if(!body)return;
   var auto=document.getElementById('rcLiveAuto'),meta=document.getElementById('rcLiveMeta');
@@ -1543,7 +1543,7 @@ tr.fw-pghide{display:none !important}
 </style>
 <script>
 (function(){
-  // make every section card collapsible — click its header to open/close; the choice is remembered per section
+  // make every section card collapsible - click its header to open/close; the choice is remembered per section
   var KEY='smpro:reports-center:open', SEL='.card > .rc-head, .card > .tp-th', EXTRA='details.rc-acc';
   var open={};
   try{ open=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(err){ open={}; }

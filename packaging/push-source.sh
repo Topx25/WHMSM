@@ -1,5 +1,5 @@
 #!/bin/bash
-# push-source.sh <version> — commit and push the readable source after a successful release publish.
+# push-source.sh <version> - commit and push the readable source after a successful release publish.
 # Never force-pushes. Refuses (and says why) when the tree carries a private key, a release artifact,
 # or an assistant reference. A failure here never fails the release itself (PUBLISH.sh ignores our exit code).
 set -u

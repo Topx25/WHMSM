@@ -1,9 +1,9 @@
 <?php
 /**
- * includes/breakin.php — reading failed logins, grouping them by network, and judging what each network is doing.
+ * includes/breakin.php - reading failed logins, grouping them by network, and judging what each network is doing.
  *
- * These functions used to live in modules/account-audit.php. Page modules execute a router at include time — a
- * DB query, layout output, an audit write — so nothing in cron or on the CLI can ever require one. That made the
+ * These functions used to live in modules/account-audit.php. Page modules execute a router at include time - a
+ * DB query, layout output, an audit write - so nothing in cron or on the CLI can ever require one. That made the
  * whole break-in judgement reachable only from a browser: the rules that block an attack could be pressed by a
  * person on the page and could not run unattended. An attack that starts at 3am ran until somebody opened the
  * page.
@@ -27,8 +27,8 @@ function smpro_aa_json_load($p) { $d = is_file($p) ? json_decode((string)@file_g
 
 function smpro_aa_json_save($p, $d) { @is_dir(dirname($p)) || @mkdir(dirname($p), 0700, true); $t = $p . '.tmp'; @file_put_contents($t, json_encode($d, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), LOCK_EX); @rename($t, $p); @chmod($p, 0600); }
 
-/** Streams the last $lines of $file (a generator — iterate once). It used to return the whole window as an array,
- *  which at 200k lines cost ~300MB and killed the page under the cPanel CLI's 128M cap (2026-09-07). */
+/** Streams the last $lines of $file (a generator - iterate once). It used to return the whole window as an array,
+ *  which at 200k lines cost ~300MB and killed the page under the cPanel CLI's 128M cap. */
 function smpro_aa_tail($file, $lines) {
     if (!is_readable($file)) return;
     $n = max(1000, min(500000, (int)$lines));
@@ -65,7 +65,7 @@ function smpro_aa_match($needles, $actor, $evidence) {
     return false;
 }
 
-/** Resolve the cPanel account owning an actor (email user@domain → owner). */
+/** Resolve the cPanel account owning an actor (email user@domain -> owner). */
 function smpro_aa_resolve_account($actor) {
     static $map = null;
     if ($map === null) {
@@ -94,7 +94,7 @@ function smpro_aa_ts($raw) {
  *
  * Delegates to the shared smpro_ip_intel() in helpers.php. This page used to carry its own whois-only copy that
  * never consulted the local GeoIP databases, so once its per-page cap was spent every further row rendered
- * "Provider: lookup limit reached" — while the database pulled nightly from the licence server sat fresh and
+ * "Provider: lookup limit reached" - while the database pulled nightly from the licence server sat fresh and
  * unread on disk. The shared helper reads those databases first and caps only the network enrichment, so there
  * is no longer a second implementation here to drift away from it.
  */
@@ -114,13 +114,13 @@ function smpro_aa_ip_intel($ip) {
 
 /**
  * Filter events by country using IP intelligence.
- *  'all'     → no filter
- *  'foreign' → external IPs outside the configured home region (unknown externals kept,
+ *  'all'     -> no filter
+ *  'foreign' -> external IPs outside the configured home region (unknown externals kept,
  *              so suspicious un-resolved foreign IPs are never hidden)
- *  '<CC>'    → only that 2-letter country
+ *  '<CC>'    -> only that 2-letter country
  * Attaches ['intel'] to each surviving event so the view reuses it.
  */
-/** Localhost (127.0.0.1 / ::1) events are internal cPanel noise — hidden unless requested. */
+/** Localhost (127.0.0.1 / ::1) events are internal cPanel noise - hidden unless requested. */
 function smpro_aa_is_local_ip($ip) { return $ip === '127.0.0.1' || $ip === '::1' || strpos((string)$ip, '127.') === 0; }
 
 function smpro_aa_filter_local($events, $show) {
@@ -162,7 +162,7 @@ function smpro_aa_sort_keys(): array {
  * Order the WHOLE result, before it is counted and cut into pages.
  *
  * This used to happen in the browser, on the rows of the page being looked at. On a result of 15,000 events
- * across 305 pages that sorts fifty of them while the column arrow says the table is sorted — so "order by Type
+ * across 305 pages that sorts fifty of them while the column arrow says the table is sorted - so "order by Type
  * to gather the successful logins" returned the two or three that were already on the page, underneath a counter
  * reading 533. The number and the list were describing different things, and the list looked authoritative.
  */
@@ -198,7 +198,7 @@ function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
     $wantFailed = in_array($type, ['all', 'failed_login'], true);
 
     // A granted session is recorded in session_log on current cPanel, not in login_log, so this timeline showed
-    // "0 successful logins" on every current server — an all-clear it had no way to have earned. The shared feed
+    // "0 successful logins" on every current server - an all-clear it had no way to have earned. The shared feed
     // reads whichever log this cPanel actually uses.
     if ($wantSuccess) {
         if (!function_exists('smpro_lf_success')) { $lf = __DIR__ . '/loginfeed.php'; if (@is_file($lf)) require_once $lf; }
@@ -234,7 +234,7 @@ function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
             // Two formats coexist in login_log:
             //  A) [TIME] level [service] IP - user - RESULT LOGIN service   (cpaneld/WHM account logins)
             //  B) IP - user [date] "METHOD" RESULT LOGIN service            (cpdavd/webmail)
-            // cPanel writes  [ts] lvl [svc] IP - user "REQUEST" MSG  — ONE dash before the user. The old
+            // cPanel writes  [ts] lvl [svc] IP - user "REQUEST" MSG  - ONE dash before the user. The old
             // two-dash pattern matches nothing on current cPanel, so this timeline showed almost no logins.
             if (preg_match('/^\[([^\]]+)\]\s+\S+\s+\[([^\]]+)\]\s+(\S+)\s+-\s+(\S+)\s+(.+)$/', $raw, $m)) {
                 $timeRaw = $m[1]; $svcA = $m[2]; $ip = $m[3]; $actor = rawurldecode($m[4]); $rest = $m[5];
@@ -287,10 +287,10 @@ function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
             if ($isPass && ($method !== 'POST' || in_array($status, ['400','401','403','404','429'], true))) {
                 $isPass = false;
             }
-            // PANEL ACTIONS — API / File Manager / feature calls made inside a session. A takeover that arrives with a
+            // PANEL ACTIONS - API / File Manager / feature calls made inside a session. A takeover that arrives with a
             // stolen password, an API token, or a reseller "log in as" leaves NO login line at all; the only trace is
             // this activity. It is shown when the view is narrowed (search text or an account) or when the type is
-            // "panel_action" — never in the unfiltered "all" view, where it would drown the logins.
+            // "panel_action" - never in the unfiltered "all" view, where it would drown the logins.
             $isPanel = false; $panelOp = '';
             if (!$isLogin && !$isPass) {
                 if (($pre !== '' || $user !== '' || $type === 'panel_action')
@@ -400,9 +400,9 @@ function smpro_aa_bf_key(array $nv) { return $nv['asn'] !== '' ? $nv['asn'] : ('
 /**
  * What a network's failed logins mean, in one verdict + the reasons behind it. Pure: reads the numbers already on
  * the network row (addresses, attempts, accounts targeted, time span, cloud-or-not) and nothing else.
- *   block  — an attack: password spraying, a many-address run, or hammering; blocking is the right call
- *   watch  — could be an attack or a person; look at the addresses/accounts before deciding
- *   normal — one address, one account, a handful of attempts: the shape of a wrong saved password, not an attack
+ *   block  - an attack: password spraying, a many-address run, or hammering; blocking is the right call
+ *   watch  - could be an attack or a person; look at the addresses/accounts before deciding
+ *   normal - one address, one account, a handful of attempts: the shape of a wrong saved password, not an attack
  * A search or archive crawler never attempts a cPanel/webmail/SSH login, so no failed-login group is ever a crawler;
  * the "archive bot" case does not exist here and the text says so when it matters (cloud networks).
  */
@@ -435,8 +435,8 @@ function smpro_aa_bf_assess(array $nv) {
  * The break-in networks, rebuilt from this server's own logs. Usable from cron: nothing here renders, and the
  * page's router is not involved.
  *
- * Deliberately the SAME pipeline the page walks — collect, keep external non-Arab failures, drop anything on the
- * allow-list, group by ASN — so what a rule acts on is what the page would have shown, not an approximation of
+ * Deliberately the SAME pipeline the page walks - collect, keep external non-Arab failures, drop anything on the
+ * allow-list, group by ASN - so what a rule acts on is what the page would have shown, not an approximation of
  * it built somewhere else.
  *
  * Returns ['ok'=>bool,'nets'=>[...],'trusted'=>[...],'msg'=>string]. 'ok' false means the logs could not be

@@ -1,15 +1,15 @@
 <?php
 /**
- * integrity.php — signed file-integrity manifest + Protected Mode (anti-tamper).
+ * integrity.php - signed file-integrity manifest + Protected Mode (anti-tamper).
  *
- * Goal: make the easiest crack — editing a shipped file (e.g. forcing the licence gate to return true) —
+ * Goal: make the easiest crack - editing a shipped file (e.g. forcing the licence gate to return true) -
  * SELF-EVIDENT. At build time every shipped file is hashed and the hash map is signed with the OFFLINE
  * private key (the same key used for update signing). The plugin verifies, with its embedded PUBLIC key:
- *   1) the manifest signature  → a tamperer can't regenerate a valid manifest (no private key), and
- *   2) each file's SHA-256      → a patched file no longer matches.
+ *   1) the manifest signature  -> a tamperer can't regenerate a valid manifest (no private key), and
+ *   2) each file's SHA-256      -> a patched file no longer matches.
  * Either failure on a CRITICAL file puts the plugin into Protected Mode (locked, alerted). Drift on a
  * non-critical file only raises an alert. This cannot make PHP "uncrackable" (a determined root user can
- * patch the verifier itself) — it raises the bar and gives real tamper-evidence, integrating with the
+ * patch the verifier itself) - it raises the bar and gives real tamper-evidence, integrating with the
  * existing licence kill-switch philosophy. It is FAIL-OPEN: a missing/blank manifest is skipped (older
  * builds / partial deploys are never bricked).
  */
@@ -19,7 +19,7 @@ define('SMPRO_INTEG_MANIFEST', SMPRO_BASE . '/integrity.json');
 define('SMPRO_INTEG_STATE',    SMPRO_VARLIB . '/integrity_state.json');
 define('SMPRO_INTEG_TTL',      120);   // re-run the per-request critical check at most this often (seconds)
 
-/** Files whose modification = a real attack on the gate. Mismatch here → Protected Mode (lock). */
+/** Files whose modification = a real attack on the gate. Mismatch here -> Protected Mode (lock). */
 function smpro_integrity_critical_files() {
     return ['index.php', 'includes/defines.php', 'includes/license.php', 'includes/auth.php', 'includes/integrity.php'];
 }
@@ -89,18 +89,18 @@ function smpro_integrity_state_save(array $s) {
 
 /**
  * Per-request gate (called from index.php). Cheap: re-checks only the CRITICAL files, cached for TTL so the
- * 2s live-poll endpoint doesn't re-hash every call. A critical mismatch → Protected Mode immediately.
+ * 2s live-poll endpoint doesn't re-hash every call. A critical mismatch -> Protected Mode immediately.
  */
 function smpro_integrity_gate() {
     $st = is_file(SMPRO_INTEG_STATE) ? (array)json_decode((string)@file_get_contents(SMPRO_INTEG_STATE), true) : [];
     if (!empty($st['locked'])) smpro_protected_mode((string)($st['reason'] ?? 'integrity'));   // stay locked until cleared
-    if (isset($st['ok_at']) && (time() - (int)$st['ok_at']) < SMPRO_INTEG_TTL) return;          // recently verified → skip
+    if (isset($st['ok_at']) && (time() - (int)$st['ok_at']) < SMPRO_INTEG_TTL) return;          // recently verified -> skip
     $r = smpro_integrity_check(smpro_integrity_critical_files());
     if (!empty($r['ok']) || !empty($r['skip'])) {
         $st['ok_at'] = time(); unset($st['locked'], $st['reason']); @smpro_integrity_state_save($st);
         return;
     }
-    // critical failure → lock
+    // critical failure -> lock
     $st['locked'] = true; $st['reason'] = (string)($r['reason'] ?? 'integrity'); @smpro_integrity_state_save($st);
     smpro_protected_mode($st['reason']);
 }
@@ -119,7 +119,7 @@ function smpro_integrity_full() {
     if (!empty($r['critical'])) {
         $st = is_file(SMPRO_INTEG_STATE) ? (array)json_decode((string)@file_get_contents(SMPRO_INTEG_STATE), true) : [];
         $st['locked'] = true; $st['reason'] = (string)($r['reason'] ?? 'integrity'); @smpro_integrity_state_save($st);
-        smpro_protected_mode($st['reason']);                       // CLI → log+alert only
+        smpro_protected_mode($st['reason']);                       // CLI -> log+alert only
     } else {
         // non-critical drift: alert but keep running
         if (function_exists('smpro_notify')) @smpro_notify('integrity_tamper', 'Plugin file changed (non-critical)',

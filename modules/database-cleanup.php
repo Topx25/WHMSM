@@ -1,12 +1,12 @@
 <?php
 /**
- * modules/database-cleanup.php — Database Injection Cleanup.
+ * modules/database-cleanup.php - Database Injection Cleanup.
  *
  * Imunify360 DETECTS malicious content injected into databases (wp_posts,
  * wp_options, etc.) but often cannot precisely clean it without risking the
  * legitimate content. This tool lists those DB injections, lets you INSPECT the
  * exact row value (binary-safe via HEX), shows the malicious snippets it would
- * strip, and applies a precise clean — backing up the original value first
+ * strip, and applies a precise clean - backing up the original value first
  * (restorable). Every mutation is POST + CSRF + root + audit. Read-only on GET.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -87,7 +87,7 @@ function smpro_db_status_badge($st, $snips = 0) {
 function smpro_db_cli() { foreach (['/usr/bin/mariadb', '/usr/bin/mysql', 'mysql'] as $b) if (is_executable($b) || $b === 'mysql') return $b; return 'mysql'; }
 /**
  * Root auth flag. The WHM CGI does not run with HOME=/root, so the mysql client
- * cannot find /root/.my.cnf on its own — we point it there explicitly so DB
+ * cannot find /root/.my.cnf on its own - we point it there explicitly so DB
  * access works regardless of the environment. Must be the FIRST client option.
  */
 function smpro_db_defaults() { return is_readable('/root/.my.cnf') ? ' --defaults-extra-file=/root/.my.cnf' : ''; }
@@ -129,10 +129,10 @@ function smpro_db_injections($scope = '') {
     if (array_key_exists($scope, $cache)) return $cache[$scope];
     $rows = [];
     $bin = smpro_db_bin();
-    if ($bin !== '') {                                  // Level 1 — Imunify malware history (if Imunify is installed)
-        // The Imunify malware list is expensive — cache the raw JSON for 90s so navigating
+    if ($bin !== '') {                                  // Level 1 - Imunify malware history (if Imunify is installed)
+        // The Imunify malware list is expensive - cache the raw JSON for 90s so navigating
         // to/within this page doesn't re-run a slow query each time (was a 60s page hang).
-        // Root-only 0700 cache dir (NOT world-writable /tmp) — prevents a local user pre-planting a symlink
+        // Root-only 0700 cache dir (NOT world-writable /tmp) - prevents a local user pre-planting a symlink
         // that the root file_put_contents would follow (CWE-59). Matches analytics-reports.php.
         $cf = (defined('SMPRO_CACHE') ? SMPRO_CACHE : (SMPRO_VARLIB . '/cache')) . '/dbinj.json';
         @is_dir(dirname($cf)) || @mkdir(dirname($cf), 0700, true);
@@ -159,7 +159,7 @@ function smpro_db_injections($scope = '') {
         }
         $rows = array_values(array_filter($byKey, fn($r) => $r['event'] === 'found'));
     }
-    // Level 2 — merge findings from the plugin's own deep scan (works with OR without Imunify), deduped by key.
+    // Level 2 - merge findings from the plugin's own deep scan (works with OR without Imunify), deduped by key.
     $seen = []; foreach ($rows as $r0) $seen[$r0['db'].'|'.$r0['table'].'|'.$r0['field'].'|'.(int)$r0['row']] = 1;
     foreach (smpro_db_native_load() as $nr) {
         if ($scope !== '' && (string)($nr['account'] ?? '') !== $scope) continue;
@@ -210,9 +210,9 @@ function smpro_db_is_system_schema($db) { return in_array(strtolower((string)$db
 function smpro_db_all_databases() {
     $out = []; foreach (array_filter(array_map('trim', explode("\n", smpro_db_q("SHOW DATABASES", 30)))) as $db) if ($db !== '' && smpro_db_ident($db) && !smpro_db_is_system_schema($db)) $out[] = $db; return $out;
 }
-/** cPanel system users (for DB→owner resolution). */
+/** cPanel system users (for DB->owner resolution). */
 function smpro_db_cpanel_users() { static $u = null; if ($u !== null) return $u; $u = []; foreach (glob('/var/cpanel/users/*') ?: [] as $f) { $b = basename($f); if ($b !== '' && $b[0] !== '.') $u[$b] = 1; } return $u; }
-/** Owner of a cPanel DB — the longest cPanel username that prefixes "<user>_". '' if unknown. */
+/** Owner of a cPanel DB - the longest cPanel username that prefixes "<user>_". '' if unknown. */
 function smpro_db_owner($db) {
     $users = smpro_db_cpanel_users(); $best = '';
     foreach (array_keys($users) as $u) { if (strpos($db, $u . '_') === 0 && strlen($u) > strlen($best)) $best = $u; }
@@ -257,7 +257,7 @@ function smpro_db_native_scan($scope) {
             [$pk, $cols] = smpro_db_scan_columns($db, $table);
             if ($pk === '' || !$cols) continue;
             $scannedTables++;
-            // WordPress posts table: never re-flag posts that are already TRASHED (remediated) — otherwise a
+            // WordPress posts table: never re-flag posts that are already TRASHED (remediated) - otherwise a
             // trashed spam post keeps re-appearing on every scan because its content is unchanged.
             $hasStatus = false; foreach ($cols as $cc) if (strcasecmp($cc, 'post_status') === 0) { $hasStatus = true; break; }
             $extra = (preg_match('/_?posts$/i', $table) && $hasStatus) ? " AND post_status <> 'trash'" : '';
@@ -266,7 +266,7 @@ function smpro_db_native_scan($scope) {
                 $where = [];
                 foreach ($markers as $mk) $where[] = "`$col` LIKE " . "'%" . str_replace(['\\','%','_','\''], ['\\\\','\\%','\\_','\\\''], $mk) . "%'";
                 $sql = "SELECT `$pk`,LEFT(`$col`,200000) FROM `$db`.`$table` WHERE (" . implode(' OR ', $where) . ")" . $extra . " LIMIT 300";
-                // read raw (tab-separated pk<TAB>value); values may contain newlines — use a sentinel-free bounded read
+                // read raw (tab-separated pk<TAB>value); values may contain newlines - use a sentinel-free bounded read
                 $raw = smpro_db_q($sql, 25);
                 if ($raw === '') continue;
                 foreach (explode("\n", $raw) as $line) {
@@ -289,14 +289,14 @@ function smpro_db_native_scan($scope) {
     return ['ok'=>true, 'dbs'=>$scannedDbs, 'tables'=>$scannedTables, 'found'=>count($rows),
         'partial'=>(time() > $deadline || count($findings) >= $CAP), 'scope'=>$acct !== '' ? ('account ' . $acct) : 'whole server'];
 }
-/** Verify a target (db,table,field,row) is in the current injection list — safety gate (uses the cached full list). */
+/** Verify a target (db,table,field,row) is in the current injection list - safety gate (uses the cached full list). */
 function smpro_db_is_flagged($db, $table, $field, $row) {
     static $idx = null;
     if ($idx === null) { $idx = []; foreach (smpro_db_injections() as $r) $idx[$r['db'].'|'.$r['table'].'|'.$r['field'].'|'.(int)$r['row']] = $r; }
     return $idx[$db.'|'.$table.'|'.$field.'|'.(int)$row] ?? null;
 }
 
-/* ---------------- account → own domains (for external-link detection) ---------------- */
+/* ---------------- account -> own domains (for external-link detection) ---------------- */
 /** Domains owned by an account (from /etc/userdomains), incl. bare + www stripped. */
 function smpro_db_account_domains($account) {
     static $cache = [];
@@ -316,7 +316,7 @@ function smpro_db_account_domains($account) {
 /** True when $host belongs to the account (its own domain or a subdomain of it). */
 function smpro_db_host_is_own($host, $ownDomains) {
     $host = strtolower(preg_replace('/^www\./', '', (string)$host));
-    if ($host === '') return true;                       // relative/anchor → treat as own
+    if ($host === '') return true;                       // relative/anchor -> treat as own
     foreach ($ownDomains as $d) { if ($host === $d || str_ends_with($host, '.' . $d)) return true; }
     return false;
 }
@@ -346,7 +346,7 @@ function smpro_db_spam_terms() {
 function smpro_db_spam_score($val) {
     $v = mb_strtolower((string)$val);
     // De-overlap the term list ONCE: drop any term that CONTAINS a shorter listed term (e.g. "casinos"
-    // contains "casino", "porno" contains "porn") — the shorter term already matches the same text, so
+    // contains "casino", "porno" contains "porn") - the shorter term already matches the same text, so
     // keeping both double-counted one word as 2 distinct hits. Keeps detection, fixes the inflated score.
     static $terms = null;
     if ($terms === null) {
@@ -374,11 +374,11 @@ function smpro_db_is_spam_content($val) {
 /* ---------------- malicious-snippet analyzer ---------------- */
 /**
  * Analyze a row value for injected malware. Detects:
- *   - backdoors:  <script>…</script>, lone <script…>, <iframe>…</iframe>, <?php…?>, eval(base64_decode/atob(…))
+ *   - backdoors:  <script>...</script>, lone <script...>, <iframe>...</iframe>, <?php...?>, eval(base64_decode/atob(...))
  *   - hidden spam blocks (display:none / off-screen divs)
- *   - external SEO-spam anchors  <a href="http(s)://EXTERNAL-HOST">…</a>  (host not owned by the account & not safe-listed)
+ *   - external SEO-spam anchors  <a href="http(s)://EXTERNAL-HOST">...</a>  (host not owned by the account & not safe-listed)
  * Returns offset-anchored snippets so cleaning can remove EXACTLY the selected ones (precise, reversible).
- *   ['snippets'=>[ ['i'=>int,'type'=>str,'host'=>str,'off'=>int,'len'=>int,'text'=>str], … ], 'changed'=>bool, 'hash'=>md5]
+ *   ['snippets'=>[ ['i'=>int,'type'=>str,'host'=>str,'off'=>int,'len'=>int,'text'=>str], ... ], 'changed'=>bool, 'hash'=>md5]
  */
 function smpro_db_analyze($val, $ownDomains = []) {
     $val = (string)$val;
@@ -387,7 +387,7 @@ function smpro_db_analyze($val, $ownDomains = []) {
         if ($len <= 0) return;
         $hits[] = ['off' => $off, 'len' => $len, 'type' => $type, 'host' => $host, 'text' => substr($val, $off, $len)];
     };
-    // 1) backdoor / scripting patterns — always malicious in stored content
+    // 1) backdoor / scripting patterns - always malicious in stored content
     $backdoor = [
         ['script', '/<script\b[^>]*>.*?<\/script\s*>/is'],
         ['script', '/<script\b[^>]*\/?>/is'],
@@ -402,7 +402,7 @@ function smpro_db_analyze($val, $ownDomains = []) {
             foreach ($m[0] as $hit) $add($hit[1], strlen($hit[0]), $type);
         }
     }
-    // 2) external SEO-spam anchors — host not owned by the account and not safe-listed
+    // 2) external SEO-spam anchors - host not owned by the account and not safe-listed
     if (preg_match_all('/<a\b[^>]*\bhref\s*=\s*("|\')(.*?)\1[^>]*>.*?<\/a\s*>/is', $val, $m, PREG_OFFSET_CAPTURE)) {
         foreach ($m[0] as $idx => $hit) {
             $href = html_entity_decode($m[2][$idx][0] ?? '', ENT_QUOTES);
@@ -422,7 +422,7 @@ function smpro_db_analyze($val, $ownDomains = []) {
     }
     return ['snippets' => $snips, 'changed' => !empty($snips), 'hash' => md5($val)];
 }
-/** Remove the selected snippets (by index) from the original value — exact, offset-based. */
+/** Remove the selected snippets (by index) from the original value - exact, offset-based. */
 function smpro_db_strip($val, $snippets, $selected) {
     $val = (string)$val;
     $sel = array_filter($snippets, fn($s) => in_array($s['i'], $selected, true));
@@ -513,7 +513,7 @@ function smpro_db_restore_apply($id) {
 }
 /** Show WHAT WAS REMOVED for a restore-log entry: reads the backed-up original value and, for a clean, re-runs the
  *  analyzer to list the exact malicious snippets that were stripped (+ a preview). For a trash, shows the backed-up
- *  post content + the status it had. Read-only — never changes the database. */
+ *  post content + the status it had. Read-only - never changes the database. */
 function smpro_db_restore_view($id) {
     $e = smpro_db_restore_get($id);
     if (!$e) return ['ok' => false, 'msg' => 'Restore entry not found.'];
@@ -530,7 +530,7 @@ function smpro_db_restore_view($id) {
         return ['ok' => true, 'kind' => 'trash', 'when' => $when, 'location' => $loc, 'account' => (string)($e['account'] ?? ''),
                 'prev_status' => $prev, 'len' => strlen($body), 'preview' => $cut($body, 8000)];
     }
-    // clean: re-analyze the ORIGINAL (backed-up) value → the snippets it lists ARE what was stripped
+    // clean: re-analyze the ORIGINAL (backed-up) value -> the snippets it lists ARE what was stripped
     $own   = function_exists('smpro_db_account_domains') ? smpro_db_account_domains((string)($e['account'] ?? '')) : [];
     $a     = smpro_db_analyze($raw, $own);
     $clean = smpro_db_strip($raw, $a['snippets'], array_map(fn($s) => $s['i'], $a['snippets']));
@@ -552,13 +552,13 @@ function smpro_db_clean_row_core($db, $table, $field, $pk, $row, $orig, $clean, 
     $hex = bin2hex($clean);
     $sql = "UPDATE `$db`.`$table` SET `$field`=UNHEX('" . $hex . "') WHERE `$pk`=$row LIMIT 1";
     $out = (string)@shell_exec('timeout 30 ' . smpro_db_cli() . smpro_db_defaults() . ' -e ' . escapeshellarg($sql) . ' 2>&1');
-    // VERIFY the write actually took effect — re-read the row and confirm it now equals the cleaned value.
+    // VERIFY the write actually took effect - re-read the row and confirm it now equals the cleaned value.
     // ("no 'error' in output" is NOT proof: a write that matches 0 rows, or a read-only grant, prints nothing.)
     $after = smpro_db_read($db, $table, $field, $pk, $row);
     $ok = ($after !== null && $after === $clean);
     $err = $ok ? '' : (trim(mb_substr($out, 0, 160)) ?: 'the row did not change after the UPDATE (0 rows affected or the write was blocked)');
     if ($ok) smpro_db_restore_log(['kind'=>'clean','account'=>$account,'db'=>$db,'table'=>$table,'field'=>$field,'pk'=>$pk,'row'=>$row,'backup'=>$bak,'orig_len'=>strlen($orig),'clean_len'=>strlen($clean)]);
-    else @unlink($bak);   // failed clean → the backup is a no-op, don't clutter the restore list
+    else @unlink($bak);   // failed clean -> the backup is a no-op, don't clutter the restore list
     return ['ok'=>$ok,'backup'=>$bak,'removed'=>strlen($orig)-strlen($clean),'err'=>$err];
 }
 /** Single-row clean WITH a report (used by the per-row "Remove selected & clean" button). */
@@ -595,7 +595,7 @@ function smpro_db_clean_batch(array $keys) {
     return ['cleaned'=>$cleaned, 'skipped'=>$skipped, 'removed_bytes'=>$bytes];
 }
 
-/* ---------------- trash spam POSTS (whole-page SEO spam) — reversible ---------------- */
+/* ---------------- trash spam POSTS (whole-page SEO spam) - reversible ---------------- */
 /** Set a spam post's status to 'trash' (WordPress-reversible). Backs up its content + original status. */
 function smpro_db_trash_post($db, $table, $pk, $row, $account) {
     if (!smpro_db_ident($db) || !smpro_db_ident($table) || !smpro_db_ident($pk)) return ['ok'=>false,'msg'=>'Invalid identifier.'];
@@ -612,7 +612,7 @@ function smpro_db_trash_post($db, $table, $pk, $row, $account) {
     @file_put_contents($bak, "original post_status={$cur}\n\n" . (string)$val, LOCK_EX); @chmod($bak, 0600);
     $sql = "UPDATE `$db`.`$table` SET post_status='trash' WHERE `$pk`=$row LIMIT 1";
     $out = (string)@shell_exec('timeout 30 ' . smpro_db_cli() . smpro_db_defaults() . ' -e ' . escapeshellarg($sql) . ' 2>&1');
-    // VERIFY: re-read post_status — it must now be 'trash' (a silent 0-row / blocked write must NOT report success).
+    // VERIFY: re-read post_status - it must now be 'trash' (a silent 0-row / blocked write must NOT report success).
     $now = trim(smpro_db_q("SELECT post_status FROM `$db`.`$table` WHERE `$pk`=$row LIMIT 1"));
     $ok = ($now === 'trash');
     if ($ok) smpro_db_restore_log(['kind'=>'trash','account'=>$account,'db'=>$db,'table'=>$table,'field'=>'post_content','pk'=>$pk,'row'=>$row,'backup'=>$bak,'prev_status'=>$cur]);
@@ -635,12 +635,12 @@ function smpro_db_trash_batch(array $keys) {
         $r = smpro_db_trash_post($db, $table, $pk, $row, $flag['account']);
         if (!empty($r['ok'])) { $trashed++; $done[] = $key; } else $skipped++;
     }
-    if ($done) { smpro_db_status_merge(array_fill_keys($done, ['state'=>'deleted'])); smpro_db_native_remove($done); }   // trashed → won't re-appear
+    if ($done) { smpro_db_status_merge(array_fill_keys($done, ['state'=>'deleted'])); smpro_db_native_remove($done); }   // trashed -> won't re-appear
     return ['trashed'=>$trashed, 'skipped'=>$skipped];
 }
 
 /* ---------------- full-database backup (into the client's home) + bulk fix ---------------- */
-/** Resolve an account's home directory (getent → /home/<acct> fallback). */
+/** Resolve an account's home directory (getent -> /home/<acct> fallback). */
 function smpro_db_account_home($account) {
     if (!preg_match('/^[a-z0-9._-]+$/i', (string)$account)) return '';
     $h = trim((string)@shell_exec('getent passwd ' . escapeshellarg($account) . ' 2>/dev/null | cut -d: -f6'));
@@ -708,7 +708,7 @@ function smpro_db_fix_database($db, $account) {
  * ===================================================================== */
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
 
-/* ---- POST: Level 2 — run the plugin-native deep scan (server-wide or one account); READ-ONLY ---- */
+/* ---- POST: Level 2 - run the plugin-native deep scan (server-wide or one account); READ-ONLY ---- */
 if ($reqMethod === 'POST' && ($_POST['dbc_action'] ?? '') === 'deep_scan') {
     smpro_require_valid_csrf('dbc_act'); smpro_require_root();
     header('Content-Type: application/json');
@@ -745,7 +745,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['dbc_action'] ?? ''), ['ignore', '
     echo json_encode(['ok' => $ok, 'msg' => $ok ? ($_POST['dbc_action'] === 'ignore' ? 'Hidden — this finding will not show again.' : 'Restored.') : 'Could not update (invalid key).'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
-/* ---- POST: analyze a FILE's code — is it a web-shell/backdoor, or a legit file with a vulnerability? (read-only) ---- */
+/* ---- POST: analyze a FILE's code - is it a web-shell/backdoor, or a legit file with a vulnerability? (read-only) ---- */
 if ($reqMethod === 'POST' && ($_POST['dbc_action'] ?? '') === 'analyze_file') {
     smpro_require_valid_csrf('dbc_act'); smpro_require_root();
     header('Content-Type: application/json');
@@ -858,7 +858,7 @@ if ($reqMethod === 'POST' && ($_POST['dbc_action'] ?? '') === 'trash_batch') {
     echo json_encode(['ok'=>true] + $r, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
-/* ---- POST: classify a batch of rows (status only, NO mutation) — drives the Status column ---- */
+/* ---- POST: classify a batch of rows (status only, NO mutation) - drives the Status column ---- */
 if ($reqMethod === 'POST' && ($_POST['dbc_action'] ?? '') === 'classify_batch') {
     smpro_require_valid_csrf('dbc_act'); smpro_require_root();
     header('Content-Type: application/json');
@@ -888,7 +888,7 @@ if ($reqMethod === 'POST' && ($_POST['dbc_action'] ?? '') === 'classify_batch') 
     echo json_encode(['ok'=>true,'statuses'=>$out], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
-/* ---- POST: FIX a DB, phase 1 — mysqldump backup into the client's home, return the row list to clean ---- */
+/* ---- POST: FIX a DB, phase 1 - mysqldump backup into the client's home, return the row list to clean ---- */
 if ($reqMethod === 'POST' && ($_POST['dbc_action'] ?? '') === 'fixdb_backup') {
     smpro_require_valid_csrf('dbc_act'); smpro_require_root();
     header('Content-Type: application/json');
@@ -931,7 +931,7 @@ $scope = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_GET['user'] ?? ''));
 $csrf = smpro_csrf_generate('dbc_act');
 
 // Render the page chrome FIRST so the page appears instantly, THEN run the (cached) Imunify
-// query — previously the whole page waited up to 60s for Imunify before any HTML was sent.
+// query - previously the whole page waited up to 60s for Imunify before any HTML was sent.
 smpro_layout_header('DB Cleanup');
 ?>
 <div class="svc-kicker">Malware</div>
@@ -1075,14 +1075,14 @@ $imunifyOn = smpro_db_bin() !== '';
 </div>
 
 <?php
-// group injections by account → list of rows; track each account's databases
+// group injections by account -> list of rows; track each account's databases
 $groups = [];
 $statusMap = smpro_db_status_load();   // last-known per-row statuses (persisted)
 $dbIgnored = smpro_db_ignored(); $dbHidden = []; $dbFixed = 0;
 foreach (array_slice($inj, 0, 1000) as $r) {
     $rk = $r['db'] . '|' . $r['table'] . '|' . $r['field'] . '|' . (int)$r['row'];
-    if (isset($dbIgnored[$rk])) { if (count($dbHidden) < 300) $dbHidden[] = $r; continue; }   // ignored → hidden from the list
-    // Already remediated by us (cleaned/trashed) and NOT re-detected since — hide it so Imunify's still-listed
+    if (isset($dbIgnored[$rk])) { if (count($dbHidden) < 300) $dbHidden[] = $r; continue; }   // ignored -> hidden from the list
+    // Already remediated by us (cleaned/trashed) and NOT re-detected since - hide it so Imunify's still-listed
     // history (or a stale cache) doesn't keep showing a row we already fixed. A genuinely NEW detection
     // (ctime newer than when we acted) still shows.
     $st = $statusMap[$rk] ?? null;
@@ -1355,7 +1355,7 @@ html[data-theme=dark] .db-grouprow{background:linear-gradient(180deg,rgba(255,25
     var panel=document.querySelector('.db-af'); if(panel)panel.scrollIntoView({behavior:'smooth',block:'center'});
     analyzeFile(p,a);
   });
-  // Native DB finding has no file recorded — jump to the analyzer, prefill the account webroot so the admin
+  // Native DB finding has no file recorded - jump to the analyzer, prefill the account webroot so the admin
   // can complete the path to the suspected file (a vulnerable extension or a web-shell) and analyze it.
   document.addEventListener('click',function(e){
     var f=e.target.closest('.dbFindFile'); if(!f)return;
@@ -1376,7 +1376,7 @@ html[data-theme=dark] .db-grouprow{background:linear-gradient(180deg,rgba(255,25
       if(j&&j.ok){var tr=r.closest('tr');if(tr)tr.style.opacity=.5;r.outerHTML='<span class="b green">✓ restored</span>';setTimeout(function(){location.reload();},1400);}
       else{r.disabled=false;r.innerHTML=o;} }).catch(function(){r.disabled=false;r.innerHTML=o;alert('Request failed.');});
   });
-  // View exactly what was removed for a restore-log entry (toggle an inline detail row) — read-only
+  // View exactly what was removed for a restore-log entry (toggle an inline detail row) - read-only
   document.addEventListener('click',function(e){
     var b=e.target.closest('.dbRvView'); if(!b)return;
     var id=b.getAttribute('data-id'), tr=b.closest('tr'), drow=tr.nextElementSibling;
@@ -1618,7 +1618,7 @@ html[data-theme=dark] .db-grouprow{background:linear-gradient(180deg,rgba(255,25
       post(fd).then(function(){progDone((r.cancelled?'Stopped. ':'Done. ')+'Cleaned '+r.cleaned+' row(s)'+(r.skipped?' · '+r.skipped+' skipped':'')+'.'+((r.cleaned===0&&r.skipped>0)?'  These are likely whole-page spam POSTS with no strippable snippet — use “🗑 Trash selected posts” for those.':'  Cleaned rows are removed from the list.'));setTimeout(function(){location.reload();},2600);});
     });
   });
-  // Fix whole database: phase 1 backup (mysqldump) → phase 2 chunked clean → summary report
+  // Fix whole database: phase 1 backup (mysqldump) -> phase 2 chunked clean -> summary report
   document.addEventListener('click',function(e){
     var b=e.target.closest('.db-mini.fixdb'); if(!b)return;
     var db=b.getAttribute('data-db'),acct=b.getAttribute('data-account');
@@ -1657,7 +1657,7 @@ tr.fw-pghide{display:none !important}
 </style>
 <script>
 (function(){
-  // make every section card collapsible — click its header to open/close; the choice is remembered per section
+  // make every section card collapsible - click its header to open/close; the choice is remembered per section
   var KEY='smpro:database-cleanup:open', SEL='.card > .im-head, .card > .db-l2-hd, .card > .db-af-hd', EXTRA='';
   var open={};
   try{ open=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(err){ open={}; }
@@ -1740,7 +1740,7 @@ tr.fw-pghide{display:none !important}
   }
   window.smproPager=smproPager;
 
-  // Injections: the rows carry bulk checkboxes driven by the page's own JS, so they are never paged — the filter only
+  // Injections: the rows carry bulk checkboxes driven by the page's own JS, so they are never paged - the filter only
   // hides whole account GROUPS (header row + its rows) that do not match, and says how many are left.
   (function(){
     var inp=document.getElementById('dbGrpFind'), info=document.getElementById('dbGrpInfo'); if(!inp) return;
@@ -1760,7 +1760,7 @@ tr.fw-pghide{display:none !important}
     }
     inp.addEventListener('input',apply); apply();
   })();
-  // "Analyze" on a finding scrolls to the analyzer card — make sure that card is open when it does
+  // "Analyze" on a finding scrolls to the analyzer card - make sure that card is open when it does
   document.addEventListener('click',function(e){ if(e.target.closest && e.target.closest('.dbAnalyze,.dbFindFile')) openCard('db-analyze',false); });
   var rs=document.getElementById('db-restore'); if(rs) smproPager(rs.querySelector('table.smpro-table'), {follow:'db-rvrow', ph:'Filter restores (account, database, table)\u2026'});
   var rp=document.getElementById('db-reports'); if(rp) smproPager(rp.querySelector('table.smpro-table'), {ph:'Filter reports (account, database, type)\u2026'});

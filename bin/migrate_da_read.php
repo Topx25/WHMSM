@@ -1,14 +1,14 @@
 <?php
 /**
- * bin/migrate_da_read.php — detached worker that reads a DirectAdmin archive.
+ * bin/migrate_da_read.php - detached worker that reads a DirectAdmin archive.
  *
  * Reading one is not a page-request job: tar is sequential, so describing a 9.7 GB archive meant decompressing
- * the whole stream — 183 seconds on the reference sample, for 36 MB of metadata. It runs here so the operator
+ * the whole stream - 183 seconds on the reference sample, for 36 MB of metadata. It runs here so the operator
  * can close the page and find the answer waiting, which is the rule for every started action in this plugin.
  *
  * Usage: migrate_da_read.php --archive=/path/to/user.admin.name.tar.gz
  */
-define('SMPRO_BOOT', 1);   // MUST precede the requires — every include exits('forbidden') without it
+define('SMPRO_BOOT', 1);   // MUST precede the requires - every include exits('forbidden') without it
 
 $base = dirname(__DIR__);
 require $base . '/includes/defines.php';

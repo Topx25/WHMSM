@@ -397,7 +397,7 @@ function mspro_ai304_token(): string
 
 function mspro_ai304_valid_token(string $token): bool
 {
-    $secret = mspro_ai304_ui_secret(); $a = mspro_ai304_actor();   // bind to the actor → not valid for a different WHM user
+    $secret = mspro_ai304_ui_secret(); $a = mspro_ai304_actor();   // bind to the actor -> not valid for a different WHM user
     $current  = hash_hmac('sha256', 'ai304-' . $a . '-' . gmdate('YmdH', time()), $secret);
     $previous = hash_hmac('sha256', 'ai304-' . $a . '-' . gmdate('YmdH', time() - 3600), $secret);
     return hash_equals($current, $token) || hash_equals($previous, $token);
@@ -1103,7 +1103,7 @@ function mspro_ai304_handle_post(): string
 
     // AUTHORIZATION: this handler writes provider config + encrypted API keys as root, so it MUST enforce the
     // same root gate every other state-changing endpoint uses (the token below is only anti-CSRF, not authz).
-    // Fail CLOSED — if the root gate isn't loaded (bootstrap missing), refuse rather than silently skipping authz.
+    // Fail CLOSED - if the root gate isn't loaded (bootstrap missing), refuse rather than silently skipping authz.
     if (!function_exists('smpro_require_root')) { http_response_code(403); echo json_encode(['ok'=>false,'message'=>'Unauthorized']); exit; }
     smpro_require_root();
 

@@ -1,12 +1,12 @@
 <?php
 /**
- * env.php — environment & capability detection.
+ * env.php - environment & capability detection.
  *
  * The plugin adapts to whatever is present on the host. Optional components
  * (cPanel/WHM, Imunify360, CSF, Exim, JetBackup, chattr, curl, whois) are
  * detected here; anything missing is surfaced as a NON-blocking warning in the
  * page header (see layout.php) with a hint on how to enable it. Missing pieces
- * only disable the feature that needs them — they never break the rest.
+ * only disable the feature that needs them - they never break the rest.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
@@ -141,7 +141,7 @@ function smpro_env_install($key) {
         default:       return [false, 'unsupported package manager'];
     }
     $out = (string)@shell_exec('timeout 240 ' . $cmd . ' 2>&1');
-    // sysstat ships the sar binary but collects nothing until its timer/service is enabled — turn it on best-effort
+    // sysstat ships the sar binary but collects nothing until its timer/service is enabled - turn it on best-effort
     // (service name differs: Debian `sysstat`, RHEL adds `sysstat-collect.timer`); errors are harmless no-ops.
     if ($key === 'sysstat') @shell_exec('systemctl enable --now sysstat 2>/dev/null; systemctl enable --now sysstat-collect.timer 2>/dev/null; systemctl enable --now sysstat.service 2>/dev/null');
     $now = is_executable('/usr/bin/' . $bin) || is_executable('/usr/sbin/' . $bin) || is_executable('/bin/' . $bin)

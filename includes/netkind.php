@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/netkind.php — what kind of network an address belongs to: a VPN exit, a hosting / cloud range, or
+ * includes/netkind.php - what kind of network an address belongs to: a VPN exit, a hosting / cloud range, or
  * neither (an ordinary ISP or mobile network, where real people sign in from).
  *
  * WHY. A correct password used from a VPN or a rented server is the signature of a stolen one: a customer signs in

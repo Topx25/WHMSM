@@ -1,6 +1,6 @@
 <?php
 /**
- * reports.php — scheduled periodic reports. The admin picks a cadence (daily / 3-day / weekly /
+ * reports.php - scheduled periodic reports. The admin picks a cadence (daily / 3-day / weekly /
  * monthly / custom N days) and delivery channels (panel view + email / Telegram / WhatsApp).
  * The notify cron calls smpro_rep_run() which generates a security+health digest for the period
  * when one is due, saves it (for panel viewing) and delivers it on the chosen channels.

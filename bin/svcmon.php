@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/svcmon.php — background worker for the SERVICE MONITOR. Installed as /etc/cron.d/smpro-svcmon ONLY while
+ * bin/svcmon.php - background worker for the SERVICE MONITOR. Installed as /etc/cron.d/smpro-svcmon ONLY while
  * monitoring is enabled with at least one watched service. Refreshes the service-scan snapshot and, for each
  * watched service that is down, auto-restarts it (rate-limited) and/or notifies through the configured channels.
  */

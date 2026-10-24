@@ -1,11 +1,11 @@
 <?php
 /**
- * includes/geoset.php — the firewall side of the Country Login Lock, as ONE kernel set instead of csf.deny lines.
+ * includes/geoset.php - the firewall side of the Country Login Lock, as ONE kernel set instead of csf.deny lines.
  *
  * WHY. The lock closes the login ports (never 80/443) for an address, which csf.deny can only express as one line
- * per port: 15 ports × 296 addresses was 4,434 lines on a production server - csf.deny at its 5,000 limit, every
+ * per port: 15 ports x 296 addresses was 4,434 lines on a production server - csf.deny at its 5,000 limit, every
  * new block from any other feature evicting an old one, and 4,434 separate iptables rules. The limit had already
- * been raised once (200 → 5,000) for the same symptom; raising it again only moves the day.
+ * been raised once (200 -> 5,000) for the same symptom; raising it again only moves the day.
  *
  * NOW. One ipset per address family holds the addresses, with the kernel's own expiry on each entry, and one
  * iptables rule per 15 login ports matches that set. The rule sits in CSF's LOCALINPUT chain right AFTER the
@@ -190,7 +190,7 @@ function smpro_gs_restore(array $ports): array {
 }
 
 /* ---------------- moving the old csf.deny lines into the set ---------------- */
-/** One legacy line → [ip, date] or null. */
+/** One legacy line -> [ip, date] or null. */
 function smpro_gs_parse_legacy(string $line): ?array {
     if (strpos($line, SMPRO_GS_TAG) === false || !preg_match('/s=([0-9a-fA-F:.]+)/', $line, $m)) return null;
     $d = preg_match('/(\d{4}-\d{2}-\d{2})\s*$/', $line, $dm) ? $dm[1] : date('Y-m-d');

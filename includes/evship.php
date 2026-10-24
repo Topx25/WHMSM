@@ -1,41 +1,41 @@
 <?php
 /**
- * evship.php — get the evidence journal off the server it was written on.
+ * evship.php - get the evidence journal off the server it was written on.
  *
  * WHY. The local journal in evidence.php is hash-chained, so removing a record leaves a provable break. But it
- * sits on a machine somebody has root on, and root can rewrite the whole chain from scratch — every record, every
- * seal, the state file — and the result verifies perfectly. A local store makes casual tampering visible; it
+ * sits on a machine somebody has root on, and root can rewrite the whole chain from scratch - every record, every
+ * seal, the state file - and the result verifies perfectly. A local store makes casual tampering visible; it
  * cannot survive an attacker who owns the box. Only a copy the server cannot reach back into can do that.
  *
  * HOW IT TRAVELS, AND WHY NOT THE OBVIOUS WAY. The first version of this posted signed batches to a small PHP
  * endpoint the customer installed on another server. That was wrong twice over. The customer had to create a
- * directory, set its mode, copy a file, invent an unguessable path and carry a key — and a requirement the
+ * directory, set its mode, copy a file, invent an unguessable path and carry a key - and a requirement the
  * customer builds by hand is one that gets built wrong. And underneath that, it could not have worked anyway:
  *
- *     hub.php:13 — "WHM addon CGIs cannot accept direct inbound calls."
+ *     hub.php:13 - "WHM addon CGIs cannot accept direct inbound calls."
  *
  * The project had already solved server-to-server traffic: the licence server is an authenticated RELAY, and
  * hub.php seals every payload with AES-256-GCM under a key derived from an ECDH exchange plus both endpoints'
  * identity plus an optional passphrase THE RELAY NEVER SEES. So evidence rides that. Nothing is installed,
- * no port is opened, no key is handled by a person, and the relay carries ciphertext it cannot read — which also
+ * no port is opened, no key is handled by a person, and the relay carries ciphertext it cannot read - which also
  * means the vendor running the relay is not holding customers' evidence.
  *
  * ITS OWN QUEUE, AND WHY THAT IS NOT OPTIONAL. The relay's existing channels are 'cmd', 'result' and 'status'.
  * Evidence must not share them: smpro_hub_render_request() fetches dir='result' with max=25 and DISCARDS every
- * item whose 'req' does not match its own — and fetching consumes. An evidence batch on that channel would be
+ * item whose 'req' does not match its own - and fetching consumes. An evidence batch on that channel would be
  * silently eaten by anybody opening the remote panel. Lost evidence, no error, nobody the wiser. So evidence has
  * its own dir, and if the relay does not accept it this refuses to send rather than falling back to a channel
  * that would swallow it.
  *
  * WHAT IT NEVER DOES. It never deletes a local record because the vault took it. Retention does that on its own
- * schedule, whether or not shipping works — otherwise a vault that quietly stopped accepting would take the local
+ * schedule, whether or not shipping works - otherwise a vault that quietly stopped accepting would take the local
  * copy with it, and the first anyone knew would be when both were needed.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 if (!defined('SMPRO_EVSHIP_STATE')) define('SMPRO_EVSHIP_STATE', SMPRO_VARLIB . '/evship_state.json');
 if (!defined('SMPRO_EVSHIP_MAX'))   define('SMPRO_EVSHIP_MAX',   300);      // records per batch
-/** The relay channel evidence travels on. Never 'result' — see the note above. */
+/** The relay channel evidence travels on. Never 'result' - see the note above. */
 if (!defined('SMPRO_EVSHIP_DIR'))   define('SMPRO_EVSHIP_DIR',   'evidence');
 
 function smpro_ev_ship_state(): array {
@@ -56,7 +56,7 @@ function smpro_ev_ship_state_save(array $s): void {
  *
  * There is nothing to configure. A server that has been paired as a Member already knows its hub, already has a
  * derived key, and already has a granted permission set. Evidence is sent only on a link whose grant includes
- * 'evidence' — so turning it on is the same single click as every other permission, on the machine that receives
+ * 'evidence' - so turning it on is the same single click as every other permission, on the machine that receives
  * it, by the person who owns both.
  */
 function smpro_ev_ship_link(): array {
@@ -117,7 +117,7 @@ function smpro_ev_ship_pending(array $sent): array {
 }
 
 /**
- * Send what is waiting. Returns what went, what did not, and why — never a bare boolean.
+ * Send what is waiting. Returns what went, what did not, and why - never a bare boolean.
  *
  * $dry builds and seals the batches and sends nothing, so the wiring can be checked on a live server without a
  * single record leaving it.
@@ -161,7 +161,7 @@ function smpro_ev_ship_run(bool $dry = false): array {
                 $why = 'the relay refused ' . $day . ' ' . $b['from'] . '-' . $b['to']
                      . (is_array($d) && !empty($d['message']) ? ': ' . $d['message'] : '');
                 // NEVER retry onto another channel. 'result' is fetched with max=25 by the remote panel, which
-                // discards what does not match its own request id — and fetching consumes. Evidence put there
+                // discards what does not match its own request id - and fetching consumes. Evidence put there
                 // would be eaten silently by anyone opening a remote page.
                 $res['ok'] = false; $res['errors'][] = $why;
                 $st['fails']++; $st['last_error'] = $why;
@@ -199,7 +199,7 @@ function smpro_ev_ship_run(bool $dry = false): array {
  *     version is written beside it, and the member has no way to reach either.
  *   - The vault stamps the time. A clock on a machine somebody has taken over is not evidence of anything, so the
  *     member's own 'sent_at' is kept only as a claim.
- *   - The chain is re-verified here, against what the vault already holds — so a gap is detected where the member
+ *   - The chain is re-verified here, against what the vault already holds - so a gap is detected where the member
  *     cannot suppress the detection.
  */
 function smpro_ev_vault_dir(): string {
@@ -255,7 +255,7 @@ function smpro_ev_vault_store(int $lid, array $batch): array {
             if ((string)$r['prev'] !== 'genesis')
                 return ['ok' => false, 'have' => $have,
                         'msg' => 'record ' . $seq . ' of ' . $day . ' does not chain onto what the vault holds'];
-            // A chain that RESTARTS is accepted — a member may genuinely have lost its state file — but never
+            // A chain that RESTARTS is accepted - a member may genuinely have lost its state file - but never
             // quietly. Starting a fresh chain is exactly how a gap would be hidden, so every restart is written
             // where the member cannot reach it, and an audit counts them.
             @file_put_contents($dir . '/' . $day . '.restart.jsonl',
@@ -294,7 +294,7 @@ function smpro_ev_vault_collect(): array {
     if (!function_exists('smpro_hub_links') || !function_exists('smpro_hub_api')) {
         $res['ok'] = false; $res['errors'][] = 'the multi-server hub is not in this build'; return $res;
     }
-    // The hub derives ITS half of the E2E key here, not at pairing time — the member's public key only arrives
+    // The hub derives ITS half of the E2E key here, not at pairing time - the member's public key only arrives
     // when the member approves. Skipping this leaves a link that reports a key and cannot open anything sent on
     // it, which is how the first live run consumed two batches and reported "0 batches, no errors".
     $links = smpro_hub_links('hub');
@@ -322,7 +322,7 @@ function smpro_ev_vault_collect(): array {
                  *
                  * fetch CONSUMES: once the relay has handed an item over it is gone, and there is no asking for
                  * it again. The first version of this loop skipped anything that would not decode and counted
-                 * nothing — so the first live run pulled two real batches, failed to open them, deleted them from
+                 * nothing - so the first live run pulled two real batches, failed to open them, deleted them from
                  * the relay and reported "1 link, 0 batches, 0 records" with no error at all. Indistinguishable
                  * from a quiet day. That is the exact failure this product exists to remove, written by hand into
                  * the part of it that is supposed to be the last line of defence.

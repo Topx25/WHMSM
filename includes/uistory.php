@@ -1,6 +1,6 @@
 <?php
 /**
- * uistory.php — the investigation told in plain words.
+ * uistory.php - the investigation told in plain words.
  *
  * The timeline is 2,000 rows of evidence. An operator asked for the thing the rows are evidence OF: who came,
  * from where, what they did, and whether it mattered. That is a story, and a story has episodes: one address,
@@ -130,7 +130,7 @@ function smpro_ui_story(array $events, ?array $fa, int $from, int $to): array {
                          'reached' => $reached, 'failed' => $failed, 'blocked' => $blocked['n'], 'blocked_ips' => count($blocked['ips'])]];
 }
 
-/** One episode → its class, weight, counts, and the sentence. */
+/** One episode -> its class, weight, counts, and the sentence. */
 function smpro_story_describe(array $ep): array {
     $c = ['login' => 0, 'operator' => 0, 'failed' => 0, 'panel' => 0, 'blocked' => 0, 'reached' => 0, 'mail' => 0, 'webshell' => 0, 'file' => 0, 'other' => 0, 'login_other' => 0];
     $ops = []; $targets = []; $fileOps = []; $doors = []; $paths = []; $services = []; $actors = [];

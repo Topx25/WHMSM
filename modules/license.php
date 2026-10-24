@@ -1,13 +1,13 @@
 <?php
 /**
- * modules/license.php — License activation & status (AITECH_LICENSE). The endpoint hosts live in
- * SMPRO_LIC_BASE / SMPRO_LIC_BASE_FALLBACK (includes/license.php) — never name one here.
+ * modules/license.php - License activation & status (AITECH_LICENSE). The endpoint hosts live in
+ * SMPRO_LIC_BASE / SMPRO_LIC_BASE_FALLBACK (includes/license.php) - never name one here.
  * GET renders status (refreshing a stale cache). All mutations go through the
  * ?license=1 endpoint in index.php (POST + CSRF + root).
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
-// Warm the cached verdict WITHOUT blocking the render — the old blocking check could hang the page
+// Warm the cached verdict WITHOUT blocking the render - the old blocking check could hang the page
 // ~20-40s during a license-server outage (exactly when admins open this page). The detached refresh
 // updates the state for the next load; this render shows the current cached verdict.
 if (function_exists('smpro_lic_refresh_async')) smpro_lic_refresh_async(); else smpro_lic_refresh_if_stale();

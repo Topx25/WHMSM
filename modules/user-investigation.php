@@ -1,7 +1,7 @@
 <?php
 /**
- * modules/user-investigation.php — per-account incident TIMELINE (feature-flagged BETA).
- * Read-only: pick an account + window → a merged, confidence-labeled timeline (panel/API actions,
+ * modules/user-investigation.php - per-account incident TIMELINE (feature-flagged BETA).
+ * Read-only: pick an account + window -> a merged, confidence-labeled timeline (panel/API actions,
  * logins, web attacks). Premium layout: read-only callout, icon stat cards, expandable rows,
  * pagination, column toggles, CSV export, right-side coverage panel, summary insight. No actions taken.
  */
@@ -45,7 +45,7 @@ if (($reqMethod ?? ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST' && ($_POST[
     if ($act === 'block_subnet') {   // present-to-admin decision: block a whole /16 or /24 that the operator judged hostile
         $cidr = (string)($_POST['cidr'] ?? '');
         if (!preg_match('#^(\d{1,3}\.){3}\d{1,3}/(16|24)$#', $cidr) || !filter_var(explode('/', $cidr)[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) { echo json_encode(['ok'=>false, 'msg'=>'Refused: only a /16 or /24 IPv4 CIDR.']); exit; }
-        // SAFETY: a /16 is 65,536 addresses — 256x the /24 blocker's blast radius, so it gets the SAME guard
+        // SAFETY: a /16 is 65,536 addresses - 256x the /24 blocker's blast radius, so it gets the SAME guard
         // suite that smpro_im_block_subnet24() uses. Without these a single click could deny the server's own
         // network (black-holing the box), the Cloudflare edge (cutting inbound traffic to EVERY site), or a
         // whole residential home-region range full of real customers.
@@ -60,7 +60,7 @@ if (($reqMethod ?? ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST' && ($_POST[
         if ($refuse === '' && function_exists('smpro_im_region_status') && smpro_im_region_status($netIp) === 'core_protected')
             $refuse = 'home-region (' . smpro_im_home_regions_short() . ') residential range — that is thousands of likely-real customers; block the individual attacker IPs instead';
         if ($refuse !== '') { echo json_encode(['ok'=>false, 'msg'=>'Refused: ' . $refuse . '.'], JSON_UNESCAPED_SLASHES); exit; }
-        // Use the firewall that actually enforces here — and never claim success from stdout text alone.
+        // Use the firewall that actually enforces here - and never claim success from stdout text alone.
         // ONE block path (helpers.php): engine detection + Cloudflare refusal.
         $r = smpro_fw_block_ip($cidr, 'SM Pro upload-breach');
         smpro_audit('upload_breach_block_subnet', ['cidr'=>$cidr, 'ok'=>!empty($r['ok']), 'engine'=>(string)($r['engine'] ?? '')]);
@@ -152,7 +152,7 @@ $fxBadge = function ($fx) {
     if ($o === 'reached') return stripos($lb, 'admin action') !== false
         ? '<span class="fx-badge fxg-admin" title="' . smpro_h($lb) . '">Admin action</span>'
         : '<span class="fx-badge fxg-reach" title="' . smpro_h($lb) . '">Reached app</span>';
-    return '';   // 'other' → no badge
+    return '';   // 'other' -> no badge
 };
 $vtitle = ['compromise_confirmed'=>'Compromise confirmed', 'compromise_suspected'=>'Compromise suspected', 'suspicious_file'=>'Suspicious file changed', 'attacks_reached'=>'Attacks reached the app', 'attacks_blocked'=>'Attacks blocked', 'reconnaissance'=>'Reconnaissance only', 'clean'=>'No attacks of consequence'];
 
@@ -761,7 +761,7 @@ if ($data) {
 <style>
 /* The `hidden` attribute must win over the flex/grid/table display rules below, or a toggled element
  * (the Columns menu, the Group table, the Recommendations box, a collapsed detail row) stays stuck
- * open — the UA `[hidden]{display:none}` loses to an author `.class{display:flex}`. */
+ * open - the UA `[hidden]{display:none}` loses to an author `.class{display:flex}`. */
 .ui-colsmenu[hidden],#uiGroupWrap[hidden],#uiRecBox[hidden],#uiMainWrap[hidden],.ui-detrow[hidden]{display:none!important}
 .ui-toolbar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:16px 18px;margin:12px 0}
 .ui-tbrow{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
@@ -833,7 +833,7 @@ if ($data) {
 .ui-cov-yes li,.ui-cov-no li{padding-left:22px;position:relative;margin-bottom:8px}
 .ui-cov-yes li:before{content:"\2713";position:absolute;left:0;color:var(--good);font-weight:800}
 .ui-cov-no li:before{content:"\2717";position:absolute;left:0;color:var(--dang);font-weight:800}
-/* Forensic enrichment — verdict banner, extra KPI column, per-row badges */
+/* Forensic enrichment - verdict banner, extra KPI column, per-row badges */
 .fx-banner{display:flex;align-items:center;gap:14px;padding:15px 18px;margin:12px 0 14px;border-left:4px solid var(--muted)}
 .fx-banner-ic{font-size:26px;line-height:1;flex:0 0 auto}
 .fx-banner-body{flex:1;min-width:0}
@@ -858,7 +858,7 @@ if ($data) {
 .fxg-admin{background:#f1f5f9;color:#475569}
 .fxg-susp{background:#fff7ed;color:#b45309}
 .fxg-mal{background:var(--dang-bg);color:var(--dang)}
-/* the timeline table must scroll horizontally inside its card on narrow screens (self-contained — do not
+/* the timeline table must scroll horizontally inside its card on narrow screens (self-contained - do not
    depend on another module's .fa-tablewrap rule) */
 .fa-tablewrap{overflow-x:auto}
 /* dark-mode surfaces for the hardcoded-color badges so they don't glare on a dark table */
@@ -924,7 +924,7 @@ html[data-theme=dark] .fxg-admin{background:#1e293b;color:#94a3b8}
         /* the finding, in one sentence */
         h+='<div style="padding:10px 12px;border-radius:9px;margin-bottom:10px;background:rgba(127,127,127,.08)"><b>'+esc(j.verdict_text)+'</b></div>';
 
-        /* what was searched — first, not last */
+        /* what was searched - first, not last */
         h+='<div style="margin:10px 0 4px"><b>Sources searched</b></div><div style="font-size:12.5px;line-height:1.7">';
         (j.sources||[]).forEach(function(sc){
           var col = sc.state==='read' ? '#059669' : (sc.state==='unreadable' ? '#dc2626' : 'var(--muted)');

@@ -1,9 +1,9 @@
 <?php
 /**
- * Safety Lock — the page the account holder opens inside cPanel.
+ * Safety Lock - the page the account holder opens inside cPanel.
  *
  * It runs as the ACCOUNT, never as root, and that single fact shapes everything. The protection people actually
- * want here is the immutable bit, and setting it needs root — so this page does not set anything of the sort. It
+ * want here is the immutable bit, and setting it needs root - so this page does not set anything of the sort. It
  * ASKS. Every privileged action becomes a request the server's operator approves in WHM, and the account is told
  * plainly that it has asked rather than done.
  *
@@ -131,7 +131,7 @@ function sp_reqdir($home) { return sp_state_dir($home) . '/requests'; }
  * Ask the server to do something only it can do.
  *
  * $items are paths RELATIVE to the chosen document root. They are checked here for shape and again, properly, by
- * root — this side's check is a courtesy to the person using the page, never a security boundary.
+ * root - this side's check is a courtesy to the person using the page, never a security boundary.
  */
 function sp_request($home, $verb, $reason = '', $rootKey = '', array $items = [], $unlockTime = '') {
     $allowed = ['apply_fast', 'apply_custom', 'unlock_selected', 'unlock_permanent'];
@@ -159,8 +159,8 @@ function sp_request($home, $verb, $reason = '', $rootKey = '', array $items = []
         $clean[] = $it;
         if (count($clean) >= 200) break;
     }
-    // A permanent release is not a file operation. It stops this ACCOUNT being protected at all — every lock comes
-    // off and nothing automatic puts one back — so it carries no selection, and asking for one would misdescribe
+    // A permanent release is not a file operation. It stops this ACCOUNT being protected at all - every lock comes
+    // off and nothing automatic puts one back - so it carries no selection, and asking for one would misdescribe
     // what is about to happen.
     if ($verb === 'unlock_permanent') $clean = [];
     elseif (in_array($verb, ['apply_custom', 'unlock_selected'], true) && !$clean) {

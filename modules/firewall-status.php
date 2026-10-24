@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/firewall-status.php — Firewall intelligence (read-only views +
+ * modules/firewall-status.php - Firewall intelligence (read-only views +
  * controlled CSF deny management). CSF/LFD/firewalld/nftables state, layers,
  * decision & maintenance plan, recommendations, counters, important config,
  * listening ports, and a managed view of blocked IPs (with Unblock).
@@ -13,7 +13,7 @@ function smpro_fw_active($svc) { $s = trim((string)smpro_memo('fw_act_' . $svc, 
 function smpro_fw_enabled($svc) { $s = trim((string)smpro_memo('fw_en_' . $svc, 60, fn() => smpro_fw_run('systemctl is-enabled ' . escapeshellarg($svc)))); return $s === '' ? 'unknown' : $s; }
 function smpro_fw_csf_bin() { foreach (['/usr/sbin/csf', '/usr/local/csf/bin/csf'] as $b) if (is_executable($b)) return $b; return ''; }
 
-/** Parse csf.deny → [ ['ip'=>, 'comment'=>], ... ] (skip comment lines). */
+/** Parse csf.deny -> [ ['ip'=>, 'comment'=>], ... ] (skip comment lines). */
 function smpro_fw_deny_list() {
     $rows = [];
     if (!is_readable('/etc/csf/csf.deny')) return $rows;
@@ -35,7 +35,7 @@ $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_M
 /* ---------- read-only: export blocked (external) IPs as an IOC list (GET; behind WHM/root page access) ----------
  * index.cgi wraps ?format=ioc with text/plain + Content-Disposition, so here we just emit one bare IP per line and
  * exit. Comment lines are skipped by smpro_fw_deny_list(); private/loopback/reserved ranges by smpro_ip_is_external().
- * Read-only — no CSRF needed for a read; still gated by WHM/root page access. */
+ * Read-only - no CSRF needed for a read; still gated by WHM/root page access. */
 if (($_GET['fw_ioc'] ?? '') === '1') {
     $ioc = [];
     foreach (smpro_fw_deny_list() as $d) {
@@ -69,7 +69,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'unblock') {
 /**
  * Look through addresses that are ALREADY blocked and find any that is a real, forward-confirmed crawler.
  *
- * The shield refuses new blocks aimed at a crawler, but says nothing about what is already in csf.deny — entries
+ * The shield refuses new blocks aimed at a crawler, but says nothing about what is already in csf.deny - entries
  * put there by lfd, by another admin, or by this plugin before the shield existed. A wrongly blocked Googlebot
  * produces no error and no log line; the site just stops being crawled. So the only way to find one is to go and
  * look, which is what this does.
@@ -185,7 +185,7 @@ if ($reqMethod === 'POST' && in_array((string)($_POST['fw_action'] ?? ''), ['gr_
 }
 
 /* ---------------------------------------------------------------------------------------------------------
- * Country wall — the one thing in this product that can make the server unreachable to its own operator.
+ * Country wall - the one thing in this product that can make the server unreachable to its own operator.
  *
  * Every write below is preceded by a check that the operator survives it, and the check is done on THIS
  * request's address, not on anything the browser sent. A page can lie about a country; it cannot lie about
@@ -306,7 +306,7 @@ if ($reqMethod === 'POST' && in_array((string)($_POST['fw_action'] ?? ''), ['gl_
             $patch['per_account'] = $pa;
 
             // The lock-out guard runs BEFORE enabling, never after. A refusal here leaves the previous state
-            // exactly as it was — a half-armed lock is how somebody loses their own panel.
+            // exactly as it was - a half-armed lock is how somebody loses their own panel.
             $wantOn = !empty($_POST['enabled']);
             $probe  = array_replace(smpro_gl_cfg(), $patch, ['enabled' => $wantOn]);
             $chk    = smpro_gl_arm_check($probe, (string)($_SERVER['REMOTE_ADDR'] ?? ''));
@@ -356,7 +356,7 @@ if ($reqMethod === 'POST' && in_array((string)($_POST['fw_action'] ?? ''), ['bl_
         if ($act === 'bl_review') {
             if (!empty($_POST['refresh'])) smpro_fw_block_fetch($key);
             $rev = smpro_fw_block_review($key);
-            // Counts and a short sample — never the whole list down the wire. The decision needs the shape of it.
+            // Counts and a short sample - never the whole list down the wire. The decision needs the shape of it.
             $samp = fn(array $l) => array_slice(array_map(fn($r) => ['ip' => $r['ip'], 'servers' => (int)($r['servers'] ?? 0), 'kind' => (string)($r['kind'] ?? ''), 'bot' => (string)($r['bot'] ?? '')], $l), 0, 25);
             $out = ['ok' => true, 'total' => $rev['total'], 'complete' => $rev['complete'],
                     'n' => ['add' => count($rev['add']), 'blocked' => count($rev['blocked']), 'allowed' => count($rev['allowed']),
@@ -397,7 +397,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'crawler_audit') {
     $ips = array_keys($ips);
 
     // All of them at once. Resolving one address at a time waited out the resolver's timeout on every miss, so a
-    // list of 199 got through 30 before the budget ran out — a check nobody runs seven times to finish. The
+    // list of 199 got through 30 before the budget ran out - a check nobody runs seven times to finish. The
     // answers are cached for a week, so a second run over the same list is instant.
     // Derived from how many of these are actually unresolved and from the server's own sweep settings, so a list
     // of forty and a list of four thousand each get the time they need instead of a number picked in advance.
@@ -407,7 +407,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'crawler_audit') {
         if (!array_key_exists($ip, $rdns)) { $complete = false; continue; }   // the sweep did not reach this one
         $checked++;
         // The forward confirmation costs a second lookup, but it only runs when the reverse name already sits
-        // under a publisher's domain — which for a list of attackers is almost never.
+        // under a publisher's domain - which for a list of attackers is almost never.
         $cs = smpro_bg_crawler_shield($ip, null, $rdns[$ip]);
         if (!empty($cs['crawler'])) $found[] = ['ip'=>$ip, 'name'=>$cs['name'], 'kind'=>$cs['kind'], 'host'=>$cs['host']];
     }
@@ -425,18 +425,18 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'service') {
     if (!in_array($svc, ['lfd', 'firewalld', 'nftables'], true)) { echo json_encode(['ok'=>false,'msg'=>'Service not allowed.']); exit; }
     if (!in_array($op, ['start', 'stop', 'restart', 'enable', 'disable'], true)) { echo json_encode(['ok'=>false,'msg'=>'Operation not allowed.']); exit; }
     // A FAILED unit (or one that hit its systemd start-limit) refuses to start again until its failed state is
-    // cleared — reset-failed FIRST so the start/restart below can actually recover it.
+    // cleared - reset-failed FIRST so the start/restart below can actually recover it.
     if (in_array($op, ['start','restart'], true)) @shell_exec('timeout 10 systemctl reset-failed ' . escapeshellarg($svc) . ' 2>/dev/null');
-    // LFD is managed by CSF — prefer csf --lfd for start/stop/restart when csf is present.
+    // LFD is managed by CSF - prefer csf --lfd for start/stop/restart when csf is present.
     $out = '';
     $csf = smpro_fw_csf_bin();
     if ($svc === 'lfd' && $csf !== '' && in_array($op, ['start','stop','restart'], true)) {
         $out = smpro_fw_run(escapeshellarg($csf) . ' --lfd ' . escapeshellarg($op), 30);
-        // csf --lfd can print a message yet leave systemd in 'failed' → if LFD still isn't active, fall through to systemctl.
+        // csf --lfd can print a message yet leave systemd in 'failed' -> if LFD still isn't active, fall through to systemctl.
         if (in_array($op, ['start','restart'], true) && trim(smpro_fw_run('systemctl is-active lfd')) !== 'active') $out = '';
     }
     if (trim($out) === '') {
-        $sysop = $op === 'start' ? 'restart' : $op;   // start→restart is idempotent & recovers a failed unit
+        $sysop = $op === 'start' ? 'restart' : $op;   // start->restart is idempotent & recovers a failed unit
         $out = smpro_fw_run('systemctl ' . escapeshellarg($sysop) . ' ' . escapeshellarg($svc), 30);
     }
     // verify
@@ -445,7 +445,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'service') {
         : (in_array($op, ['stop','disable'], true) ? ($now !== 'active' || $op === 'disable')
         : ($op === 'enable' ? ($nowEn === 'enabled') : true));
     // On a FAILED start/restart, capture WHY (systemd status + lfd.log) so the admin sees the real cause instead of a
-    // bare "could not restart" — a persistently-failing LFD is a config problem the restart itself cannot fix.
+    // bare "could not restart" - a persistently-failing LFD is a config problem the restart itself cannot fix.
     $why = '';
     if (in_array($op, ['start','restart'], true) && $now !== 'active') {
         $why = trim((string)@shell_exec('timeout 10 systemctl status ' . escapeshellarg($svc) . ' --no-pager --lines=8 2>&1'));
@@ -520,7 +520,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'cc_allow') {
     $val = implode(',', $codes);
     $content = (string)file_get_contents($conf);
     @copy($conf, $conf . '.smpro.ccbak');
-    // GeoIP needs a clean MM_LICENSE_KEY — strip stray spaces so CC_* features actually work
+    // GeoIP needs a clean MM_LICENSE_KEY - strip stray spaces so CC_* features actually work
     if (preg_match('/^[ \t]*MM_LICENSE_KEY[ \t]*=[ \t]*"([^"]*)"/m', $content, $mm))
         smpro_fw_csf_set($content, 'MM_LICENSE_KEY', trim($mm[1]));
     if ($mode === 'filter') { smpro_fw_csf_set($content, 'CC_ALLOW_FILTER', $val); smpro_fw_csf_set($content, 'CC_ALLOW', ''); }
@@ -553,14 +553,14 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'allow_live') {
 }
 
 /* ---------- Re-sync a desynced firewall: re-enable CSF (removes /etc/csf/csf.disable) + reload so the LIVE rules are
- *            rebuilt from csf.conf/csf.allow/csf.deny — closing the "disabled CSF but stale DROP rules" gap. ---------- */
+ *            rebuilt from csf.conf/csf.allow/csf.deny - closing the "disabled CSF but stale DROP rules" gap. ---------- */
 if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'fw_resync') {
     smpro_require_valid_csrf('fw_csf'); smpro_require_root();
     header('Content-Type: application/json');
     $csf = smpro_fw_csf_bin();
     if ($csf === '') { echo json_encode(['ok'=>false,'msg'=>'CSF is not installed — nothing to re-sync.']); exit; }
     @shell_exec('timeout 30 ' . escapeshellarg($csf) . ' -e 2>&1');            // enable (drops the csf.disable marker)
-    $out = (string)@shell_exec('timeout 90 ' . escapeshellarg($csf) . ' -r 2>&1');   // restart → rebuild rules from config
+    $out = (string)@shell_exec('timeout 90 ' . escapeshellarg($csf) . ' -r 2>&1');   // restart -> rebuild rules from config
     $ok = !@is_file('/etc/csf/csf.disable');
     smpro_audit('firewall_resync', ['ok'=>$ok ? 1 : 0, 'actor'=>smpro_current_actor()]);
     echo json_encode(['ok'=>$ok, 'msg'=>$ok ? '✓ CSF re-enabled &amp; reloaded — the live firewall now matches your allow/deny lists (your whitelist is applied).' : 'CSF is still disabled after the attempt — open WHM › ConfigServer Security &amp; Firewall.'], JSON_UNESCAPED_SLASHES); exit;
@@ -586,14 +586,14 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'ipadd') {
     // block: an optional non-permanent DURATION uses CSF's native temp-deny (auto-expires in TTL seconds) instead of a
     // permanent csf.deny entry. Permanent keeps the existing csf.deny path unchanged.
     $csf = smpro_fw_csf_bin();
-    $ttlMap = ['1h' => 3600, '6h' => 21600, '24h' => 86400, '72h' => 259200];   // allowed TTLs — clamps the client value
+    $ttlMap = ['1h' => 3600, '6h' => 21600, '24h' => 86400, '72h' => 259200];   // allowed TTLs - clamps the client value
     $dur = (string)($_POST['dur'] ?? 'permanent');
     if ($dur !== 'permanent' && isset($ttlMap[$dur])) {
         // CSF temp-deny: `csf -td <ip> <ttl_seconds> -c "<comment>"`. NOTE: in csf's CLI -d is the DIRECTION flag
         // (in/out) and -c is the COMMENT flag, so the "SM Pro temp block" label is passed with -c. IP was validated
         // above (filter_var); ttl is a clamped int (no shell metachars); ip + comment are escapeshellarg'd.
         if ($csf === '') { echo json_encode(['ok'=>false,'msg'=>'Temporary blocks require CSF, which is not installed. Use a permanent block instead.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
-        // Same safety guard the permanent path (smpro_csf_deny_add) enforces: NEVER block a Cloudflare edge IP —
+        // Same safety guard the permanent path (smpro_csf_deny_add) enforces: NEVER block a Cloudflare edge IP -
         // it fronts inbound traffic for every site, so a deny black-holes all of them.
         if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) {
             echo json_encode(['ok'=>false,'msg'=>'Refused: ' . $ip . ' is a Cloudflare edge IP — blocking it would cut ALL inbound traffic. Block the real client at Cloudflare, not CSF.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
@@ -601,7 +601,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'ipadd') {
         $ttl = (int)$ttlMap[$dur];
         $cmt = 'SM Pro temp block' . ($reason !== '' ? ': ' . $reason : '');
         smpro_fw_run(escapeshellarg($csf) . ' -td ' . escapeshellarg($ip) . ' ' . $ttl . ' -c ' . escapeshellarg($cmt), 30);
-        // VERIFY from CSF's own temp-ban list instead of trusting stdout — smpro_fw_run runs with 2>/dev/null,
+        // VERIFY from CSF's own temp-ban list instead of trusting stdout - smpro_fw_run runs with 2>/dev/null,
         // so a stderr-only csf failure would leave empty output and be mis-read as success. Honor TESTING mode too.
         $tlist    = (string)smpro_memo('fw_csf_t', 20, fn() => smpro_fw_run(escapeshellarg($csf) . ' -t', 15), true);   // fresh: refreshes the render memo too
         $recorded = strpos($tlist, $ip) !== false;
@@ -702,7 +702,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'rec_ignore') {
 $csfBin = smpro_fw_csf_bin();
 $csfInstalled = $csfBin !== '';
 // CSF DISABLED (`csf -x`) drops the marker /etc/csf/csf.disable; while it exists, lfd starts then immediately exits
-// ("csf and lfd have been disabled") and systemd marks it failed — so a "failed LFD" here is usually a DISABLED CSF.
+// ("csf and lfd have been disabled") and systemd marks it failed - so a "failed LFD" here is usually a DISABLED CSF.
 $csfDisabled = $csfInstalled && @is_file('/etc/csf/csf.disable');
 // The four slow probes on the render path (about 0.9 s together on a busy box) are memoised: the version for an
 // hour, rule counts and the temp-ban list for 20 s; a temp block made on this page refreshes the ban memo itself.
@@ -1167,7 +1167,7 @@ if (function_exists('smpro_gh_status')):
 </div>
 <?php endif; ?>
 <?php
-/* ---------------- Recommended BLOCK-lists — the mirror of the allow-list card below ---------------- */
+/* ---------------- Recommended BLOCK-lists - the mirror of the allow-list card below ---------------- */
 $fwbSources = function_exists('smpro_fw_block_sources') ? smpro_fw_block_sources() : [];
 $fwbIgnored = function_exists('smpro_fw_block_ignored') ? smpro_fw_block_ignored() : [];
 $fwbShare   = function_exists('smpro_fw_block_contributing') && smpro_fw_block_contributing();
@@ -1430,7 +1430,7 @@ if (function_exists('smpro_gw_cfg')):
   function selected(){return chks().filter(function(c){return c.checked;}).map(function(c){return c.value;});}
   function refreshBar(){var n=selected().length;var b=document.getElementById('fwAddSel'),c=document.getElementById('fwSelN');if(c)c.textContent=n;if(b)b.disabled=n===0;
     var all=document.getElementById('fwSelAll');if(all){var tot=chks().length;all.checked=tot>0&&n===tot;all.indeterminate=n>0&&n<tot;}}
-  /* refresh every provider row in place from the server — no page reload */
+  /* refresh every provider row in place from the server - no page reload */
   function refreshStates(){
     return fetch('index.cgi?page=firewall-status&fw_action=allow_states',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
       if(!j||!j.states)return;
@@ -1505,7 +1505,7 @@ if (function_exists('smpro_gw_cfg')):
 
 <?php
 // No baked country tables: this ships to every market. The convenience lists are the operator's OWN configured
-// regions (home ∪ caution, from Intrusion Monitor) and whatever CSF already allows — named through ext-intl when
+// regions (home ∪ caution, from Intrusion Monitor) and whatever CSF already allows - named through ext-intl when
 // it is loaded, otherwise shown as the bare code. Any other country goes in the free-text box below.
 $ccName = function ($code) {
     $code = strtoupper((string)$code);
@@ -1517,7 +1517,7 @@ $CONFIGURED = []; foreach ($cfgRegions as $c) { $c = strtoupper((string)$c); if 
 $ccMode = (trim($cfg['CC_ALLOW_FILTER'] ?? '') !== '') ? 'filter' : 'allow';
 $ccCurrentStr = $ccMode === 'filter' ? trim($cfg['CC_ALLOW_FILTER'] ?? '') : trim($cfg['CC_ALLOW'] ?? '');
 $ccCurrent = array_values(array_filter(array_map('trim', explode(',', $ccCurrentStr))));
-// Only what the admin has actually configured is pre-checked — NO market default. This ships to every reseller
+// Only what the admin has actually configured is pre-checked - NO market default. This ships to every reseller
 // in any market, so it must not assume a home region. Codes already set but not in the convenience menu below
 // are surfaced in the free-text box so they are visible and preserved on the next apply.
 $ccChecked = array_map('strtoupper', $ccCurrent);
@@ -1721,7 +1721,7 @@ $ccExtra   = array_values(array_diff($ccChecked, $ccKnown));
 .b{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
 .b.green{background:var(--good-bg);color:var(--good)}.b.red{background:var(--dang-bg);color:var(--dang)}.b.gray{background:var(--card);color:#475569}
 .meta{color:var(--muted)}
-/* country block-prevention — dropdown multi-select */
+/* country block-prevention - dropdown multi-select */
 .cc-dd{position:relative;max-width:420px}
 .cc-ddbtn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:var(--card,#fff);color:var(--ink);font-size:13.5px;cursor:pointer}
 .cc-dd.open .cc-ddbtn{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
@@ -1774,7 +1774,7 @@ $ccExtra   = array_values(array_diff($ccChecked, $ccKnown));
   });
 })();
 
-// Blocked IPs: search + scope filter + column sorting + paging — all on the server (50 rows a page)
+// Blocked IPs: search + scope filter + column sorting + paging - all on the server (50 rows a page)
 (function(){
   var body=document.getElementById('fwDenyBody'),tbl=document.getElementById('fwDenyTable');if(!body||!tbl)return;
   var st={off:0,scope:'all',q:'',sk:'',sd:'asc',total:<?= (int)count($denyRows) ?>},tm=null,busy=false;
@@ -2062,7 +2062,7 @@ table.gr-tbl tr.gr-live td{background:rgba(220,38,38,.06)}
 })();
 
 (function(){
-  // make every section card collapsible — click its title (or chevron) to open/close
+  // make every section card collapsible - click its title (or chevron) to open/close
   // Recommended allow-lists carries its own header class, so it was never part of this and had no way to close.
   // It is a long optional list that most visits scroll past to reach the blocked addresses below, so it is the one
   // section that starts CLOSED. Whether each section is open is remembered per section, so a choice made once is
@@ -2118,7 +2118,7 @@ table.gr-tbl tr.gr-live td{background:rgba(220,38,38,.06)}
 <?php if (function_exists('smpro_gw_cfg')): ?>
 <script>
 /* Country wall. Every confirm() string is ONE line: a raw newline inside a single-quoted JS string is a
-   SyntaxError, and a SyntaxError throws away the whole block — leaving buttons that do nothing, silently. That
+   SyntaxError, and a SyntaxError throws away the whole block - leaving buttons that do nothing, silently. That
    has shipped twice in this codebase. */
 (function(){
   var out=document.getElementById('gwOut'); if(!out) return;
@@ -2194,7 +2194,7 @@ table.gr-tbl tr.gr-live td{background:rgba(220,38,38,.06)}
   });
 
   /* The dead man's switch is fed from the browser, and only from the browser. What it has to prove is that a
-     request still arrives from outside and is answered — a worker on the server could never prove that, because
+     request still arrives from outside and is answered - a worker on the server could never prove that, because
      a locked-out operator and a working server look identical from the inside. */
   function gwBeat(){ var fd=new URLSearchParams(); fd.set('fw_action','gw_beat'); post(fd,function(){}); }
   gwBeat();
@@ -2237,13 +2237,11 @@ table.gr-tbl tr.gr-live td{background:rgba(220,38,38,.06)}
   function svcs(){return Array.prototype.slice.call(document.querySelectorAll('.glSvc:checked')).map(function(c){return c.value;});}
 
   /* The names follow what is typed, so a wrong code is visible before Save rather than after a sign-in was
-     allowed or refused by it. The table is small on purpose: it covers what this product's operators actually
-     use, and anything outside it is shown as unknown instead of guessed. */
+     allowed or refused by it. Every ISO 3166-1 code is offered, in code order; a code the PHP build cannot name
+     (no intl extension and not in the short fallback table) is shown as unknown instead of guessed. */
   var GLCC = <?= json_encode((function () {
       $t = [];
-      foreach (['EG','SA','AE','KW','QA','BH','OM','JO','LB','IQ','SY','YE','PS','SD','LY','TN','DZ','MA','MR','SO','DJ','KM',
-                'US','GB','DE','FR','NL','IT','ES','PT','BE','CH','AT','SE','NO','DK','FI','IE','PL','CZ','RO','BG','GR','HU',
-                'TR','RU','UA','CN','IN','PK','BD','ID','MY','SG','PH','TH','VN','JP','KR','AU','NZ','CA','BR','MX','AR','ZA','NG','KE','PA'] as $c) {
+      foreach (explode(' ', 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW') as $c) {
           $n = function_exists('smpro_cc_name') ? smpro_cc_name($c) : $c;
           if ($n !== '' && strtoupper($n) !== strtoupper($c)) $t[$c] = $n;
       }
@@ -2322,7 +2320,7 @@ table.gr-tbl tr.gr-live td{background:rgba(220,38,38,.06)}
 <script>
 /* Foreign sign-in report + bulk password reset.
    The new passwords arrive once, in the reset response. They are shown and offered as a download here and then
-   they are gone — nothing on the server can produce them again, which is the point. */
+   they are gone - nothing on the server can produce them again, which is the point. */
 (function(){
   var out=document.getElementById('grOut'); if(!out) return;
   function esc(x){return String(x==null?'':x).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}

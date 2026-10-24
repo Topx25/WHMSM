@@ -1,7 +1,7 @@
 <?php
 /**
  * Safety Monitor Pro (smpro)
- * defines.php — single source of truth for paths/names.
+ * defines.php - single source of truth for paths/names.
  * Renaming for production = change values here only.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -9,23 +9,23 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 // --- Identity ---
 define('SMPRO_NAME',        'Safety Monitor Pro');
 define('SMPRO_SLUG',        'smpro');
-define('SMPRO_VERSION',     '1.1.10-beta372');
+define('SMPRO_VERSION',     '1.1.10-beta373');
 
-/* Safety Lock — the account-side page. These five names are read by bin/register_cpuser.sh, which finds them
+/* Safety Lock - the account-side page. These five names are read by bin/register_cpuser.sh, which finds them
  * by TEXT in this file. They were left behind when the account side was merged into this build: the files all
  * shipped, the installer ran, and it stopped with "SMPRO_CPS_SLUG came back empty" - so the page could never
  * be installed from a release, on any server. */
 define('SMPRO_CPS_SLUG',    'safetylock');                      // dir + dynamicui_<slug>.conf + feature flag
 define('SMPRO_CPS_NAME',    'Safety Lock');                    // what the account holder sees in cPanel
 define('SMPRO_CPS_VENDOR',  'HostGuard');                      // /usr/local/cpanel/bin/admin/<Vendor>/
-define('SMPRO_CPS_ADMIN',   'SafetyLock');                     // .../<Vendor>/<Module> — the root helper
+define('SMPRO_CPS_ADMIN',   'SafetyLock');                     // .../<Vendor>/<Module> - the root helper
 define('SMPRO_CPS_GROUP',   'security');                       // which cPanel section it appears in
 define('SMPRO_FN_PREFIX',   'smpro_');
 
 // --- Brand ---
-define('SMPRO_BRAND_COMPANY', 'HostGuard.org');            // parent brand — shown as "by HostGuard.org"
+define('SMPRO_BRAND_COMPANY', 'HostGuard.org');            // parent brand - shown as "by HostGuard.org"
 define('SMPRO_BRAND_TAGLINE', 'A HostGuard.org product');  // footer credit line
-define('SMPRO_BRAND_URL',     'https://hostguard.org');    // brand site — the company name links here everywhere
+define('SMPRO_BRAND_URL',     'https://hostguard.org');    // brand site - the company name links here everywhere
 
 // --- Code paths (inside WHM docroot) ---
 define('SMPRO_BASE',        __DIR__ . '/..');               // .../cgi/addons/smpro
@@ -36,7 +36,7 @@ define('SMPRO_ASSETS_URL',  'index.cgi?asset=');            // assets served thr
 // --- Data paths (OUTSIDE web root) ---
 // Guarded, so a harness can redirect state to a sandbox BEFORE booting the real include chain. The render
 // smoke test (tests/support/render_one.php) boots every include exactly as index.php does and renders a page
-// for real — the only way to catch a TypeError or an undefined variable inside a render path, which no
+// for real - the only way to catch a TypeError or an undefined variable inside a render path, which no
 // source-text test can see. It must not write to the live state directories while doing it. Nothing in
 // production pre-defines these, so the values below are what every server actually runs with.
 if (!defined('SMPRO_VARLIB'))    define('SMPRO_VARLIB',    '/var/lib/smpro');

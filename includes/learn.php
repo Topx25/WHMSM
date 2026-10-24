@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/learn.php — Learned Defense: the server learns from incidents the operator confirms, then hunts for the
+ * includes/learn.php - Learned Defense: the server learns from incidents the operator confirms, then hunts for the
  * same thing everywhere and reports it. Nothing here names a file, a domain, an address or a customer: every rule is
  * DATA taken from a real incident (a file the operator quarantined, deleted or taught), stored with where it came
  * from, and can be switched off or marked wrong.
@@ -8,8 +8,8 @@
  * What one confirmed file teaches (each is a separate lesson, so one can be wrong without the others):
  *   hash      - this exact file. Found anywhere again it is the same malware.
  *   relpath   - this place inside a site (path relative to the document root). Only learned when the place is rare
- *               on this server at learn time, so an infected core file (wp-load.php …) never becomes "every site".
- *   dotdir    - a script inside a hidden folder of a site (.well-known/, .tmb/ …): learned from the folder it was in.
+ *               on this server at learn time, so an infected core file (wp-load.php ...) never becomes "every site".
+ *   dotdir    - a script inside a hidden folder of a site (.well-known/, .tmb/ ...): learned from the folder it was in.
  *   behaviour - what the code does, read after undoing string escapes: fetches code from the network and runs it,
  *               runs commands from request input, writes request data into files while walking folders, heavy
  *               escaping around a dynamic run. Learned as the set of behaviours the confirmed file had.
@@ -256,7 +256,7 @@ function smpro_lr_name_rare(string $name): bool {
 }
 /** Structural signs that need no lesson: an .htaccess that turns an odd extension into a CGI program, and a native
  *  (ELF) executable inside a document root. Both were how a planted "cgi-bin" ran compiled kernel exploits and a
- *  Perl shell under a store's folder; no PHP reader would ever have opened them. Returns [[path, why], …]. */
+ *  Perl shell under a store's folder; no PHP reader would ever have opened them. Returns [[path, why], ...]. */
 function smpro_lr_structural(string $root): array {
     $out = [];
     $ht = (string)@shell_exec('timeout 30 find ' . escapeshellarg($root) . ' -xdev -maxdepth 8 -type f -name .htaccess -size -64k -print 2>/dev/null | head -2000');
@@ -279,7 +279,7 @@ function smpro_lr_structural(string $root): array {
     }
     return $out;
 }
-/** Teach from a folder of kept files whose layout mirrors where they were found (…/home/<acct>/…). */
+/** Teach from a folder of kept files whose layout mirrors where they were found (.../home/<acct>/...). */
 function smpro_lr_teach_folder(string $dir): array {
     $dir = rtrim((string)realpath($dir), '/');
     if ($dir === '' || !is_dir($dir) || strpos($dir, '/home') === 0) return ['ok' => false, 'msg' => 'Give a folder outside the account homes (a quarantine / evidence folder).'];
@@ -301,7 +301,7 @@ function smpro_lr_teach_folder(string $dir): array {
 /** Files worth reading in one site: anything in a hidden folder, the top level, and what changed in the last N days. */
 function smpro_lr_candidates(string $root, int $sinceDays): array {
     $out = [];
-    // "top level" is ! -path root/*/* — never -maxdepth inside the tests: find treats -maxdepth as a global option
+    // "top level" is ! -path root/*/* - never -maxdepth inside the tests: find treats -maxdepth as a global option
     // wherever it is written, and a late -maxdepth 1 silently overrode the 8 above (the first hunt took 1 s).
     $cmd = 'timeout 60 find ' . escapeshellarg($root) . ' -xdev -maxdepth 8 -type f \( -name "*.php" -o -name "*.php[0-9]" -o -name "*.phtml" -o -name "*.pht" \) -size -2048k'
          . ' \( -path ' . escapeshellarg($root . '/.*') . ' -o -path ' . escapeshellarg($root . '/*/.*') . ' -o -mtime -' . max(1, $sinceDays) . ' -o ! -path ' . escapeshellarg($root . '/*/*') . ' \) -print 2>/dev/null | head -20000';   // one large docroot had 10,534 candidates; 5,000 cut half of them silently

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# gate-check.sh <tarball> — PROMOTE-TIME release gate.
+# gate-check.sh <tarball> - PROMOTE-TIME release gate.
 #
 # Run this immediately before publishing a release to the license server (copy to smpro-latest +
 # update VERSION/.rel_state + DB pins). It REFUSES the promote unless ALL hold for THIS exact artifact:
@@ -10,7 +10,7 @@
 #
 # This is the second half of "every fixed bug becomes automatic protection in every build": the build
 # gate (obfuscate-and-package.sh) makes the lab a precondition of *building*; this makes a green lab a
-# precondition of *promoting*. A hand-made or override-built tarball has no green receipt → promote fails.
+# precondition of *promoting*. A hand-made or override-built tarball has no green receipt -> promote fails.
 #
 # Usage:  ./build/gate-check.sh packaging/smpro-1.0.201.tar.gz
 #   PUB env overrides the public key (default ~/smpro_keys/smpro_update_public.pem).

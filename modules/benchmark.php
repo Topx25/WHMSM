@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/benchmark.php — Benchmark & Diagnostics hub.
+ * modules/benchmark.php - Benchmark & Diagnostics hub.
  * Opens on a LIVE hardware panel (CPU/RAM/swap/load/temp + per-disk I/O and temperature, refreshed
  * every couple of seconds), then the machine's specs, a full benchmark run with a verdict against
  * what this hardware SHOULD do, hardware health (SMART/RAID/ECC), kernel+software troubleshooting,
@@ -33,7 +33,7 @@ $bmMount = function_exists('smpro_bm_disk_mount') ? smpro_bm_disk_mount() : '';
 $kern    = smpro_bd_kernel_info();
 $hist    = smpro_bd_history();
 $m0      = function_exists('smpro_collect_metrics') ? smpro_collect_metrics() : [];
-$hw0     = smpro_bd_hw_health_cached(false);     // cache-only — never blocks this render
+$hw0     = smpro_bd_hw_health_cached(false);     // cache-only - never blocks this render
 $diag0   = smpro_bd_diagnose_cached(false);      // cache-only
 smpro_audit('benchdiag_view', ['runs' => count($hist)]);
 
@@ -460,7 +460,7 @@ if ($assess && $assess['groups']): ?>
   padding:8px 11px;line-height:1.6;word-break:break-word}
 .bm-manual span:first-child{font-weight:800;color:var(--muted);text-transform:uppercase;font-size:10.5px;
   letter-spacing:.05em;margin-right:6px}
-/* grow dialog — the plugin's ds-modal pattern */
+/* grow dialog - the plugin's ds-modal pattern */
 .ds-modal{position:fixed;inset:0;background:rgba(15,19,32,.55);display:grid;place-items:center;padding:20px;z-index:60}
 .ds-modal[hidden]{display:none}
 .ds-modal-card{width:min(580px,100%);max-height:92vh;overflow:auto;background:var(--card);border:1px solid var(--line);
@@ -491,7 +491,7 @@ if ($assess && $assess['groups']): ?>
   border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)}
 .gm-conf input:focus{outline:none;border-color:var(--dang)}
 .gm-conf input.ok{border-color:var(--good)}
-/* Base primitives. The shared layout only adds sort/border ENHANCEMENTS to .smpro-table — the base
+/* Base primitives. The shared layout only adds sort/border ENHANCEMENTS to .smpro-table - the base
    look (full width, padding, header style, badges, live pill) is declared per page, as every other
    module does. Without this the tables fall back to bare browser defaults (shrink-to-fit, no padding). */
 .smpro-tablewrap{overflow-x:auto}
@@ -659,7 +659,7 @@ html[data-theme=dark] .bd-spec span{color:#fdba74}
   function post(p){var b=new URLSearchParams();b.set('smpro_csrf',CSRF);for(var k in p)b.set(k,p[k]);
     return fetch('index.cgi?page=benchmark',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b.toString()}).then(function(r){return r.json();});}
   function hold(ms){holdUntil=Date.now()+(ms||25000);}
-  /* the storage block is re-rendered by the poll — remember which groups the admin had open */
+  /* the storage block is re-rendered by the poll - remember which groups the admin had open */
   function openState(){
     var s={}; Array.prototype.forEach.call(document.querySelectorAll('#bdStor button[aria-controls]'),function(b){
       s[b.getAttribute('aria-controls')]=b.getAttribute('aria-expanded')==='true'; }); return s;
@@ -785,23 +785,23 @@ html[data-theme=dark] .bd-spec span{color:#fdba74}
     }).catch(function(){run.disabled=false;run.innerHTML='&#127937; Run full benchmark';alert('⚠ Network error.');});
   });
 
-  /* delegated — the troubleshooting list is re-rendered by the poll */
+  /* delegated - the troubleshooting list is re-rendered by the poll */
   document.addEventListener('click',function(e){
     var b;
-    /* Collapsible section headers. Scoped to '#bdStor …' this only worked for the re-rendered storage block —
+    /* Collapsible section headers. Scoped to '#bdStor ...' this only worked for the re-rendered storage block -
        the page's other collapsibles ("What speed this server actually needs", "Storage changes") sit OUTSIDE
        that element, so clicking them did nothing at all. Match any collapsible header on the page. */
     if((b=e.target.closest('button[aria-controls]'))){
       var open=b.getAttribute('aria-expanded')==='true', body=document.getElementById(b.getAttribute('aria-controls'));
       b.setAttribute('aria-expanded',open?'false':'true'); if(body)body.hidden=open; return;
     }
-    /* "test it" link in the Drive-lifetime table → reveal the Physical drives section and scroll to it */
+    /* "test it" link in the Drive-lifetime table -> reveal the Physical drives section and scroll to it */
     if((b=e.target.closest('.bd-jumptest'))){ e.preventDefault();
       var pb=document.querySelector('[aria-controls="bdDrives"]'), body=document.getElementById('bdDrives');
       if(pb)pb.setAttribute('aria-expanded','true'); if(body){body.hidden=false; body.scrollIntoView({behavior:'smooth',block:'center'});}
       return;
     }
-    /* grow a filesystem — opens the two-step confirmation */
+    /* grow a filesystem - opens the two-step confirmation */
     if((b=e.target.closest('.bd-grow'))){ growOpen(b); return; }
     /* test one device */
     if((b=e.target.closest('.bd-devtest'))){

@@ -1,13 +1,13 @@
 <?php
 /**
- * domains.php — Domain Checker engine.
+ * domains.php - Domain Checker engine.
  *
- * Enumerates every domain hosted on the server (cPanel get_domain_info → /etc/userdomains
+ * Enumerates every domain hosted on the server (cPanel get_domain_info -> /etc/userdomains
  * fallback), and for each one resolves:
  *   - owning cPanel user + account status (active / suspended)
  *   - the LIVE public A record(s) the domain points to (via an external resolver)
  *   - whether that IP matches one of THIS server's IPs (mismatch = points elsewhere)
- *   - the registrar expiry date (WHOIS) → expired / expiring-soon flag
+ *   - the registrar expiry date (WHOIS) -> expired / expiring-soon flag
  *
  * Read = safe (scan). Actions (suspend / terminate an account) are root-gated, CSRF-gated,
  * POST-only, never touch system/root accounts, and are explicit per request.
@@ -18,7 +18,7 @@ define('SMPRO_DOM_CACHE', SMPRO_CACHE . '/domains');
 define('SMPRO_DOM_WHOIS_TTL', 12 * 3600);   // registrar expiry changes rarely
 define('SMPRO_DOM_DNS_TTL',   30 * 60);      // A records can change; re-check every 30 min
 
-// Force a full PATH — the WHM CGI runs with a minimal PATH where dig/host/whois/curl may be unfound,
+// Force a full PATH - the WHM CGI runs with a minimal PATH where dig/host/whois/curl may be unfound,
 // which silently broke NS/WHOIS lookups (they fell back to PHP DNS funcs that some hosts disable).
 function smpro_dom_sh($cmd, $t = 8) { return smpro_run((string)$cmd, (int)$t, ['path' => true, 'stderr' => 'discard']); }
 function smpro_dom_has($bin) { return trim(smpro_dom_sh('command -v ' . escapeshellarg($bin))) !== ''; }
@@ -26,7 +26,7 @@ function smpro_dom_whmapi() { foreach (['/usr/local/cpanel/bin/whmapi1', '/usr/b
 
 /* ---------------- DNS cluster: peer reachability ----------------
  * A cPanel DNS cluster writes every zone change to each peer SYNCHRONOUSLY. When one peer stops
- * answering, cPanel keeps waiting on it, so the visible symptom is not "DNS is broken" — it is account
+ * answering, cPanel keeps waiting on it, so the visible symptom is not "DNS is broken" - it is account
  * creation, domain adds and zone edits hanging or timing out, with nothing obviously wrong locally.
  * That link between "one silent peer" and "the panel feels stuck" is what this surfaces.
  *
@@ -37,13 +37,13 @@ function smpro_dom_whmapi() { foreach (['/usr/local/cpanel/bin/whmapi1', '/usr/b
 /** Configured DNS-cluster peers. [] when DNS clustering is not in use.
  *
  *  Source of truth is cPanel's own DNS-cluster store, mirroring Cpanel::DNSLib::PeerConfig:
- *    /var/cpanel/useclusteringdns        — the master switch; absent means no DNS cluster at all
- *    /var/cpanel/cluster/<user>/config/  — one file per peer, named by host, holding its dnsrole
+ *    /var/cpanel/useclusteringdns        - the master switch; absent means no DNS cluster at all
+ *    /var/cpanel/cluster/<user>/config/  - one file per peer, named by host, holding its dnsrole
  *  Each reseller with the cluster privilege can have their own peer set, so every user directory is read.
  *
  *  NOT `list_configclusterservers`: that API is the CONFIGURATION cluster (WHM › Configuration Cluster,
  *  which copies WHM settings between servers, stored in /var/cpanel/clusterserver). It is a different
- *  feature with a different store — reading it meant a server with a real DNS cluster reported "no cluster
+ *  feature with a different store - reading it meant a server with a real DNS cluster reported "no cluster
  *  configured" while a hung DNS peer was actively stalling zone writes, and a config-cluster-only server had
  *  its settings peers mislabelled as DNS peers. */
 function smpro_dns_cluster_peers(string $confGlob = '/var/cpanel/cluster/*/config/*', string $switch = '/var/cpanel/useclusteringdns'): array {
@@ -71,7 +71,7 @@ function smpro_dns_cluster_peers(string $confGlob = '/var/cpanel/cluster/*/confi
 function smpro_dns_peer_probe(string $host, int $port = 2087, int $timeout = 5): array {
     if (!preg_match('/^[A-Za-z0-9._:-]+$/', $host)) return [false, 0, 'invalid host'];
     $t0 = microtime(true);
-    // TLS handshake is not attempted — a TCP connect is enough to tell "answering" from "hanging", and it
+    // TLS handshake is not attempted - a TCP connect is enough to tell "answering" from "hanging", and it
     // cannot be tripped up by a self-signed cert, which cPanel peers commonly use.
     $errno = 0; $err = '';
     // smpro_host_port() brackets an IPv6 literal; without it the port is read as part of the address and
@@ -100,7 +100,7 @@ function smpro_dns_cluster_health_live(int $slowMs = 1500): array {
     $rows = []; $worst = 'ok';
     // TOTAL time budget: this runs on the Security Health render path, and probing N unreachable peers at
     // 5s each would stall the page itself. Once the budget is spent the remaining peers are reported as
-    // "not checked" rather than silently omitted — the page must never hang to produce a health card.
+    // "not checked" rather than silently omitted - the page must never hang to produce a health card.
     $budget = 12.0; $spent = 0.0;
     foreach ($peers as $p) {
         if ($spent >= $budget) {
@@ -120,7 +120,7 @@ function smpro_dns_cluster_health_live(int $slowMs = 1500): array {
     return ['configured' => true, 'peers' => $rows, 'worst' => $worst];
 }
 
-/** Recent peer failures from cPanel's dnsadmin log — corroborates a probe, and catches a peer that is
+/** Recent peer failures from cPanel's dnsadmin log - corroborates a probe, and catches a peer that is
  *  reachable now but has been timing out. Log line shape: "[ISO ts] level [dnsadmin] message". */
 function smpro_dns_cluster_log_failures(int $max = 5): array {
     $log = '/usr/local/cpanel/logs/dnsadmin_log';
@@ -141,7 +141,7 @@ function smpro_dom_server_ips(): array {
     $set = [];
     foreach (['/var/cpanel/mainip', '/var/cpanel/mainserverip'] as $f)
         if (is_readable($f)) { $v = trim((string)@file_get_contents($f)); if (filter_var($v, FILTER_VALIDATE_IP)) $set[$v] = 1; }
-    // all bound IPs (cPanel listips → addresses on the box)
+    // all bound IPs (cPanel listips -> addresses on the box)
     $bin = smpro_dom_whmapi();
     if ($bin !== '') {
         $j = json_decode(smpro_dom_sh(escapeshellarg($bin) . ' --output=json listips', 12), true);
@@ -172,7 +172,7 @@ function smpro_dom_list(): array {
             ];
         }
     }
-    // Fallback / supplement: /etc/userdomains (authoritative domain→user map)
+    // Fallback / supplement: /etc/userdomains (authoritative domain->user map)
     if (!$out && is_readable('/etc/userdomains')) {
         foreach (file('/etc/userdomains', FILE_IGNORE_NEW_LINES) ?: [] as $l) {
             if (!preg_match('/^([^:]+):\s*(\S+)/', $l, $m)) continue;
@@ -191,7 +191,7 @@ function smpro_dom_list(): array {
     return array_values($out);
 }
 
-/* ---------------- parking nameservers — a domain on these is parked/inactive (treat as expired) ----------------
+/* ---------------- parking nameservers - a domain on these is parked/inactive (treat as expired) ----------------
  * dns-parking.com = the registrar/Namecheap "parked" NS; the rest are common domain-parking monetizers. */
 function smpro_dom_parking_ns(array $ns): string {
     $providers = [
@@ -220,7 +220,7 @@ function smpro_dom_parking_ns(array $ns): string {
 /* ---------------- known CDN ranges (so a proxied site is not mistaken for a hijack) ---------------- */
 function smpro_dom_cdn_label(string $ip): string {
     if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) return '';
-    // Cloudflare IPv4 (subset of published ranges — enough to label the common cases)
+    // Cloudflare IPv4 (subset of published ranges - enough to label the common cases)
     $cf = ['173.245.48.0/20','103.21.244.0/22','103.22.200.0/22','103.31.4.0/22','141.101.64.0/18',
            '108.162.192.0/18','190.93.240.0/20','188.114.96.0/20','197.234.240.0/22','198.41.128.0/17',
            '162.158.0.0/15','104.16.0.0/13','104.24.0.0/14','172.64.0.0/13','131.0.72.0/22'];
@@ -244,7 +244,7 @@ function smpro_dom_doh(string $name, string $type): array {
     foreach ($eps as $ep) {
         // -L: this response is PARSED as JSON, so a provider that starts redirecting (as Google did with its
         // bot-ranges feed) would hand us an HTML page, json_decode would fail, and DNS checks would go quiet
-        // with no error at all. Both endpoints answer 200 directly today, so following costs nothing — it
+        // with no error at all. Both endpoints answer 200 directly today, so following costs nothing - it
         // just removes a silent outage the day either provider moves a path.
         $raw = smpro_dom_sh('curl -s -L --max-redirs 3 --max-time 8 ' . $ep[1] . escapeshellarg($ep[0]), 10);
         $j = json_decode($raw, true);
@@ -268,16 +268,16 @@ function smpro_dom_resolve(string $domain): array {
             if ($ips) break;
         }
     }
-    // system resolver fallbacks (dig with no @server, then host, then PHP) — for boxes that firewall public DNS
+    // system resolver fallbacks (dig with no @server, then host, then PHP) - for boxes that firewall public DNS
     if (!$ips && smpro_dom_has('dig')) { $raw = smpro_dom_sh('dig +short +time=3 +tries=1 A ' . escapeshellarg($domain), 6); foreach (preg_split('/\s+/', trim($raw)) as $l) if (filter_var($l, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $ips[$l] = 1; }
     if (!$ips && smpro_dom_has('host')) { $raw = smpro_dom_sh('host -t A ' . escapeshellarg($domain), 6); if (preg_match_all('/has address (\d+\.\d+\.\d+\.\d+)/', $raw, $mm)) foreach ($mm[1] as $v) $ips[$v] = 1; }
     if (!$ips) { $r = @gethostbynamel($domain); if (is_array($r)) foreach ($r as $v) if (filter_var($v, FILTER_VALIDATE_IP)) $ips[$v] = 1; }
-    // DNS-over-HTTPS — last resort for TLDs the local resolver can't reach (e.g. .sa)
+    // DNS-over-HTTPS - last resort for TLDs the local resolver can't reach (e.g. .sa)
     if (!$ips) { $d = smpro_dom_doh($domain, 'A'); foreach ($d['data'] as $v) if (filter_var($v, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $ips[$v] = 1; }
     return array_keys($ips);
 }
 
-/* ---------------- authoritative nameservers (NS records) — shows where DNS is managed ----------------
+/* ---------------- authoritative nameservers (NS records) - shows where DNS is managed ----------------
  * NS lives at the registered zone, so for a subdomain/addon we walk UP to the parent zone. */
 function smpro_dom_ns(string $domain): array {
     $domain = strtolower(trim($domain, " \t."));
@@ -338,14 +338,14 @@ function smpro_dom_whois_raw(string $domain): string {
     $tld2 = count($parts) >= 2 ? $parts[count($parts) - 2] . '.' . $tld : $tld;   // e.g. com.sa
     $server = smpro_dom_whois_server($tld2) ?: smpro_dom_whois_server($tld);
 
-    // No known server → ask the IANA root which whois server is authoritative for this TLD.
+    // No known server -> ask the IANA root which whois server is authoritative for this TLD.
     if ($server === '') {
         $iana = smpro_dom_whois_socket('whois.iana.org', $domain);
         if (preg_match('/whois:\s*(\S+)/i', $iana, $m)) $server = trim($m[1]);
     }
     $raw = $server !== '' ? smpro_dom_whois_socket($server, $domain) : '';
 
-    // Thin registry (.com/.net) → follow the registrar's whois server ONCE for the expiry/registrar detail.
+    // Thin registry (.com/.net) -> follow the registrar's whois server ONCE for the expiry/registrar detail.
     if ($raw !== '' && preg_match('/Registrar WHOIS Server:\s*(\S+)/i', $raw, $m)) {
         $ref = trim($m[1]);
         if ($ref !== '' && stripos($ref, $server) === false) { $more = smpro_dom_whois_socket($ref, $domain); if ($more !== '') $raw .= "\n" . $more; }
@@ -359,11 +359,11 @@ function smpro_dom_whois_raw(string $domain): string {
 function smpro_dom_whois_expiry(string $domain): array {
     $raw = smpro_dom_whois_raw($domain);
     if (trim($raw) === '') return ['ts' => 0, 'registrar' => '', 'unreg' => false, 'err' => 'no whois response'];
-    // not registered / dropped / available → strong "expired" signal for a domain still hosted here
+    // not registered / dropped / available -> strong "expired" signal for a domain still hosted here
     if (preg_match('/(domain not found|no match for|not found:|no entries found|no data found|no object found|status:\s*free|status:\s*available|is available for registration|not been registered)/i', $raw))
         return ['ts' => 0, 'registrar' => '', 'unreg' => true, 'err' => 'not registered'];
     $exp = ''; $reg = '';
-    // expiry — Latin + Arabic labels, ISO/various date forms
+    // expiry - Latin + Arabic labels, ISO/various date forms
     if (preg_match('/(?:Registry Expiry Date|Registrar Registration Expiration Date|Expiry Date|Expiration Date|Expiration Time|expires(?: on)?|paid-till|renewal date|valid until)\s*:?\s*([0-9A-Za-z TZ:\-\.\/]+)/i', $raw, $m)
         || preg_match('/(?:تاريخ الانتهاء|الانتهاء|تاريخ انتهاء)\s*:?\s*([0-9TZ:\-\.\/ ]+)/u', $raw, $m))
         $exp = trim($m[1]);
@@ -413,12 +413,12 @@ function smpro_dom_check(string $domain, bool $fresh = false): array {
     } else {
         $w = smpro_dom_whois_expiry($domain); $expTs = (int)$w['ts']; $registrar = (string)$w['registrar']; $whoisAt = $now; $whoisErr = (string)$w['err']; $unreg = !empty($w['unreg']);
     }
-    // parking nameservers → domain is parked/inactive, treat as expired
+    // parking nameservers -> domain is parked/inactive, treat as expired
     $parkProvider = smpro_dom_parking_ns($ns);
     $parked    = ($parkProvider !== '');
     // WHOIS "not registered" is only real when the domain ALSO does not resolve. If it resolves to
     // anything (server IP, elsewhere, or a CDN) the whois answer is a false positive (rate-limit /
-    // unparsed TLD / subdomain) → NOT expired.
+    // unparsed TLD / subdomain) -> NOT expired.
     $unregReal = $unreg && empty($ips);
     $expired   = $unregReal || $parked || ($expTs > 0 && $expTs < $now);
     $expSoon   = ($expTs > 0 && !$expired && ($expTs - $now) < 30 * 86400);
@@ -493,11 +493,11 @@ function smpro_dom_backup(string $user): array {
     if ($script === '') return ['ok' => false, 'msg' => 'pkgacct not found — cannot create a backup.'];
     @is_dir('/backup') || @mkdir('/backup', 0700, true);
     @unlink('/backup/cpmove-' . $user . '.tar.gz');   // drop any STALE archive so "created" can't be a false positive off an old run
-    // pkgacct <user> <dir> → /backup/cpmove-<user>.tar.gz   (long-running; allow up to 15 min)
+    // pkgacct <user> <dir> -> /backup/cpmove-<user>.tar.gz   (long-running; allow up to 15 min)
     $out  = smpro_dom_sh(escapeshellarg($script) . ' ' . escapeshellarg($user) . ' /backup 2>&1', 900);
     $file = '';
     foreach (glob('/backup/cpmove-' . $user . '.tar.gz') ?: [] as $g) { $file = $g; break; }
-    // NOTE the dot: 'cpmove-<user>.*' — prevents user "bob" from matching another account's "cpmove-bobby.tar.gz".
+    // NOTE the dot: 'cpmove-<user>.*' - prevents user "bob" from matching another account's "cpmove-bobby.tar.gz".
     if ($file === '') foreach (glob('/backup/cpmove-' . $user . '.*') ?: [] as $g) { if (is_file($g)) { $file = $g; break; } }
     $ok = ($file !== '' && is_file($file) && filesize($file) > 1024);
     if (function_exists('smpro_audit')) smpro_audit('domain_backup', ['user' => $user, 'ok' => $ok, 'file' => $file]);
@@ -574,7 +574,7 @@ function smpro_dom_job(string $id): array {
     return $j;
 }
 
-/** Resolve a domain → its owning cPanel user (for an action triggered on a domain row). */
+/** Resolve a domain -> its owning cPanel user (for an action triggered on a domain row). */
 function smpro_dom_user_of(string $domain): string {
     $domain = strtolower(trim($domain));
     foreach (smpro_dom_list() as $d) if ($d['domain'] === $domain) return $d['user'];
@@ -582,7 +582,7 @@ function smpro_dom_user_of(string $domain): string {
 }
 
 /* ===========================================================================
- * BACKGROUND SCAN — check every hosted domain as a non-blocking server job.
+ * BACKGROUND SCAN - check every hosted domain as a non-blocking server job.
  * The PHP CLI worker runs detached, writes progress to a job file, and stores
  * each domain's result in the standard per-domain cache.  The UI polls
  * smpro_dom_scan_status() incrementally and survives page navigation.
@@ -600,7 +600,7 @@ function smpro_dom_bgscan_start(array $domainList): array {
     $jf = $dir . '/' . $id . '.json';
     $wf = $dir . '/' . $id . '_worker.php';
 
-    // Lightweight job file: status + domain list (no results — those live in per-domain cache files).
+    // Lightweight job file: status + domain list (no results - those live in per-domain cache files).
     @file_put_contents($jf, json_encode([
         'id'      => $id,
         'status'  => 'queued',
@@ -611,7 +611,7 @@ function smpro_dom_bgscan_start(array $domainList): array {
     ], JSON_UNESCAPED_SLASHES));
     @chmod($jf, 0600);
 
-    // Self-contained PHP worker — only needs defines + domains includes.
+    // Self-contained PHP worker - only needs defines + domains includes.
     $defPath = SMPRO_INCLUDES . '/defines.php';
     $domPath = SMPRO_INCLUDES . '/domains.php';
     $worker  = "<?php\n"
@@ -655,7 +655,7 @@ function smpro_dom_bgscan_start(array $domainList): array {
     return ['ok' => true, 'scan_id' => $id, 'total' => count($domains)];
 }
 
-/** Poll a background scan — returns progress + results for domains[since..done) from the cache. */
+/** Poll a background scan - returns progress + results for domains[since..done) from the cache. */
 function smpro_dom_scan_status(string $id, int $since): array {
     $id = preg_replace('/[^0-9A-Za-z_]/', '', $id);
     if ($id === '' || strpos($id, 'scan_') !== 0)
@@ -674,7 +674,7 @@ function smpro_dom_scan_status(string $id, int $since): array {
     // Detect stalled worker (no update for >15 min while still "running").
     if ($status === 'running' && $ts > 0 && (time() - $ts) > 900) $status = 'stalled';
 
-    // Return cached results for domains[$since .. $done-1] — incremental, avoids re-sending everything.
+    // Return cached results for domains[$since .. $done-1] - incremental, avoids re-sending everything.
     $newResults = [];
     $upto = min($done, count($domains));
     for ($i = max(0, $since); $i < $upto; $i++) {

@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/sysupd.php — System updates: the server's own packages (dnf), cPanel's build, and the kernel.
+ * includes/sysupd.php - System updates: the server's own packages (dnf), cPanel's build, and the kernel.
  *
  * WHY THIS FILE EXISTS. Updates arrive on their own schedule and fail quietly: a mirror that stops answering, a
  * repository whose metadata will not download, a stale package lock, a damaged rpm database - and the nightly job

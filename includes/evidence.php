@@ -1,9 +1,9 @@
 <?php
 /**
- * evidence.php — a local, append-only evidence journal that outlives the logs it was drawn from.
+ * evidence.php - a local, append-only evidence journal that outlives the logs it was drawn from.
  *
  * WHY THIS EXISTS. Asked why mail had been switched off on a production server on 19 July, the answer was in
- * exim's log — and the rotation covering that day had already been compressed and ended on 18 July. The evidence
+ * exim's log - and the rotation covering that day had already been compressed and ended on 18 July. The evidence
  * was gone. Not deleted by an attacker, not hidden: simply rotated away by the machine's own housekeeping while
  * nobody was looking. The same is true of every log this plugin reads. cPanel's session_log, which is where a
  * successful sign-in is actually recorded, is a few thousand lines on a server with 1,862 accounts; it rolls.
@@ -19,7 +19,7 @@
  *
  *   1. Append-only. Records are added; nothing here rewrites or removes one.
  *   2. Hash-chained. Every record carries the hash of the record before it, and the first record of a day carries
- *      the hash of the previous day's seal. Removing a record — or a whole day — breaks the chain at a provable
+ *      the hash of the previous day's seal. Removing a record - or a whole day - breaks the chain at a provable
  *      point instead of leaving a gap nobody can see. It does not PREVENT tampering on a machine somebody owns.
  *      It makes tampering visible, which is the most a local store can honestly offer, and it is why phase 2
  *      pushes these records off the server.
@@ -270,7 +270,7 @@ function smpro_ev_days(): array {
 /* ------------------------------------------------------------------ what gets recorded */
 
 /**
- * Sign-ins, from the shared feed — EVERY kind, not just the findings.
+ * Sign-ins, from the shared feed - EVERY kind, not just the findings.
  *
  * The operator's own access is recorded too. It is not a compromise and no rule should alert on it, but an
  * evidence store that holds only the alarming half cannot answer "who was in this account that week", which is
@@ -315,7 +315,7 @@ function smpro_ev_collect_logins(array &$s): array {
 }
 
 /**
- * What the plugin itself DID — blocks, resets, quarantines.
+ * What the plugin itself DID - blocks, resets, quarantines.
  *
  * Read forward from a byte offset in the audit log, which is cheap and exact. The inode is remembered too: when
  * the audit log rotates, the offset from the old file would point into the middle of the new one and silently
@@ -451,7 +451,7 @@ function smpro_ev_run(): array {
 }
 
 /**
- * Retention. Removes whole days older than the window — and keeps their SEAL for ever.
+ * Retention. Removes whole days older than the window - and keeps their SEAL for ever.
  *
  * The seals are a few hundred bytes each and they carry the chain forward, so a store pruned to thirty days can
  * still prove that the days before it were not tampered with, only that their detail is no longer held. Deleting

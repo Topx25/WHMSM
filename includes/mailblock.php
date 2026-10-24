@@ -1,24 +1,24 @@
 <?php
 /**
- * includes/mailblock.php — Blocked sender addresses (per-address OUTGOING mail block).
+ * includes/mailblock.php - Blocked sender addresses (per-address OUTGOING mail block).
  *
  * WHAT IT DOES (plain terms): keeps a list of individual email addresses (or *@domain patterns)
  * that must NOT be able to SEND mail through this server. "Sending" = authenticated submission
  * (webmail / mail client / SMTP-AUTH) OR local injection (PHP mail(), the sendmail binary, cron).
- * It deliberately does NOT touch inbound delivery — mail arriving FROM those addresses TO your
+ * It deliberately does NOT touch inbound delivery - mail arriving FROM those addresses TO your
  * users is unaffected (so blocking *@example.com never loses incoming mail from example.com).
  *
  * Enforced at TWO points, each guarded to the outgoing/submission direction only:
- *   1) Exim ACL, slot ACL_MAIL_PRE_BLOCK/custom_begin_mail_pre — a deny with `authenticated = *`,
+ *   1) Exim ACL, slot ACL_MAIL_PRE_BLOCK/custom_begin_mail_pre - a deny with `authenticated = *`,
  *      so it 550-rejects a blocked sender ONLY on an authenticated submission (compromised
  *      mailbox / webmail), and never on unauthenticated inbound delivery.
  *   2) cPanel system-filter custom option (sysfilter/options/smpro_blocked_senders, enabled via
- *      filter_smpro_blocked_senders=1 in /etc/exim.conf.localopts) — matches only when the message
+ *      filter_smpro_blocked_senders=1 in /etc/exim.conf.localopts) - matches only when the message
  *      is LOCALLY injected ($sender_host_address empty) OR authenticated ($authenticated_id set),
  *      catching PHP mail()/sendmail; such mail is silently discarded ("=> discarded (system filter)").
  *      Inbound remote mail (non-empty host, unauthenticated) is never matched.
  *
- * Both read the SAME list file /etc/smpro_blocked_senders, which Exim reads live per message — so
+ * Both read the SAME list file /etc/smpro_blocked_senders, which Exim reads live per message - so
  * ADDING/REMOVING an address is instant with NO Exim rebuild. Only INSTALL/UNINSTALL (writing or
  * removing the two rules) runs /scripts/buildeximconf. All of it is cPanel-supported customization
  * (survives Exim rebuilds/updates) and is fully reversible via smpro_mb_uninstall().
@@ -34,7 +34,7 @@ define('SMPRO_MB_SYSGEN', '/etc/cpanel_exim_system_filter');
 define('SMPRO_MB_BEGIN',  '# SMPRO-BLOCKLIST BEGIN');
 define('SMPRO_MB_END',    '# SMPRO-BLOCKLIST END');
 
-/** ACL rule text (static — no user data). `authenticated = *` scopes it to submission, so inbound is untouched. */
+/** ACL rule text (static - no user data). `authenticated = *` scopes it to submission, so inbound is untouched. */
 function smpro_mb_acl_block(): string {
     return SMPRO_MB_BEGIN . " (managed by Safety Monitor Pro — per-address sender block; submission only)\n"
          . "deny\n"
@@ -45,12 +45,12 @@ function smpro_mb_acl_block(): string {
          . "  log_message = SMPRO blocked sender (submission): \$sender_address\n"
          . SMPRO_MB_END;
 }
-/** System-filter rule text. Only acts on locally-injected OR authenticated mail — never inbound remote delivery. */
+/** System-filter rule text. Only acts on locally-injected OR authenticated mail - never inbound remote delivery. */
 /** UNION of sender-blocklist files SM Pro enforces: its own list PLUS any flat Exim-format list dropped into
- *  /etc/smpro_blocked_senders.d/. This is the "shared blocking" join point — cPanel, another plugin, or the
+ *  /etc/smpro_blocked_senders.d/. This is the "shared blocking" join point - cPanel, another plugin, or the
  *  admin can drop a one-address-per-line file there and SM Pro blocks those senders too. Only ABSOLUTE, plain
  *  file paths are returned; each is exists-guarded in the filter so a file appearing/vanishing never errors Exim.
- *  Baked at build time — a newly added source is picked up on the next install/repair (the add path runs it). */
+ *  Baked at build time - a newly added source is picked up on the next install/repair (the add path runs it). */
 function smpro_mb_union_lists(): array {
     $files = [SMPRO_MB_LIST];
     foreach (glob('/etc/smpro_blocked_senders.d/*') ?: [] as $f) {
@@ -80,7 +80,7 @@ function smpro_mb_sf_block(): string {
 
 /**
  * Normalize + validate one entry. Returns [ok(bool), value(string), why(string)].
- * Allowed, case-folded forms only:  user@domain.tld  |  *@domain.tld  |  domain.tld (→ *@domain.tld).
+ * Allowed, case-folded forms only:  user@domain.tld  |  *@domain.tld  |  domain.tld (-> *@domain.tld).
  * Whitespace inside is REJECTED (never silently altered). Catastrophic patterns are hard-refused.
  */
 function smpro_mb_norm_entry(string $raw): array {
@@ -111,12 +111,12 @@ function smpro_mb_norm_entry(string $raw): array {
 
 /** Detect OTHER mail-security layers on the server so the admin sees every blocking mechanism in one place,
  *  not just SM Pro's. These tools block DIFFERENT things (SM Pro = specific sender addresses; OSM/MailGuard =
- *  per-account outbound RATE; cPanel = per-domain filters + incoming-domain blocks) — there is no single shared
+ *  per-account outbound RATE; cPanel = per-domain filters + incoming-domain blocks) - there is no single shared
  *  list, so this is an awareness view, not a merge. Every path/signal here was verified on a real cPanel box;
  *  detection is by presence only (READ-ONLY), never by guessing a format we'd have to parse. */
 function smpro_mb_other_layers(): array {
     $L = [];
-    // OSM (MailShield / OutSpam Monitor) — Python log-watcher; per-account outbound-rate actions (freeze/discard/
+    // OSM (MailShield / OutSpam Monitor) - Python log-watcher; per-account outbound-rate actions (freeze/discard/
     // suspend). Mode lives in osm-shield.conf (report_only vs enforcing).
     if (@is_dir('/etc/osm-shield') || @is_dir('/etc/osm-cls')) {
         $mode = '';
@@ -156,7 +156,7 @@ function smpro_mb_other_layers(): array {
     return $L;
 }
 
-/** Read the current list (normalized, deduped, sorted) — read-only, for display. */
+/** Read the current list (normalized, deduped, sorted) - read-only, for display. */
 function smpro_mb_read(): array {
     $raw = @file_get_contents(SMPRO_MB_LIST);
     if ($raw === false) return [];
@@ -192,10 +192,10 @@ function smpro_mb_mutate(callable $fn): array {
 }
 
 /** Which enforcement layers are LIVE in the generated Exim config. Two independent layers:
- *   'sf'  — the Exim SYSTEM FILTER (/etc/cpanel_exim_system_filter). This is the PRIMARY layer: it stops a
+ *   'sf'  - the Exim SYSTEM FILTER (/etc/cpanel_exim_system_filter). This is the PRIMARY layer: it stops a
  *           blocked sender on BOTH authenticated submission AND local injection (PHP mail()/sendmail), which is
  *           the entire scope of this feature. When this is live, blocking works.
- *   'acl' — an acl_smtp_mail deny that additionally returns an SMTP-time 550 for the authenticated case. Purely
+ *   'acl' - an acl_smtp_mail deny that additionally returns an SMTP-time 550 for the authenticated case. Purely
  *           additive. It cannot merge on some cPanel layouts: a custom deny placed in exim.conf.local's
  *           @BEGINACL@ section is only attributed to acl_smtp_mail if it follows an `acl_smtp_mail:` header
  *           line (per Cpanel::Exim::Config::check_acls_for_content), and cPanel's stock @BEGINACL@ is empty, so
@@ -203,9 +203,9 @@ function smpro_mb_mutate(callable $fn): array {
 function smpro_mb_layers(): array {
     // GROUND TRUTH is the GENERATED system filter: if /etc/cpanel_exim_system_filter contains our list-path
     // directive, Exim is enforcing it, full stop. Grep the LIST PATH (a real directive) rather than our comment
-    // markers — some cPanel builds strip comments when merging. Do NOT also require filter_smpro_blocked_senders=1
+    // markers - some cPanel builds strip comments when merging. Do NOT also require filter_smpro_blocked_senders=1
     // in exim.conf.localopts: cPanel enables sysfilter option files BY DEFAULT (localopts only OVERRIDES), so the
-    // rule merges and enforces with no localopts line at all — requiring it reported "not installed" while blocked
+    // rule merges and enforces with no localopts line at all - requiring it reported "not installed" while blocked
     // senders were actively being discarded, and made every add re-run a full install + exim rebuild.
     $sf  = strpos((string)@file_get_contents(SMPRO_MB_SYSGEN), SMPRO_MB_LIST) !== false;
     $acl = strpos((string)@file_get_contents(SMPRO_MB_EXIMC), SMPRO_MB_LIST) !== false;
@@ -243,7 +243,7 @@ function smpro_mb_install(): array {
     if (@file_put_contents(SMPRO_MB_SF, smpro_mb_sf_block() . "\n") === false) return [false, 'Cannot write the system-filter option (' . SMPRO_MB_SF . ').', false];
 
     $lopts = (string)@file_get_contents(SMPRO_MB_LOPTS);
-    // GUARD: if the file exists with content but read came back empty (transient error), ABORT — never overwrite
+    // GUARD: if the file exists with content but read came back empty (transient error), ABORT - never overwrite
     // exim.conf.localopts with only our one line (that would drop every other Exim option, incl. DKIM/SPF/etc.).
     if ($lopts === '' && is_file(SMPRO_MB_LOPTS) && (int)@filesize(SMPRO_MB_LOPTS) > 0)
         return [false, 'Could not read ' . SMPRO_MB_LOPTS . ' — aborting so your other Exim options are not clobbered. Please retry.', false];
@@ -254,9 +254,9 @@ function smpro_mb_install(): array {
     if (@file_put_contents(SMPRO_MB_LOPTS, $lopts) === false) return [false, 'Cannot update ' . SMPRO_MB_LOPTS . '.', false];
 
     // NOTE: earlier builds ALSO spliced the deny block into /etc/exim.conf.local's @BEGINACL@ section as a
-    // "second merge path". That was REMOVED — verified against cPanel 11.136 source: @BEGINACL@ content is
+    // "second merge path". That was REMOVED - verified against cPanel 11.136 source: @BEGINACL@ content is
     // emitted VERBATIM right after `begin acl`, before any named ACL, so a bare `deny` there is invalid Exim
-    // syntax that makes buildeximconf fail validation and refuse to install — poisoning EVERY later rebuild
+    // syntax that makes buildeximconf fail validation and refuse to install - poisoning EVERY later rebuild
     // (cPanel updates, any WHM Exim change) until the file is hand-edited. It also never actually blocked
     // anything (0 refs in the generated config in live tests). Enforcement is the system filter (covers auth
     // submission AND local injection); the additive SMTP-time 550 belongs in the supported acls/ slot only.
@@ -280,18 +280,18 @@ function smpro_mb_install(): array {
     $out = (string)@shell_exec('timeout 180 ' . escapeshellarg($build) . ' 2>&1');
     if (function_exists('smpro_mg_exim_unlock')) smpro_mg_exim_unlock($lk);
 
-    // verify via the real directive path (comment-strip-proof — see smpro_mb_layers)
+    // verify via the real directive path (comment-strip-proof - see smpro_mb_layers)
     $L = smpro_mb_layers();
     // The system filter is the layer that actually blocks (auth submission AND local scripts). If it is live,
-    // enforcement is active — whether or not the additive SMTP-rejection ACL merged. Only a MISSING system
+    // enforcement is active - whether or not the additive SMTP-rejection ACL merged. Only a MISSING system
     // filter is a real failure. (Before, a non-merging ACL raised a scary warning that read as "blocking broke"
-    // even though blocked senders were, in fact, being stopped — exactly what confused admins on servers whose
+    // even though blocked senders were, in fact, being stopped - exactly what confused admins on servers whose
     // cPanel Exim layout drops a headerless custom deny.)
     if ($L['sf'] && $L['acl'])
         return [true, 'Enforcement is fully active — blocked addresses are rejected at submission time (SMTP 550) and stopped by the system filter for local scripts too. Incoming mail is unaffected.', true];
     if ($L['sf'])
         return [true, 'Enforcement is active — blocked addresses can no longer send: the Exim system filter stops their mail whether it comes from authenticated submission/webmail or a local script (PHP mail()). The optional SMTP-time rejection ACL could not be merged into this server\'s generated Exim config (some cPanel builds structure custom ACLs differently) — this does NOT change whether blocked senders are stopped; it only decides whether they get an SMTP 550 or a silent drop. Incoming mail is unaffected. (The "SMTP Mail protection" line in the build output is cPanel reporting THIS SERVER\'S SMTP-Restrictions setting — unrelated to this feature.)', true];
-    // The primary layer itself did not merge — this is the genuine failure to surface.
+    // The primary layer itself did not merge - this is the genuine failure to surface.
     return [false, 'Exim rebuilt OK, but the system-filter rule was not merged into ' . basename(SMPRO_MB_SYSGEN) . ', so enforcement is NOT active yet. Your blocklist is saved; please retry — if it persists, check that ' . SMPRO_MB_LOPTS . ' contains filter_smpro_blocked_senders=1 and rebuild. Last output: ' . trim(mb_substr($out, -200)), true];
 }
 

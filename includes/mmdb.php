@@ -1,15 +1,15 @@
 <?php
 /**
- * mmdb.php — self-contained MaxMind DB (.mmdb) reader in PURE PHP.
+ * mmdb.php - self-contained MaxMind DB (.mmdb) reader in PURE PHP.
  *
  * Why this exists: the offline GeoIP lookups must work on ANY host even when the `mmdblookup`
- * binary (libmaxminddb / mmdb-bin) is NOT installed — that is the usual reason country shows
+ * binary (libmaxminddb / mmdb-bin) is NOT installed - that is the usual reason country shows
  * "N/A" on a locked-down box. helpers.php prefers the fast `mmdblookup` binary and falls back
  * to this reader, so country/ASN always resolve as long as a .mmdb file is present.
  *
  * Implements just enough of the MaxMind DB binary format (https://maxmind.github.io/MaxMind-DB/):
  * metadata parse, binary search tree walk (24/28/32-bit records, v4 + v4-in-v6), and the data
- * decoder for the types a Country/ASN DB uses (map, string, uint16/32, pointer, array, bool…).
+ * decoder for the types a Country/ASN DB uses (map, string, uint16/32, pointer, array, bool...).
  * No external deps. Memory-maps the file as a string and caches the handle per request.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -141,7 +141,7 @@ function smpro_mmdb_decode($buf, &$p, $dataStart, $depth = 0) {
         case 10: // uint128 (rare; return hex)
             $n = 0; for ($i = 0; $i < $size; $i++) { $n = ($n << 8) | ord($buf[$p]); $p++; } return $n;
         case 7: // map
-            if ($size > 65536) return null;                  // sanity cap — real Country/ASN records have <20 keys
+            if ($size > 65536) return null;                  // sanity cap - real Country/ASN records have <20 keys
             $out = [];
             for ($i = 0; $i < $size; $i++) {
                 if ($p >= $len) return $out;

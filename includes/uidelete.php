@@ -1,17 +1,17 @@
 <?php
 /**
- * includes/uidelete.php — "who deleted these files?", answered from evidence rather than from a guess.
+ * includes/uidelete.php - "who deleted these files?", answered from evidence rather than from a guess.
  *
  * A deletion is the hardest thing to investigate on a hosting account, because the thing that would prove it is
  * the thing that is gone. What survives is scattered across half a dozen logs written by different programs in
  * different formats, and none of them is complete on its own:
  *
- *   cPanel File Manager   /usr/local/cpanel/logs/access_log   — the API call, with the account and the IP
- *   FTP                   /var/log/messages, /var/log/xferlog — DELE / RMD, with the login name and the IP
- *   SSH / SFTP            /var/log/secure, sftp-server        — the session; the file only when logging is verbose
- *   The website itself    the domain access logs              — a request that ran code which deleted files
- *   THIS PLUGIN           /var/log/smpro/audit.log            — cleanup, quarantine, auto-purge
- *   The filesystem        parent directory mtime, ~/.trash    — a window, and sometimes the files themselves
+ *   cPanel File Manager   /usr/local/cpanel/logs/access_log   - the API call, with the account and the IP
+ *   FTP                   /var/log/messages, /var/log/xferlog - DELE / RMD, with the login name and the IP
+ *   SSH / SFTP            /var/log/secure, sftp-server        - the session; the file only when logging is verbose
+ *   The website itself    the domain access logs              - a request that ran code which deleted files
+ *   THIS PLUGIN           /var/log/smpro/audit.log            - cleanup, quarantine, auto-purge
+ *   The filesystem        parent directory mtime, ~/.trash    - a window, and sometimes the files themselves
  *
  * Two rules run through all of it.
  *
@@ -20,7 +20,7 @@
  * and "the FTP log is not readable by this process" are opposite findings, and confusing them is how an
  * investigation ends by blaming the wrong person.
  *
- * SECOND: this plugin looks at itself first. SM Pro has features that delete files — quarantine, cleanup and the
+ * SECOND: this plugin looks at itself first. SM Pro has features that delete files - quarantine, cleanup and the
  * auto-purge that once removed source files on a cache-name match. An investigation that cannot name its own
  * tooling as a suspect is not an investigation.
  */
@@ -100,7 +100,7 @@ function smpro_uid_ftp(string $account, int $fromTs, int $toTs): array {
             $ip = ''; if (preg_match('/\[?(\d{1,3}(?:\.\d{1,3}){3})\]?/', $ln, $im)) $ip = $im[1];
             $who = ''; if (preg_match('/\[([A-Za-z0-9._-]+)\]\s*\[?(\d{1,3}(?:\.\d{1,3}){3})/', $ln, $um)) $who = $um[1];
             if ($who === '' && preg_match('/user\s+\[?([A-Za-z0-9._-]+)\]?/i', $ln, $um)) $who = $um[1];
-            // The account owns its own FTP users, which are "account" or "name@domain" — match either.
+            // The account owns its own FTP users, which are "account" or "name@domain" - match either.
             if ($account !== '' && $who !== '' && $who !== $account && strpos($who, $account . '@') !== 0 && !preg_match('/^' . preg_quote($account, '/') . '_/', $who)) continue;
             $ts = 0;
             if (preg_match('/^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/', $ln, $tm)) $ts = smpro_syslog_ts($tm[1], $yr);
@@ -121,7 +121,7 @@ function smpro_uid_ftp(string $account, int $fromTs, int $toTs): array {
  *
  * Honest about its limits: a shell `rm` leaves NO record anywhere unless auditd or shell accounting was already
  * running, and SFTP names the file only when the server was started with verbose logging. So this collects the
- * SESSIONS that were open in the window — which is a lead, not a proof — plus any SFTP remove line that does
+ * SESSIONS that were open in the window - which is a lead, not a proof - plus any SFTP remove line that does
  * exist, and labels the two differently so nobody reads a session as a deletion.
  */
 function smpro_uid_ssh(string $account, int $fromTs, int $toTs): array {
@@ -160,7 +160,7 @@ function smpro_uid_ssh(string $account, int $fromTs, int $toTs): array {
 /**
  * THIS PLUGIN. Checked first in the report and never omitted.
  *
- * SM Pro quarantines, cleans and auto-purges. On 2026-07-27 an auto-purge matching on cache NAMES removed
+ * SM Pro quarantines, cleans and auto-purges. An auto-purge matching on cache NAMES once removed
  * OpenCart and Twig SOURCE files across 92 sites. An investigation that cannot name its own tooling as a suspect
  * will confidently blame a customer for something the panel did.
  */
@@ -189,7 +189,7 @@ function smpro_uid_smpro(string $account, int $fromTs, int $toTs): array {
 /**
  * The filesystem. Two things it can still say after the files are gone.
  *
- * A directory's mtime is the moment its last entry was created, renamed or removed — so it dates the deletion
+ * A directory's mtime is the moment its last entry was created, renamed or removed - so it dates the deletion
  * even when no log names it, which on a shell `rm` is the only evidence that exists. And cPanel's File Manager
  * moves to ~/.trash rather than unlinking, so the "deleted" files are often still sitting there with the time
  * they were put there.
@@ -197,7 +197,7 @@ function smpro_uid_smpro(string $account, int $fromTs, int $toTs): array {
 function smpro_uid_filesystem(string $account, int $fromTs, int $toTs, int $maxDirs = 40): array {
     // From /etc/passwd, not from a guessed /home/<account>: a cPanel server can have several home partitions
     // (/home2, /home3), and looking in the wrong one would report "nothing changed" about a directory that does
-    // not exist — the same false negative this whole file exists to avoid.
+    // not exist - the same false negative this whole file exists to avoid.
     $home = '';
     if ($account !== '' && function_exists('posix_getpwnam')) { $pw = @posix_getpwnam($account); if (is_array($pw) && !empty($pw['dir'])) $home = (string)$pw['dir']; }
     if ($home === '' && $account !== '' && @is_dir(smpro_user_home($account))) $home = smpro_user_home($account);
@@ -235,10 +235,10 @@ function smpro_uid_filesystem(string $account, int $fromTs, int $toTs, int $maxD
  *
  *   imap(user)<pid><session>: Logged out in=123 out=456 deleted=0 expunged=37 ...
  *
- * That is the whole answer to "how many, by whom, from where, and when" — the session line above it carries the
+ * That is the whole answer to "how many, by whom, from where, and when" - the session line above it carries the
  * address. What it does NOT carry is WHICH messages, because naming them needs the mail_log plugin, which cPanel
  * does not enable. So this reports the counts as fact, reports whether mail_log is on, and says exactly what
- * turning it on would add — rather than leaving an operator to conclude from silence that nothing was deleted.
+ * turning it on would add - rather than leaving an operator to conclude from silence that nothing was deleted.
  * ========================================================================= */
 
 /** Is Dovecot's per-message logging on? The difference between "37 messages were expunged" and naming them. */
@@ -340,7 +340,7 @@ function smpro_uid_mail(string $account, int $fromTs, int $toTs, string $home = 
                           'action' => $a['kind'] . ' deleted', 'target' => $a['address'] !== '' ? $a['address'] : '(the address is not in this log line)',
                           'confidence' => 'confirmed', 'evidence' => $a['evidence']];
 
-    // Trash is where a webmail "delete" usually puts things first — often the messages are simply still there.
+    // Trash is where a webmail "delete" usually puts things first - often the messages are simply still there.
     if ($home !== '') {
         $globs = [rtrim($home, '/') . '/mail/*/*/.Trash/cur', rtrim($home, '/') . '/mail/.Trash/cur'];
         foreach ($globs as $g) {
@@ -364,12 +364,12 @@ function smpro_uid_mail(string $account, int $fromTs, int $toTs, string $home = 
  *
  * Two independent ways to name one, because neither is complete:
  *
- *  1. Dovecot's mail_log plugin writes "Mailbox deleted: INBOX.Archive" — the name, exactly, with the session and
+ *  1. Dovecot's mail_log plugin writes "Mailbox deleted: INBOX.Archive" - the name, exactly, with the session and
  *     therefore the address. Only present where the plugin is enabled.
  *  2. The account's own subscription list. Every folder a mail client subscribed to is named in the maildir's
  *     `subscriptions` file, and a folder that is still listed there while its directory is GONE from disk is a
  *     folder that used to exist. This is on by default and needs no plugin, which makes it the one that usually
- *     answers the question — but it dates the loss only as far as the subscription file's own timestamp, so it is
+ *     answers the question - but it dates the loss only as far as the subscription file's own timestamp, so it is
  *     reported as a name without a precise time rather than dressed up as an event.
  */
 function smpro_uid_mail_folders(string $account, int $fromTs, int $toTs, string $home, array $boxes): array {
@@ -425,10 +425,10 @@ function smpro_uid_mail_folders(string $account, int $fromTs, int $toTs, string 
  * EMAIL ACCOUNTS that are gone, by address.
  *
  * cPanel's UAPI puts its arguments in the query string, so unlike a File Manager delete this one usually DOES
- * name what it removed — the address is in the log line. That is checked first, and then the account's own
+ * name what it removed - the address is in the log line. That is checked first, and then the account's own
  * mail-user files are used to catch a removal that happened some other way: cPanel keeps every address for a
  * domain in ~/etc/<domain>/passwd, so an address whose maildir still exists while the passwd entry is gone is an
- * account that was deleted without its mail being cleaned up, and the reverse — an entry with no maildir — is one
+ * account that was deleted without its mail being cleaned up, and the reverse - an entry with no maildir - is one
  * whose mail was removed.
  */
 function smpro_uid_mail_accounts(string $account, int $fromTs, int $toTs, string $home): array {
@@ -540,7 +540,7 @@ function smpro_uid_report(string $account, int $fromTs, int $toTs): array {
         $actors[$ip]['last']  = max($actors[$ip]['last'],  $r['ts']);
         $actors[$ip]['sources'][(string)$r['source']] = 1;
     }
-    // Everything else the server saw that address do — the answer to "was this a one-off or a session".
+    // Everything else the server saw that address do - the answer to "was this a one-off or a session".
     foreach ($actors as $ip => &$a) {
         $a['sources'] = array_keys($a['sources']);
         $a['activity'] = function_exists('smpro_ip_auth_attempts')
@@ -549,7 +549,7 @@ function smpro_uid_report(string $account, int $fromTs, int $toTs): array {
     unset($a);
     uasort($actors, fn($x, $y) => $y['n'] <=> $x['n']);
 
-    // What the evidence supports, said plainly — including when it supports nothing.
+    // What the evidence supports, said plainly - including when it supports nothing.
     $confirmed = array_values(array_filter($rows, fn($r) => $r['confidence'] === 'confirmed'));
     $unread = array_values(array_filter($sources, fn($s) => $s['state'] === 'unreadable'));
     $verdict = 'none';

@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/resource-limits.php — "Resource Limit Is Reached" (HTTP 508): which accounts hit their CloudLinux LVE
+ * modules/resource-limits.php - "Resource Limit Is Reached" (HTTP 508): which accounts hit their CloudLinux LVE
  * limits, what is hitting them this second, and the ways out. Engine: includes/lvelimits.php. Every action backs
  * ve.cfg up first and is audited; a lift puts itself back when its time is up.
  * The table is the page's own: search by account OR domain, paging, multi-select with a bulk bar - the shared

@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/restore-migrate.php — Restore & Migrate: bring accounts in from another server.
+ * modules/restore-migrate.php - Restore & Migrate: bring accounts in from another server.
  * Engine: includes/migrate.php. Every route drives cPanel's own transfer engine rather than reimplementing
  * a restore, so an account that lands here was rebuilt by the same code cPanel uses for its own migrations.
  */

@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/loadhist.php — the 24-hour ring of 1-minute load samples behind "Load — last 24 hours".
+ * includes/loadhist.php - the 24-hour ring of 1-minute load samples behind "Load - last 24 hours".
  *
  * It used to be fed ONLY by the Load Monitor page's own poll (every 3 s while somebody had the page open), so
  * "the last 24 hours" was really "the last 1,440 moments somebody was looking": on a production server the

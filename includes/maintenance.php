@@ -1,8 +1,8 @@
 <?php
 /**
- * includes/maintenance.php — server-maintenance backends shared by the Disk & Storage module + CLI workers.
- *   A1  smpro_swap_*  — add / double / remove a managed swapfile (preview + create + remove).
- *   A3  smpro_mnt_*   — auto-purge scheduler (config, hourly sampler, smart model, SAFE reclaim, cron sync, UI card).
+ * includes/maintenance.php - server-maintenance backends shared by the Disk & Storage module + CLI workers.
+ *   A1  smpro_swap_*  - add / double / remove a managed swapfile (preview + create + remove).
+ *   A3  smpro_mnt_*   - auto-purge scheduler (config, hourly sampler, smart model, SAFE reclaim, cron sync, UI card).
  * Pure logic (only smpro_mnt_card_html() emits markup). Runs as root under the WHM CGI or the CLI worker.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -33,7 +33,7 @@ function smpro_mnt_jwrite($path, $arr) {
     @chmod($t, 0600); return @rename($t, $path);
 }
 
-/* ============================ A1 — managed swapfile (smpro_swap_*) ============================ */
+/* ============================ A1 - managed swapfile (smpro_swap_*) ============================ */
 /** Small human formatter working in whole MiB (32-bit safe; never touches raw byte ints). */
 function smpro_swap_hmib($mib) {
     $mib = (int)$mib;
@@ -64,7 +64,7 @@ function smpro_swap_bin($name) {
         $p = $d . $name;
         if (@is_file($p) && @is_executable($p)) return $p;
     }
-    // last resort — still no user input ($name is whitelisted above); escape defensively anyway.
+    // last resort - still no user input ($name is whitelisted above); escape defensively anyway.
     $cv = trim((string)@shell_exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null'));
     return ($cv !== '' && $cv[0] === '/') ? $cv : '';
 }
@@ -111,7 +111,7 @@ function smpro_swap_fs($dir) {
 /** Central dry-run planner (pure, NO writes). All sizing in whole-MiB integers; smpro_mnt_mem() is kB -> /1024. */
 function smpro_swap_plan($opt = []) {
     $MIN_MIB = 256;                                                              // 256 MiB minimum
-    $HARDCAP_MIB = 65536;                                                        // 64 GiB absolute ceiling (was 16 GiB — too low for big-RAM boxes)
+    $HARDCAP_MIB = 65536;                                                        // 64 GiB absolute ceiling (was 16 GiB - too low for big-RAM boxes)
     // 32-bit PHP cannot hold a 16GiB byte count -> clamp the cap under 2GiB there. cPanel PHP is 64-bit, but a
     // bin/*.php CLI could differ. All math below is MiB integers regardless, so this only bounds the ceiling.
     if (PHP_INT_SIZE < 8 && $HARDCAP_MIB > 2000) $HARDCAP_MIB = 2000;
@@ -137,7 +137,7 @@ function smpro_swap_plan($opt = []) {
 
     // (c2) EXISTING MANAGED FILE -> in-place RESIZE (tear down old, create new at the same path), not a refuse.
     //      A file/active swap at our fixed path that we have NO record of (no meta, no fstab marker) is treated as a
-    //      foreign/orphan occupant and refused — "Remove SM Pro swap" reclaims a genuine orphan of our own path.
+    //      foreign/orphan occupant and refused - "Remove SM Pro swap" reclaims a genuine orphan of our own path.
     $exists  = @file_exists($path);
     $active0 = smpro_swap_active();
     $atPath  = $exists || isset($active0[$path]);
@@ -163,7 +163,7 @@ function smpro_swap_plan($opt = []) {
     $room_mib = $cap_mib - $base_mib;                                            // the largest the managed file may be
     if ($room_mib < $MIN_MIB) { $base['reason'] = 'Refused: only ' . smpro_swap_hmib($room_mib) . ' of headroom under the cap - below the 256MiB minimum.'; return $base; }
 
-    // (c3) recommended range + Auto size — surfaced to the chooser as "RAM is X · min x · max y · Auto z".
+    // (c3) recommended range + Auto size - surfaced to the chooser as "RAM is X · min x · max y · Auto z".
     $max_rec_mib = $room_mib;                                                    // ceiling = min(2xRAM,16GiB) - swap that stays
     $min_rec_mib = max($MIN_MIB, min(2048, $room_mib));                          // useful 2 GiB floor (clamped to room)
     $auto_mib    = max($min_rec_mib, min($ram_mib, 8192, $room_mib));            // recommended: ~RAM, capped at 8 GiB / room
@@ -219,7 +219,7 @@ function smpro_swap_plan($opt = []) {
     $base['cap_h']       = smpro_swap_hmib($cap_mib);      // absolute cap = min(2xRAM, 64GiB)
     $base['room_mib']    = $room_mib;                      // largest the managed file may be (max allowed to add)
     $base['room_h']      = smpro_swap_hmib($room_mib);
-    // if the admin typed a size larger than what fits, we clamped it — surface that so the UI can say so.
+    // if the admin typed a size larger than what fits, we clamped it - surface that so the UI can say so.
     $base['requested_mib'] = (isset($opt['target_mb']) && (int)$opt['target_mb'] > 0) ? (int)$opt['target_mb'] : 0;
     $base['clamped']       = ($base['requested_mib'] > 0 && $base['requested_mib'] !== $add_mib);
     return $base;
@@ -350,7 +350,7 @@ function smpro_swap_create($plan) {
         $unlock(); return ['ok'=>false, 'msg'=>$msg];
     };
 
-    // RESIZE (IN PLACE): keep the SAME managed swapfile and re-size IT — never remove it and never create a second
+    // RESIZE (IN PLACE): keep the SAME managed swapfile and re-size IT - never remove it and never create a second
     // file. Just DEACTIVATE it first (OOM-pre-checked) so the allocation below can grow/shrink the same path; the
     // prior fstab line is stripped so persist re-adds one clean entry at the new size. Runs under the held lock.
     if (!empty($plan['resize'])) {
@@ -467,7 +467,7 @@ function smpro_swap_remove($path, $heldLock = false) {
     $path = (string)$path;
     if ($path !== SMPRO_SWAP_PATH) return ['ok'=>false,'msg'=>'Refused: SM Pro only removes its own swapfile (' . SMPRO_SWAP_PATH . ').'];
 
-    // $heldLock: the caller (smpro_swap_create resize path) already owns swap.lock — do NOT re-acquire it
+    // $heldLock: the caller (smpro_swap_create resize path) already owns swap.lock - do NOT re-acquire it
     // (LOCK_NB would fail against ourselves) and do NOT release it here.
     if ($heldLock) {
         $unlock = function () {};
@@ -550,7 +550,7 @@ function smpro_swap_reconcile() {
     $owned     = !empty($meta['path']) || $marked;                              // ours iff swap.json records it OR our fstab marker
     $isRegular = @is_file($path) && !@is_link($path);
 
-    // FOREIGN inactive file at our fixed path (no meta, no marker — e.g. admin-staged or restored) -> NEVER auto-delete;
+    // FOREIGN inactive file at our fixed path (no meta, no marker - e.g. admin-staged or restored) -> NEVER auto-delete;
     // mirror create()'s refuse and leave it for the explicit "Remove SM Pro swap" action.
     if (!$owned) { $unlock(); return ['ok'=>true,'action'=>'orphan']; }
 
@@ -591,31 +591,31 @@ function smpro_swap_reconcile() {
     return ['ok'=>true,'action'=>$action];
 }
 
-/* ==================== A3 — auto-purge scheduler (smpro_mnt_*) ==================== */
-/* ---------------- ADMIN config (maintenance.json) — the ONLY writer is cfg_save ---------------- */
+/* ==================== A3 - auto-purge scheduler (smpro_mnt_*) ==================== */
+/* ---------------- ADMIN config (maintenance.json) - the ONLY writer is cfg_save ---------------- */
 function smpro_mnt_cfg(): array {
     // maintenance.json holds ONLY the admin schedule. The hourly sampler writes the SEPARATE
     // maintenance-state.json, so an admin Save and a cron tick can never race on the same file.
     $d = function_exists('smpro_mnt_jread') ? smpro_mnt_jread(SMPRO_MNT_CFG)
        : (is_file(SMPRO_MNT_CFG) ? json_decode((string)@file_get_contents(SMPRO_MNT_CFG), true) : null);
-    if (!is_array($d)) $d = [];   // corrupt/absent JSON decodes to [] → safe disabled defaults below
+    if (!is_array($d)) $d = [];   // corrupt/absent JSON decodes to [] -> safe disabled defaults below
     return $d + ['enabled' => false, 'interval' => '6h', 'mode' => 'fixed', 'journald' => true];
 }
 function smpro_mnt_cfg_save(array $patch): array {
     $c = array_merge(smpro_mnt_cfg(), $patch);
-    // STRICT enum validation — refuse junk so a bad POST/config can never reach the scheduler.
+    // STRICT enum validation - refuse junk so a bad POST/config can never reach the scheduler.
     $c['interval'] = in_array(($c['interval'] ?? ''), ['3h','6h','12h','24h'], true) ? $c['interval'] : '6h';  // else 6h
     $c['mode']     = in_array(($c['mode'] ?? ''), ['fixed','smart'], true) ? $c['mode'] : 'fixed';               // else fixed
     $c['enabled']  = !empty($c['enabled']);    // hard bool cast
     $c['journald'] = !empty($c['journald']);   // hard bool cast
-    // keep ONLY the known keys — drop anything a caller merged in
+    // keep ONLY the known keys - drop anything a caller merged in
     $c = ['enabled'=>$c['enabled'],'interval'=>$c['interval'],'mode'=>$c['mode'],'journald'=>$c['journald']];
     if (function_exists('smpro_mnt_jwrite')) smpro_mnt_jwrite(SMPRO_MNT_CFG, $c);   // atomic tmp+rename, 0600
     smpro_mnt_cron_sync();   // re-assert /etc/cron.d/smpro-autopurge to match the new schedule
     return $c;
 }
 
-/* ---------------- RUNTIME state (maintenance-state.json) — MERGE-on-save ---------------- */
+/* ---------------- RUNTIME state (maintenance-state.json) - MERGE-on-save ---------------- */
 function smpro_mnt_state(): array {
     $d = function_exists('smpro_mnt_jread') ? smpro_mnt_jread(SMPRO_MNT_STATE)
        : (is_file(SMPRO_MNT_STATE) ? json_decode((string)@file_get_contents(SMPRO_MNT_STATE), true) : null);
@@ -624,7 +624,7 @@ function smpro_mnt_state(): array {
 function smpro_mnt_state_save(array $patch): void {
     // MERGE-on-save (exactly like smpro_cool_state_save): the every-tick sampler write never drops
     // last_run/last_freed, and a purge write never drops the samples ring. Atomic per write (tmp+rename)
-    // but NOT serialized across processes — the purge holds autopurge.run.lock while mutating state; the
+    // but NOT serialized across processes - the purge holds autopurge.run.lock while mutating state; the
     // UNLOCKED sampler may still lost-update, which is advisory-only (history) and accepted.
     $s = array_merge(smpro_mnt_state(), $patch);
     if (function_exists('smpro_mnt_jwrite')) smpro_mnt_jwrite(SMPRO_MNT_STATE, $s);
@@ -641,18 +641,18 @@ function smpro_mnt_df(string $m): array {
     // timeout 15 so a stale NFS / dead loopback mount cannot hang the hourly sampler.
     $tgt = trim((string)@shell_exec('timeout 15 findmnt -no TARGET ' . escapeshellarg($m) . ' 2>/dev/null'));
     $sep = ($m === '/') || ($tgt === $m);   // '/' is always a real mount even if findmnt is absent
-    if (!$sep) return $r;                    // non-distinct mount → null metric, skipped by decide()
+    if (!$sep) return $r;                    // non-distinct mount -> null metric, skipped by decide()
     $r['sep'] = true;
     // space %
     foreach (explode("\n", (string)@shell_exec('timeout 15 df -Pk ' . escapeshellarg($m) . ' 2>/dev/null')) as $l) {
         $p = preg_split('/\s+/', trim($l));
         if (count($p) < 6 || $p[0] === 'Filesystem') continue;
         $used = (int)$p[2]; $avail = (int)$p[3]; $total = ($used + $avail) ?: (int)$p[1];
-        $r['avail'] = $avail * 1024; $r['total'] = $total * 1024;   // kB → bytes
+        $r['avail'] = $avail * 1024; $r['total'] = $total * 1024;   // kB -> bytes
         $r['pct']   = $total > 0 ? round($used / $total * 100, 1) : 0.0;
         $r['ok']    = true;
     }
-    // inode % (df -iP) — a cPanel box commonly hits 100% inodes with free space; a space-only sampler is blind.
+    // inode % (df -iP) - a cPanel box commonly hits 100% inodes with free space; a space-only sampler is blind.
     foreach (explode("\n", (string)@shell_exec('timeout 15 df -iP ' . escapeshellarg($m) . ' 2>/dev/null')) as $l) {
         $p = preg_split('/\s+/', trim($l));
         if (count($p) < 6 || $p[0] === 'Filesystem') continue;
@@ -669,11 +669,11 @@ function smpro_mnt_sample(): array {
     $mem  = function_exists('smpro_mnt_mem') ? smpro_mnt_mem() : [];
     $s = [
         't'    => time(),
-        'tmp'  => $tmp['sep']  ? $tmp['pct']  : null,   // null when /tmp is not its own mount → metric skipped
+        'tmp'  => $tmp['sep']  ? $tmp['pct']  : null,   // null when /tmp is not its own mount -> metric skipped
         'root' => $root['pct'],                          // '/' always exists
-        'home' => $home['sep'] ? $home['pct'] : null,    // null when /home is not its own mount → metric skipped
+        'home' => $home['sep'] ? $home['pct'] : null,    // null when /home is not its own mount -> metric skipped
         'swap' => isset($mem['swap_used_pct']) ? (float)$mem['swap_used_pct'] : null,
-        // inode signal — /home's own inode table if separate, else /'s (whichever holds user data)
+        // inode signal - /home's own inode table if separate, else /'s (whichever holds user data)
         'ino'  => $home['sep'] ? $home['ipct'] : $root['ipct'],
     ];
     $st   = smpro_mnt_state();
@@ -726,7 +726,7 @@ function smpro_mnt_decide(array $rows): array {
 
     $anyCrit = false; $anyHigh = false; $anyProj = false; $anyFast = false; $highVal = false;
     foreach (['tmp','root','home','swap','ino'] as $k) {
-        // null metric (non-separate mount / unavailable) is GENUINELY skipped — never defaulted to /'s %.
+        // null metric (non-separate mount / unavailable) is GENUINELY skipped - never defaulted to /'s %.
         if (!isset($cur[$k]) || $cur[$k] === null) continue;
         $v   = (float)$cur[$k];
         $vel = smpro_mnt_velocity($rows, $k);
@@ -738,18 +738,18 @@ function smpro_mnt_decide(array $rows): array {
     }
     $pressure = $anyHigh || $anyProj || $anyFast;
 
-    // (1) CRITICAL watermark → purge NOW, overrides the anti-thrash gap.
+    // (1) CRITICAL watermark -> purge NOW, overrides the anti-thrash gap.
     if ($anyCrit) { $out['purge'] = true; $out['reason'] = 'critical watermark ('.implode(',', $out['signals']).')'; return $out; }
-    // (2) inside MIN_GAP and something high/rising → HOLD (back off). If a metric is high but the last run
-    //     freed <50MB, the fill is real DATA not junk → refuse to loop, raise alert to investigate.
+    // (2) inside MIN_GAP and something high/rising -> HOLD (back off). If a metric is high but the last run
+    //     freed <50MB, the fill is real DATA not junk -> refuse to loop, raise alert to investigate.
     if ($sinceH < $MIN_GAP_H && $pressure) {
         $out['reason'] = 'holding (purged '.round($sinceH,1).'h ago, min gap '.$MIN_GAP_H.'h)';
         if ($highVal && $lastFreed < 52428800) { $out['alert'] = true; $out['reason'] .= ' — reclaim ineffective, still high'; }
         return $out;
     }
-    // (3) high / projected / fast → purge.
+    // (3) high / projected / fast -> purge.
     if ($pressure) { $out['purge'] = true; $out['reason'] = 'pressure ('.implode(',', $out['signals']).')'; return $out; }
-    // (4) daily FLOOR — guarantee one LIGHT purge/day (tmp+junk only) even when nothing is high.
+    // (4) daily FLOOR - guarantee one LIGHT purge/day (tmp+junk only) even when nothing is high.
     if ($sinceH >= $FLOOR_H) { $out['purge'] = true; $out['light'] = true; $out['reason'] = 'daily floor ('.round($sinceH,1).'h since last)'; return $out; }
     // (5) stable.
     return $out;
@@ -757,7 +757,7 @@ function smpro_mnt_decide(array $rows): array {
 
 /* ---------------- the actual SAFE reclaim (single-flight) ---------------- */
 function smpro_mnt_purge(bool $force = false, bool $light = false): array {
-    // SINGLE-FLIGHT: a UI Run-now and a cron tick cannot overlap. mkdir the locks dir first — fopen('c')
+    // SINGLE-FLIGHT: a UI Run-now and a cron tick cannot overlap. mkdir the locks dir first - fopen('c')
     // silently fails if the dir is absent, which would defeat the guard. Lock path is DISTINCT from the
     // cron's autopurge.cron.lock so the cron's outer flock never blocks this inner flock (no child deadlock).
     $ld = function_exists('smpro_mnt_locks_dir') ? smpro_mnt_locks_dir() : SMPRO_LOCKS;
@@ -767,7 +767,7 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
     if (!$lockFp || !@flock($lockFp, LOCK_EX | LOCK_NB)) { if ($lockFp) @fclose($lockFp); return ['ok'=>false,'msg'=>'A purge is already running.']; }
     @chmod($lockPath, 0600);
 
-    $freed   = 0;                                              // bytes reclaimed — counted ONLY on a SUCCESSFUL unlink
+    $freed   = 0;                                              // bytes reclaimed - counted ONLY on a SUCCESSFUL unlink
     $actions = ['tmp'=>0, 'junk'=>0, 'journald'=>0, 'dropcaches'=>0];
     $notes   = [];
 
@@ -777,8 +777,8 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
     $tmpOut = (string)@shell_exec(smpro_mnt_wrap("find /tmp -maxdepth 3 -type f -atime +3 -mtime +3 -not -name 'sess_*' -not -name 'cpsess*' -not -name '*.sock' -not -name '.s.*' -not -name '*.lock' -not -ipath '*cpanel*' -not -ipath '*mysql*' -not -ipath '*mariadb*' -printf '%s\\n' -delete 2>/dev/null", 90));
     foreach (explode("\n", $tmpOut) as $l) { $l = trim($l); if ($l !== '' && ctype_digit($l)) { $freed += (int)$l; $actions['tmp'] += (int)$l; } }
 
-    // ---- (b) server-wide junk cache >2d — TWO-PHASE PRUNE-SAFE form (NEVER -prune + -delete). Phase 1 LISTS
-    //         with -prune intact (NO -delete → -prune WORKS), NUL-delimited "size\tpath" records. Phase 2
+    // ---- (b) server-wide junk cache >2d - TWO-PHASE PRUNE-SAFE form (NEVER -prune + -delete). Phase 1 LISTS
+    //         with -prune intact (NO -delete -> -prune WORKS), NUL-delimited "size\tpath" records. Phase 2
     //         unlinks in PHP after del_file-style re-validation. Gated behind a /proc/loadavg check even in
     //         fixed mode so a melting box is not handed a heavy /home walk. NEVER pass -L to these finds.
     $la        = @sys_getloadavg();
@@ -790,7 +790,7 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
         $ph1 = (string)@shell_exec(smpro_mnt_wrap("find /home -maxdepth 9 \\( -path '/home/backup' -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/.snapshots' -o -ipath '*/node_modules' -o -ipath '*/.git' -o -ipath '*/system/library/*' -o -ipath '*/vendor/*' -o -ipath '*/includes/*' -o -ipath '*/lib/*' -o -ipath '*/src/*' \\) -prune -o -type f -mtime +2 \\( -ipath '*/storage/cache/*' -o -ipath '*/system/storage/cache/*' -o -ipath '*/storage/framework/cache/*' -o -ipath '*/storage/framework/views/*' -o -ipath '*/bootstrap/cache/*' -o -ipath '*/wp-content/cache/*' -o -ipath '*/var/cache/*' \\) -not -name 'index.php' -not -name '.gitignore' -not -name '.htaccess' -printf '%s\\t%p\\0' 2>/dev/null", 220));
         // CIRCUIT BREAKER: a routine cache sweep touches a modest number of files. If a pattern change (or an
         // unusual layout) ever makes the walk match a huge set, that is a symptom of a mistake, not a big
-        // clean-up — so refuse to delete anything at all and leave a note, rather than discover the error by
+        // clean-up - so refuse to delete anything at all and leave a note, rather than discover the error by
         // its damage. The incident that motivated this deleted application source across ~92 sites in one run.
         $jCand = 0; foreach (explode("\0", $ph1) as $r0) if ($r0 !== '') $jCand++;
         if ($jCand > 20000) {
@@ -816,12 +816,12 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
             if (preg_match('#/(mail|\.trash|\.snapshots|node_modules|\.git)(/|$)#i', $rp)) continue;  // never these trees
             // ---------------------------------------------------------------------------------------------
             // HARD SAFETY NET (added after an incident: the old whitelist was just "/cache/", which matches
-            // APPLICATION SOURCE directories that happen to be named "cache" — OpenCart's system/library/cache,
+            // APPLICATION SOURCE directories that happen to be named "cache" - OpenCart's system/library/cache,
             // Twig's .../Twig/Cache, PHPExcel's CachedObjectStorage. Deleting those files does not free junk,
             // it breaks the site with a fatal error.) Three independent guards, all must pass:
             //   1. the path must be a real cache-STORAGE location, not any directory merely named "cache"
             //   2. never inside a source tree (library / vendor / includes / lib / src)
-            //   3. never a source-code file — cache DATA is not .php/.js/.css/.html/.twig/.tpl
+            //   3. never a source-code file - cache DATA is not .php/.js/.css/.html/.twig/.tpl
             // Any one of these would have prevented the incident; together they make it impossible.
             if (!preg_match('#/(storage/cache|system/storage/cache|storage/framework/(cache|views)|bootstrap/cache|wp-content/cache|var/cache)/#i', $rp)) continue;   // ~/.cache (XDG: browser binaries, ML weights, build caches) is NOT a web cache and is never swept
             if (preg_match('#/(system/library|vendor|includes|lib|src)/#i', $rp)) continue;
@@ -832,7 +832,7 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
             // TOCTOU-SAFE DELETE: root unlink() re-resolves EVERY parent component at delete time, so the file's
             // (unprivileged) owner could swap an intermediate dir it owns for a symlink into /home/backup or /etc
             // between our validation and the unlink, redirecting root's delete outside /home. DROP PRIVILEGES to the
-            // owner for the delete — a symlink into a root-owned tree is then denied by permissions (definitive fix).
+            // owner for the delete - a symlink into a root-owned tree is then denied by permissions (definitive fix).
             // Where pcntl/posix are unavailable, fall back to a dev/ino re-check right before unlink (narrows the race).
             $uid = (int)$lst['uid']; $gid = (int)$lst['gid'];
             if ($uid >= 100 && function_exists('pcntl_fork') && function_exists('posix_setuid')) {
@@ -856,20 +856,20 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
     }
 
     $mem = function_exists('smpro_mnt_mem') ? smpro_mnt_mem() : [];
-    // ---- (c) drop_caches — ONLY when RAM is genuinely tight (<15% avail). Pure PHP, no shell. Skipped if $light.
+    // ---- (c) drop_caches - ONLY when RAM is genuinely tight (<15% avail). Pure PHP, no shell. Skipped if $light.
     if (!$light) {
         $mp = isset($mem['mem_avail_pct']) ? (float)$mem['mem_avail_pct'] : 100.0;
         if ($mp < 15) {
             $before = isset($mem['mem_avail']) ? (int)$mem['mem_avail'] : 0;   // kB
             @shell_exec('sync');
-            $w = @file_put_contents('/proc/sys/vm/drop_caches', "1\n");         // read-only on OpenVZ/LXC → false, non-fatal
+            $w = @file_put_contents('/proc/sys/vm/drop_caches', "1\n");         // read-only on OpenVZ/LXC -> false, non-fatal
             if ($w !== false) {
                 $after = function_exists('smpro_mnt_mem') ? (int)(smpro_mnt_mem()['mem_avail'] ?? 0) : 0;  // kB
                 $actions['dropcaches'] = max(0, ($after - $before) * 1024);     // CLAMP >=0 (concurrent alloc can go negative)
             } else { $notes[] = 'drop_caches unwritable (skipped)'; }
         }
     }
-    // ---- (d) journald vacuum + rotated-log trim — ONLY when /var is high (>=80%; use / if /var not separate).
+    // ---- (d) journald vacuum + rotated-log trim - ONLY when /var is high (>=80%; use / if /var not separate).
     //         Skipped if $light. journald walk has no -prune, so -delete is fine there.
     if (!$light) {
         $var    = smpro_mnt_df('/var');
@@ -881,7 +881,7 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
                 @shell_exec('timeout 120 journalctl --vacuum-size=200M 2>/dev/null');
             }
             @shell_exec("timeout 90 nice -n 19 find /var/log -type f \\( -name '*.gz' -o -name '*.xz' -o -name '*.old' -o -name '*.1' -o -name '*.2' -o -name '*.3' -o -name '*.4' -o -name '*.5' -o -name '*.6' -o -name '*.7' \\) -mtime +14 -delete 2>/dev/null");
-            $actions['journald'] = 1;   // marker — journald frees are not byte-accounted precisely
+            $actions['journald'] = 1;   // marker - journald frees are not byte-accounted precisely
         }
     }
 
@@ -908,7 +908,7 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
 function smpro_mnt_tick(): void {
     $cfg = smpro_mnt_cfg();
     if (empty($cfg['enabled'])) return;   // double-guard even though cron is absent when disabled
-    $smp = smpro_mnt_sample();            // ALWAYS sample → keeps history warm for smart mode
+    $smp = smpro_mnt_sample();            // ALWAYS sample -> keeps history warm for smart mode
     $mode = $cfg['mode'];
     $run = false; $reason = ''; $light = false; $alert = false;
     if ($mode === 'fixed') {
@@ -922,14 +922,14 @@ function smpro_mnt_tick(): void {
         $d  = smpro_mnt_decide(is_array($st['samples'] ?? null) ? $st['samples'] : []);
         $run = !empty($d['purge']); $reason = (string)$d['reason']; $light = !empty($d['light']); $alert = !empty($d['alert']);
     }
-    // DRY-RUN: monitor only — decide/record but delete NOTHING (parity with smpro_cool_guard_tick).
+    // DRY-RUN: monitor only - decide/record but delete NOTHING (parity with smpro_cool_guard_tick).
     if (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) {
         smpro_mnt_state_save(['last_decision' => $reason . ($run ? ' (monitor-only: would purge)' : ' (monitor-only)'), 'last_run' => time()]);
         return;
     }
     if ($run) smpro_mnt_purge($mode === 'fixed', $light);   // fixed => force; smart-floor => light (tmp+junk only)
     smpro_mnt_state_save(['last_decision' => $reason]);
-    // Smart 'reclaim ineffective / still rising' alert — guarded + deduped (~once / 6h) via notifier if configured.
+    // Smart 'reclaim ineffective / still rising' alert - guarded + deduped (~once / 6h) via notifier if configured.
     if ($alert) {
         $st = smpro_mnt_state();
         if (time() - (int)($st['last_alert_at'] ?? 0) >= 6 * 3600) {
@@ -948,7 +948,7 @@ function smpro_mnt_sched_expr(array $cfg): string {
     switch ($cfg['interval'] ?? '6h') {
         case '3h':  return '9 */3 * * *';
         case '12h': return '9 */12 * * *';
-        case '24h': return '9 3 * * *';    // */24 is INVALID → daily at 03:09
+        case '24h': return '9 3 * * *';    // */24 is INVALID -> daily at 03:09
         case '6h':
         default:    return '9 */6 * * *';
     }
@@ -973,13 +973,13 @@ function smpro_mnt_cron_sync(): void {
     // /etc/cron.d directly. The lab caught exactly that, restored the file, and went red at random.
     if (defined('SMPRO_TEST_SRC')) return;
     // Idempotent reconcile of /etc/cron.d/smpro-autopurge to the current config. Called by cfg_save AND from
-    // index.php boot (self-heals after a cPanel upcp wipes /etc/cron.d — same mechanism as smpro_upd_install_cron).
+    // index.php boot (self-heals after a cPanel upcp wipes /etc/cron.d - same mechanism as smpro_upd_install_cron).
     $f   = '/etc/cron.d/smpro-autopurge';
     $cfg = smpro_mnt_cfg();
-    if (empty($cfg['enabled'])) { if (is_file($f)) @unlink($f); return; }   // Off → remove the cron file entirely
-    if (!is_file(SMPRO_BASE . '/bin/autopurge.php')) return;                 // worker missing → nothing to schedule
+    if (empty($cfg['enabled'])) { if (is_file($f)) @unlink($f); return; }   // Off -> remove the cron file entirely
+    if (!is_file(SMPRO_BASE . '/bin/autopurge.php')) return;                 // worker missing -> nothing to schedule
     $desired = smpro_mnt_cron_line($cfg);
-    if (is_file($f) && (string)@file_get_contents($f) === $desired) return;  // already current → no write
+    if (is_file($f) && (string)@file_get_contents($f) === $desired) return;  // already current -> no write
     smpro_cron_install($f, $desired);   // verified write: 0644 + trailing newline, or it reports failure
 }
 
@@ -987,7 +987,7 @@ function smpro_mnt_cron_sync(): void {
  * Like the auto-purge scheduler, but for swap. A background cron checks swap usage every 5 min and, when it
  * crosses the admin's threshold AND the SAME OOM gate as the manual "Cycle swap" passes (free RAM >= 1.5x
  * swap-in-use and >=25% RAM free), it cycles swap (swapoff -a && swapon -a) to move idle pages back to RAM.
- * If the gate is not met it SKIPS — it never forces a swapoff that could OOM. Config: enabled + threshold %. */
+ * If the gate is not met it SKIPS - it never forces a swapoff that could OOM. Config: enabled + threshold %. */
 if (!defined('SMPRO_SWAPCYCLE_CFG'))   define('SMPRO_SWAPCYCLE_CFG',   SMPRO_VARLIB . '/swapcycle.json');
 if (!defined('SMPRO_SWAPCYCLE_STATE')) define('SMPRO_SWAPCYCLE_STATE', SMPRO_VARLIB . '/swapcycle_state.json');
 
@@ -1019,7 +1019,7 @@ function smpro_swapcycle_status() {
             'last_run' => (int)($st['last_run'] ?? 0), 'last_result' => (string)($st['last_result'] ?? ''),
             'before_pct' => (float)($st['before_pct'] ?? 0), 'after_pct' => (float)($st['after_pct'] ?? 0)];
 }
-/** Worker body — cycles swap iff enabled + over threshold + OOM-safe + not too soon. Never forces an unsafe swapoff. */
+/** Worker body - cycles swap iff enabled + over threshold + OOM-safe + not too soon. Never forces an unsafe swapoff. */
 function smpro_swapcycle_run() {
     $cfg = smpro_swapcycle_cfg();
     if (empty($cfg['enabled'])) return ['ok' => false, 'skip' => 'disabled'];
@@ -1030,7 +1030,7 @@ function smpro_swapcycle_run() {
     $state = smpro_swapcycle_state();
     if (!empty($state['last_run']) && (time() - (int)$state['last_run']) < 600 && (($state['last_result'] ?? '') === 'cycled'))
         return ['ok' => false, 'skip' => 'cycled recently'];                         // anti-thrash: >=10 min between cycles
-    // OOM safety gate — IDENTICAL to the manual "Cycle swap"; if RAM can't absorb the pages, SKIP (never OOM).
+    // OOM safety gate - IDENTICAL to the manual "Cycle swap"; if RAM can't absorb the pages, SKIP (never OOM).
     $memAvail = (int)($mem['mem_avail'] ?? 0); $swapUsed = (int)($mem['swap_used'] ?? 0); $availPct = (float)($mem['mem_avail_pct'] ?? 0);
     if ($memAvail < $swapUsed * 1.5 || $availPct < 25) {
         smpro_swapcycle_state_write(['last_run' => time(), 'last_result' => 'skipped-unsafe', 'before_pct' => $pct, 'after_pct' => 0]);
@@ -1094,7 +1094,7 @@ function smpro_mnt_act_save(): array {
     return ['ok'=>true, 'cfg'=>$cfg, 'choice'=>$choice, 'next'=>$next, 'msg'=>($choice==='off' ? 'Auto-purge turned off.' : 'Schedule saved.')];
 }
 function smpro_mnt_act_preview(): array {
-    // Dry-run MEASURE — the SAME predicates as the real purge, -printf only (NO -delete → -prune works),
+    // Dry-run MEASURE - the SAME predicates as the real purge, -printf only (NO -delete -> -prune works),
     // plus the SAME PHP re-validation, so the preview is faithful (never promises exclusions the run violates).
     $tmpBytes = 0; $tmpN = 0;
     $tmpOut = (string)@shell_exec(smpro_mnt_wrap("find /tmp -maxdepth 3 -type f -atime +3 -mtime +3 -not -name 'sess_*' -not -name 'cpsess*' -not -name '*.sock' -not -name '.s.*' -not -name '*.lock' -not -ipath '*cpanel*' -not -ipath '*mysql*' -not -ipath '*mariadb*' -printf '%s\\n' 2>/dev/null", 60));
@@ -1117,13 +1117,13 @@ function smpro_mnt_act_preview(): array {
             'tmp_bytes'=>$tmpBytes, 'junk_bytes'=>$junkBytes];
 }
 function smpro_mnt_act_run_now(): array {
-    // DETACHED background run (uninstall's `(…) &` pattern) so a large /home walk cannot be reaped by the
+    // DETACHED background run (uninstall's `(...) &` pattern) so a large /home walk cannot be reaped by the
     // cpsrvd/PHP request timeout. The worker's --run-now path re-checks ctl gates then runs ONE purge under
     // the run.lock. The card polls maintenance-state.json (last_run/last_freed) for the result.
     $php = smpro_php_cli_bin();
     $bin = SMPRO_BASE . '/bin/autopurge.php';
     if (!is_file($bin)) {
-        // fallback: synchronous run if the worker file is somehow absent — but honor the SAME control gates the
+        // fallback: synchronous run if the worker file is somehow absent - but honor the SAME control gates the
         // detached worker (bin/autopurge.php) enforces, so a monitor-only / disabled box NEVER auto-deletes.
         if ((function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) || (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()))
             return ['ok'=>false, 'msg'=>'Auto-purge is in monitor-only / disabled mode; nothing was deleted.'];
@@ -1144,7 +1144,7 @@ function smpro_mnt_card_html(): string {
     $h     = fn($s) => function_exists('smpro_h') ? smpro_h($s) : htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
     $humb  = fn($b) => function_exists('smpro_ds_humb') ? smpro_ds_humb((int)$b) : ((int)$b . ' B');
 
-    // current choice → selected radio
+    // current choice -> selected radio
     $choice = 'off';
     if (!empty($cfg['enabled'])) $choice = ($cfg['mode'] === 'smart') ? 'smart' : (string)$cfg['interval'];
     $opts = ['off'=>'Off', '3h'=>'Every 3 hours', '6h'=>'Every 6 hours', '12h'=>'Every 12 hours', '24h'=>'Every 24 hours', 'smart'=>'Smart (adaptive)'];
@@ -1244,7 +1244,7 @@ function smpro_mnt_card_html(): string {
   if(saveBtn)saveBtn.addEventListener('click',function(){
     var ch=choice();
     if(ch==='off'){ if(confirm('Turn auto-purge OFF? No further automatic runs will happen.'))apSave(ch); return; }
-    // Enabling installs a STANDING schedule that then deletes unattended — so show what it would actually
+    // Enabling installs a STANDING schedule that then deletes unattended - so show what it would actually
     // remove RIGHT NOW (real counts + sizes from smpro_mnt_preview) before the admin commits to it.
     saveBtn.disabled=true;saveBtn.textContent='Checking what would be deleted…';
     post({ds_action:'autopurge_preview'}).then(function(p){
@@ -1278,7 +1278,7 @@ function smpro_mnt_card_html(): string {
     return (string)ob_get_clean();
 }
 
-/** Auto Swap-Cycle scheduler card — mirrors the auto-purge card. Toggle + threshold(%) + status. */
+/** Auto Swap-Cycle scheduler card - mirrors the auto-purge card. Toggle + threshold(%) + status. */
 function smpro_swapcycle_card_html(): string {
     $st   = smpro_swapcycle_status();
     $csrf = function_exists('smpro_csrf_generate') ? smpro_csrf_generate('ds') : '';

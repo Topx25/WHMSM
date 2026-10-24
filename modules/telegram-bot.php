@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/telegram-bot.php — Telegram control bot: enable/disable, test, command reference.
+ * modules/telegram-bot.php - Telegram control bot: enable/disable, test, command reference.
  * Reuses the Telegram token + chat id from the Notifications page. Actions via ?tgbot=1.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }

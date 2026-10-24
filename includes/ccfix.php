@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/ccfix.php — Compromise Check: the fixes, and the scheduled scan.
+ * includes/ccfix.php - Compromise Check: the fixes, and the scheduled scan.
  *
  * FIXES. Each server check and each account door may carry one or more fix targets ('fixes' => [[op, args...]]).
  * The page renders them as buttons; the POST handler runs smpro_cx_apply(). Rules that hold for every op:

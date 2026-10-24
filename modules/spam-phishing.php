@@ -1,9 +1,9 @@
 <?php
 /**
- * modules/spam-phishing.php — Spam Remover & Phishing Fighting.
+ * modules/spam-phishing.php - Spam Remover & Phishing Fighting.
  *
  * Shared-hosting focus: find ACCOUNTS that send spam (compromised mailer
- * scripts — cPanel tags each message with cwd=/home/<acct>/...) and PHISHING
+ * scripts - cPanel tags each message with cwd=/home/<acct>/...) and PHISHING
  * kits hosted on the server. Read-only by default (tails exim_mainlog, bounded);
  * phishing scan is on-demand, single account, throttled. AI can judge a
  * suspected mailer script or phishing page on demand.
@@ -16,7 +16,7 @@ function smpro_sp_users() { $u = []; foreach (glob('/var/cpanel/users/*') ?: [] 
 
 /** Read the last $lines of exim_mainlog INCLUDING rotated generations (see smpro_syslog_read_cmd: budgeted, so
  *  a busy server with huge rotated logs reads the live file only). exim rotates weekly on a stock cPanel box, so
- *  a live-file-only tail silently narrowed every "recent mail activity" view to whatever the live file held —
+ *  a live-file-only tail silently narrowed every "recent mail activity" view to whatever the live file held -
  *  as little as a day on a busy server, and on a QUIET server the exact case where "no spam" and "log rotated
  *  away" look identical. Falls back to the bare live tail if the shared helper is unavailable. */
 function smpro_sp_tail(int $lines, int $days = 7): string {
@@ -27,7 +27,7 @@ function smpro_sp_tail(int $lines, int $days = 7): string {
     return (string)@shell_exec('timeout 40 nice -n ' . SMPRO_SCAN_NICE . ' sh -c ' . escapeshellarg($inner) . ' 2>/dev/null');
 }
 
-/** Same window as smpro_sp_tail, streamed line by line (generator — iterate once). The string form held up to
+/** Same window as smpro_sp_tail, streamed line by line (generator - iterate once). The string form held up to
  *  800k exim lines twice in memory and died under the cPanel CLI's 128M cap; this holds one line. */
 function smpro_sp_lines(int $lines, int $days = 7): \Generator {
     if (!is_readable(SMPRO_SP_LOG)) return;
@@ -62,7 +62,7 @@ function smpro_sp_mail_stats($lines) {
 }
 
 /* The phishing-kit scan now lives in includes/phishscan.php (smpro_ps_scan) so it can run as a DETACHED
- * background worker (bin/phish_scan.php) that survives the admin closing the page — see the phish_start /
+ * background worker (bin/phish_scan.php) that survives the admin closing the page - see the phish_start /
  * phish_status handlers below. smpro_sp_phish_scan() remains available there as a compatibility alias. */
 
 /** Resolve the cPanel account owning an email address or domain (via /etc/userdomains). */
@@ -105,7 +105,7 @@ function smpro_sp_frozen_ids(string $exim): ?array {
     return $ids;
 }
 /** Validate an Exim message-id. */
-/** Exim message id. Legacy is 6-6-2; Exim 4.97+ (cPanel 11.136 ships 4.99) uses a LONGER middle and tail —
+/** Exim message id. Legacy is 6-6-2; Exim 4.97+ (cPanel 11.136 ships 4.99) uses a LONGER middle and tail -
  *  e.g. 1wnyZN-00000007Q4y-3WB0. Pinning the old widths made every modern id fail validation, which silently
  *  disabled queue review and the frozen-mail purge. Accept both; the charset still keeps it shell-safe. */
 function smpro_sp_valid_msgid($id) { return (bool)preg_match('/^[0-9A-Za-z]{6}-[0-9A-Za-z]{6,}-[0-9A-Za-z]{2,}$/', (string)$id); }
@@ -122,7 +122,7 @@ function smpro_sp_queue() {
         if (!preg_match('/^\s*\S+\s+\S+\s+(\S+)\s+<([^>]*)>(.*)$/', $l, $m)) continue;
         $sender = strtolower($m[2]); $frozen = stripos($m[3], 'frozen') !== false;
         if ($frozen) $out['frozen']++;
-        // Empty-sender messages (<>) are bounces/DSNs — the common case for a queue full of frozen spam. Bucket
+        // Empty-sender messages (<>) are bounces/DSNs - the common case for a queue full of frozen spam. Bucket
         // them under "<>" so the queue is NEVER shown as empty when it actually holds messages (was the bug where
         // "31 frozen" displayed "queue is empty / clean" because every message had no envelope sender).
         $key = $sender !== '' ? $sender : '<>';
@@ -133,7 +133,7 @@ function smpro_sp_queue() {
     return $out;
 }
 
-/** Authenticated SMTP senders by source IP — a remote IP that logged into a local
+/** Authenticated SMTP senders by source IP - a remote IP that logged into a local
  *  mailbox and is sending mail. The real "block this IP" candidates (legit inbound
  *  relays like gmail/icloud are NOT authenticated, so they never appear here). */
 function smpro_sp_auth_ips($lines) {
@@ -161,7 +161,7 @@ function smpro_sp_auth_ips($lines) {
  * flag, and a sample of recent messages (time, decoded subject, recipient, size).
  */
 function smpro_sp_outgoing($lines, $thrHour = 60) {
-    // Accepts either an array of exim log lines OR a line-count window (int) — in the
+    // Accepts either an array of exim log lines OR a line-count window (int) - in the
     // latter case it tails the log itself, same as smpro_sp_mail_stats/smpro_sp_auth_ips.
     if (!is_array($lines)) {
         $n = max(50000, min(800000, (int)$lines));
@@ -203,17 +203,17 @@ function smpro_sp_outgoing($lines, $thrHour = 60) {
     return $rows;
 }
 /**
- * Decode an exim T="…" subject: exim escapes non-ASCII bytes as octal (\ddd), and the
- * underlying text is often MIME-encoded (=?…?=) OR raw Windows-1256 / ISO-8859-6 Arabic.
- * Returns proper UTF-8 (fixes the "\331\342…" garble seen in other tools).
+ * Decode an exim T="..." subject: exim escapes non-ASCII bytes as octal (\ddd), and the
+ * underlying text is often MIME-encoded (=?...?=) OR raw Windows-1256 / ISO-8859-6 Arabic.
+ * Returns proper UTF-8 (fixes the "\331\342..." garble seen in other tools).
  */
 function smpro_sp_decode_subject($t) {
-    $s = stripcslashes((string)$t);                       // \ddd octal + \" → raw bytes
+    $s = stripcslashes((string)$t);                       // \ddd octal + \" -> raw bytes
     if (strpos($s, '=?') !== false) {                     // MIME-encoded header
         $d = @mb_decode_mimeheader($s);
         if ($d !== false && $d !== '') $s = $d;
     }
-    if (!mb_check_encoding($s, 'UTF-8')) {                 // raw 8-bit → most Arabic mail is Windows-1256
+    if (!mb_check_encoding($s, 'UTF-8')) {                 // raw 8-bit -> most Arabic mail is Windows-1256
         foreach (['Windows-1256', 'ISO-8859-6', 'ISO-8859-1'] as $enc) {
             $c = @iconv($enc, 'UTF-8//TRANSLIT', $s);
             if ($c !== false && mb_check_encoding($c, 'UTF-8')) { $s = $c; break; }
@@ -250,7 +250,7 @@ function smpro_sp_spam_keywords() {
 function smpro_sp_mail_scan($account, $lines) {
     $srv = smpro_sp_server_domains();
     $acctDoms = array_fill_keys(array_keys(array_filter($srv, fn($u) => $u === $account)), 1);
-    $msgs = []; $pendCwd = '';   // cPanel logs "cwd=/home/<acct> … args: sendmail" on the line BEFORE the <= arrival
+    $msgs = []; $pendCwd = '';   // cPanel logs "cwd=/home/<acct> ... args: sendmail" on the line BEFORE the <= arrival
     foreach ($lines as $l) {
         if (strpos($l, ' <= ') !== false) {
             if (!preg_match('/^(\S+ \S+) (\S+) <= (\S+)/', $l, $m)) continue;
@@ -308,7 +308,7 @@ function smpro_sp_mail_scan($account, $lines) {
  * generic "investigate further": (A) the account's mail-log statistics (subjects, recipient
  * fan-out, external ratio, heuristic signals, sample messages) via the existing deep scanner, and
  * (B) the actual suspect PHP files in the account home (recently-modified, matching mailer /
- * obfuscation signatures) with content snippets — so the model can name the file and explain what
+ * obfuscation signatures) with content snippets - so the model can name the file and explain what
  * it does. Bounded: find/grep run under timeout + nice + ionice. Content is redacted by the caller.
  */
 function smpro_sp_ai_evidence($account, $win = 200000) {
@@ -350,7 +350,7 @@ function smpro_sp_ai_evidence($account, $win = 200000) {
         foreach ($found as $rel) {
             $full = $home . '/' . ltrim($rel, './');
             if (!is_file($full) || !is_readable($full)) continue;
-            if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($full)) continue;   // WP Guard's own security code names these signatures; its quarantine holds real payloads — both trusted
+            if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($full)) continue;   // WP Guard's own security code names these signatures; its quarantine holds real payloads - both trusted
             $head = (string) @file_get_contents($full, false, null, 0, 4000);
             $s = 0; foreach ($strong as $t) if (stripos($head, $t) !== false) $s += 3;
             if (stripos($head, 'mail(') !== false || stripos($head, 'mb_send_mail') !== false) $s += 1;
@@ -386,7 +386,7 @@ $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_M
 if ($reqMethod === 'POST' && ($_POST['sp_action'] ?? '') === 'csf_block') {
     smpro_require_valid_csrf('sp_ai'); smpro_require_root();
     header('Content-Type: application/json');
-    // Block through whichever firewall is ACTUALLY enforcing — not blindly through CSF. On a server where CSF
+    // Block through whichever firewall is ACTUALLY enforcing - not blindly through CSF. On a server where CSF
     // is installed but disabled (and e.g. Imunify360 owns the rules), `csf -d` prints a notice that contains no
     // the word "error", so the old stdout-sniffing test reported SUCCESS while nothing was ever blocked.
     $myIp = function_exists('smpro_current_remote_ip') ? smpro_current_remote_ip() : '';
@@ -415,7 +415,7 @@ if ($reqMethod === 'POST' && ($_POST['sp_action'] ?? '') === 'csf_block') {
 }
 
 /* ---------- Mail queue control (POST+CSRF+root): remove frozen / remove by sender ---------- */
-// NB: 'queue_frozen_preview' MUST be in this gate — the preview branch lives inside the block, so leaving it
+// NB: 'queue_frozen_preview' MUST be in this gate - the preview branch lives inside the block, so leaving it
 // out made the handler unreachable: the browser got the full HTML page back, JSON parsing threw, and the
 // button silently did nothing.
 if ($reqMethod === 'POST' && in_array(($_POST['sp_action'] ?? ''), ['queue_rm_frozen', 'queue_rm_sender', 'queue_frozen_preview'], true)) {
@@ -424,7 +424,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['sp_action'] ?? ''), ['queue_rm_fr
     $exim = is_executable('/usr/sbin/exim') ? '/usr/sbin/exim' : '/usr/bin/exim';
     if (!is_executable($exim)) { echo json_encode(['ok' => false, 'msg' => 'exim not found.']); exit; }
     // Read-only PREVIEW of exactly which frozen messages a purge would delete. `exim -Mrm` is permanent with no
-    // backup, so the admin gets to see the real list (sender / age / size / owner) BEFORE deciding — the same
+    // backup, so the admin gets to see the real list (sender / age / size / owner) BEFORE deciding - the same
     // review-then-delete flow the per-message queue tools already use.
     if ($_POST['sp_action'] === 'queue_frozen_preview') {
         $frozen = array_values(array_filter(smpro_sp_queue_messages(500), fn($m) => !empty($m['frozen'])));
@@ -439,7 +439,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['sp_action'] ?? ''), ['queue_rm_fr
             'top_senders' => array_slice($senders, 0, 8, true)], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
     }
     if ($_POST['sp_action'] === 'queue_rm_frozen') {
-        // Delete BY ID — the same set the preview enumerated — so what the admin reviewed is what is removed,
+        // Delete BY ID - the same set the preview enumerated - so what the admin reviewed is what is removed,
         // and the reported count is real (the old pipeline counted xargs output lines, not deleted messages).
         @ignore_user_abort(true); @set_time_limit(1800);   // a started purge finishes even if the page is closed
         $ids = smpro_sp_frozen_ids($exim);
@@ -566,7 +566,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['sp_action'] ?? ''), ['acct_mail_b
     echo json_encode($r, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 
-/* ---------- Blocked sender ADDRESSES (per-address outgoing block) — POST+CSRF+root ----------
+/* ---------- Blocked sender ADDRESSES (per-address outgoing block) - POST+CSRF+root ----------
  * Managed list at /etc/smpro_blocked_senders, enforced by the Exim ACL (custom_begin_mail_pre)
  * + system-filter rules installed by includes/mailblock.php. Adding/removing an address is live
  * (no Exim rebuild); only the one-time install runs buildeximconf. See mailblock.php for details. */
@@ -633,8 +633,8 @@ if ($reqMethod === 'POST' && ($_POST['sp_action'] ?? '') === 'ai_analyze') {
     if (!function_exists('smpro_ai_available') || !smpro_ai_available()) { echo json_encode(['ok'=>false,'error'=>'No AI provider configured. Open AI Providers first.']); exit; }
     $kind = in_array(($_POST['kind'] ?? ''), ['phish','mailscan'], true) ? $_POST['kind'] : 'spam';
     $ref = (string)($_POST['ref'] ?? '');
-    // SECURITY: $ref's bytes are shipped to an external AI provider — without a gate this is a
-    // "read any root-readable file → exfiltrate" oracle. Phishing/spam kits always live under a
+    // SECURITY: $ref's bytes are shipped to an external AI provider - without a gate this is a
+    // "read any root-readable file -> exfiltrate" oracle. Phishing/spam kits always live under a
     // cPanel account home, so restrict reads to /home/<acct>/, reject symlinks, and deny sensitive
     // paths (mirrors the guard in forensics-audit.php).
     $excerpt = '';
@@ -745,7 +745,7 @@ $user = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_GET['user'] ?? 'all')) 
 if ($user !== 'all' && !in_array($user, $users, true)) $user = 'all';
 $win = (int)($_GET['win'] ?? 200000); if (!in_array($win, [100000,200000,400000,600000], true)) $win = 200000;
 $doPhish = isset($_GET['phish']);
-// Each of these tails/greps the exim log (timeout 40) — ~150s of blocking work on a busy box if run on every
+// Each of these tails/greps the exim log (timeout 40) - ~150s of blocking work on a busy box if run on every
 // render. Cache per window (90s); mail stats don't shift meaningfully faster than that, and page actions
 // operate on the queue/accounts directly, not on this read-only summary.
 $stats   = smpro_cache_through('sp_stats_' . $win,  90, fn() => smpro_sp_mail_stats($win));
@@ -755,7 +755,7 @@ $outgoing = smpro_cache_through('sp_out_' . $win,   90, fn() => smpro_sp_outgoin
 $outSpam = array_values(array_filter($outgoing, fn($r) => $r['spam']));
 if ($authIps && function_exists('smpro_ip_intel_bulk')) smpro_ip_intel_bulk(array_keys(array_slice($authIps, 0, 40, true)), true);
 // Phishing scan is now a BACKGROUND job (survives page close). Show the last completed result if there is one;
-// $psStatus drives the "scanning…" state + polling.
+// $psStatus drives the "scanning..." state + polling.
 $psStatus = ($user !== 'all' && function_exists('smpro_ps_status')) ? smpro_ps_status($user) : null;
 $phish = ($psStatus && ($psStatus['state'] ?? '') === 'done') ? ['err' => (string)($psStatus['err'] ?? ''), 'rows' => (array)($psStatus['rows'] ?? [])] : null;
 $aiReady = function_exists('smpro_ai_available') && smpro_ai_available();
@@ -1206,7 +1206,7 @@ a.kpi{display:block;text-decoration:none;color:inherit;cursor:pointer}a.kpi:hove
       if(j&&j.ok){b.textContent='✓ done';b.style.color='var(--good)';}else{b.disabled=false;b.innerHTML=lbl;alert((j&&j.msg)||'Failed');}
     }).catch(function(){b.disabled=false;b.innerHTML=lbl;alert('Request failed');});
   });
-  // per-item AI verdict — INLINE (no popup) + executable action buttons
+  // per-item AI verdict - INLINE (no popup) + executable action buttons
   document.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('.spAsk'); if(!b)return;
     var kind=b.getAttribute('data-kind'),ref=b.getAttribute('data-ref')||'',cwd=b.getAttribute('data-cwd')||ref;
@@ -1234,7 +1234,7 @@ a.kpi{display:block;text-decoration:none;color:inherit;cursor:pointer}a.kpi:hove
     }).catch(function(){btn.disabled=false;btn.innerHTML=old;alert('Request failed.');});
   }
   var rf=document.getElementById('spRmFrozen');
-  // Show EXACTLY what will be deleted first — exim -Mrm is permanent and keeps no backup.
+  // Show EXACTLY what will be deleted first - exim -Mrm is permanent and keeps no backup.
   if(rf)rf.addEventListener('click',function(){
     var btn=this, old=btn.innerHTML; btn.disabled=true; btn.innerHTML='&#128269; Checking the queue…';
     var pv=new URLSearchParams(); pv.set('sp_action','queue_frozen_preview'); pv.set('smpro_csrf',TOK);

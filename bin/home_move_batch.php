@@ -1,13 +1,13 @@
 <?php
 /**
- * bin/home_move_batch.php — supervises a MULTI-ACCOUNT home move.
+ * bin/home_move_batch.php - supervises a MULTI-ACCOUNT home move.
  *
  * Keeps at most N account-moves running at once (N is capped by smpro_ds_home_capacity(), which is derived
  * from the server's cores, whether the target disk is spinning, and the load already on the box) so a bulk
  * move never saturates the disk and starve customer sites. Each account is moved by the normal single-account
  * worker, so every safety property of a single move still applies (preflight, catch-up sync, rollback).
  *
- * Runs detached — it finishes even if the admin closes the page. The only thing that stops it is an explicit
+ * Runs detached - it finishes even if the admin closes the page. The only thing that stops it is an explicit
  * cancel from the UI, which sets cancelled=1 in batch.json; already-running accounts finish their current move
  * (stopping mid-copy would leave a half-copied account), and nothing further is started.
  */
@@ -102,14 +102,14 @@ while (true) {
             $d = hb_acct_done($u);
             // Same race as below: this file belongs to another process and is read while it is being written,
             // so every key is treated as possibly-not-there-yet. An absent 'done' means "not finished", which is
-            // the safe reading — the opposite would finalise an account that is still being copied.
+            // the safe reading - the opposite would finalise an account that is still being copied.
             if (!empty($d['done'])) {
                 $b['accounts'][$i]['status'] = !empty($d['ok']) ? 'moved' : 'failed';
                 $b['accounts'][$i]['msg']    = (string)($d['msg'] ?? '');
                 $b['accounts'][$i]['ended']  = time();
             } else {
                 // A worker that never produced a heartbeat at all (require/exec failure) would otherwise keep
-                // the slot 'running' for ever and the supervisor would loop indefinitely — so a slot that has
+                // the slot 'running' for ever and the supervisor would loop indefinitely - so a slot that has
                 // been started for over two minutes with NO heartbeat is treated as failed too.
                 $startedAgo = time() - (int)($a['started'] ?? 0);
                 if (empty($d['heartbeat']) && !empty($a['started']) && $startedAgo > 120) {
@@ -123,7 +123,7 @@ while (true) {
                     $b['accounts'][$i]['msg']    = 'This move ran for over two days and was stopped by the supervisor. Check the history and the account\'s home before trying again.';
                     $b['accounts'][$i]['ended']  = time();
                 }
-                // a worker that vanished mid-run (reboot/OOM) — mark it so the admin sees it
+                // a worker that vanished mid-run (reboot/OOM) - mark it so the admin sees it
                 elseif (!empty($d['heartbeat']) && (time() - $d['heartbeat']) > 900) {
                     $b['accounts'][$i]['status'] = 'failed';
                     $b['accounts'][$i]['msg']    = 'The worker stopped responding — nothing was finalised for this account.';
@@ -131,7 +131,7 @@ while (true) {
                 } else {
                     // The worker writes its progress file the moment it starts and fills these in a tick later,
                     // so between those two moments they are simply absent. Reading them blind warned on EVERY
-                    // supervisor pass — once every five seconds, into the server's cPanel error log, for as long
+                    // supervisor pass - once every five seconds, into the server's cPanel error log, for as long
                     // as any move was running. Keep whatever was last known rather than overwriting it with
                     // nothing: a progress bar that drops to zero because one poll arrived early is a worse lie
                     // than one that pauses.

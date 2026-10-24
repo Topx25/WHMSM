@@ -1,10 +1,10 @@
 <?php
 /**
- * shortcuts.php — Dashboard widgets:
- *   1) smpro_dash_attention()  — cheaply detect the conditions that matter RIGHT NOW (critical load,
+ * shortcuts.php - Dashboard widgets:
+ *   1) smpro_dash_attention()  - cheaply detect the conditions that matter RIGHT NOW (critical load,
  *      full disk/RAM, active emergency blocks, etc.) so the main Dashboard surfaces them up top and
- *      links straight to the page that fixes each. No heavy scans — reads live metrics + cached state.
- *   2) Shortcuts — a quick-launch row on the Dashboard combining the user's PINNED pages and the
+ *      links straight to the page that fixes each. No heavy scans - reads live metrics + cached state.
+ *   2) Shortcuts - a quick-launch row on the Dashboard combining the user's PINNED pages and the
  *      auto-tracked MOST-USED pages. Usage is counted per page view; pins are saved by the admin.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
@@ -37,16 +37,16 @@ function smpro_dash_attention($m = null) {
     $swap = (float)($m['swap']['pct'] ?? 0);
     if ($swap >= 60) $push('warn', '&#128260;', 'Heavy swap usage', $swap . '% of swap in use (memory pressure)', 'load-monitor');
 
-    // security — cheap cached intrusion state (no scan)
+    // security - cheap cached intrusion state (no scan)
     if (function_exists('smpro_in_state')) {
         $s = smpro_in_state();
         $emb = count($s['emergency_blocked'] ?? []);
         $ab  = count($s['autoblocked'] ?? []);
-        // protective actions — the system DEFENDED the server. Shown as info notices, never as a score penalty.
+        // protective actions - the system DEFENDED the server. Shown as info notices, never as a score penalty.
         if ($emb > 0) $push('info', '&#128737;&#65039;', 'Emergency response blocked attackers', $emb . ' attacker IP(s) auto-blocked under emergency — protection working; click to review', 'intrusion-monitor', true);
         elseif ($ab > 0) $push('info', '&#128737;&#65039;', 'Attackers auto-blocked', $ab . ' attacker IP(s) blocked recently — protection working', 'intrusion-monitor', true);
     }
-    // service down — start from the cheap cached watcher state, but LIVE-reconfirm with smart unit
+    // service down - start from the cheap cached watcher state, but LIVE-reconfirm with smart unit
     // discovery so a non-existent unit (e.g. named on a PowerDNS server) is never reported as down.
     if (function_exists('smpro_tg_state') && function_exists('smpro_tg_services') && function_exists('smpro_tg_pick_unit')) {
         $prev = (array)(smpro_tg_state()['svc_state'] ?? []);
@@ -54,9 +54,9 @@ function smpro_dash_attention($m = null) {
         $down = [];
         foreach ($prev as $name => $st) {
             if (!in_array($st, ['failed', 'inactive', 'deactivating'], true)) continue;   // only re-check ones flagged down
-            if (!isset($services[$name])) continue;                                        // stale name from an old map → ignore
+            if (!isset($services[$name])) continue;                                        // stale name from an old map -> ignore
             $unit = smpro_tg_pick_unit($services[$name]);                                   // smart: the ACTIVE candidate (pdns vs named)
-            if ($unit === '') continue;                                                     // role not installed at all → not "down"
+            if ($unit === '') continue;                                                     // role not installed at all -> not "down"
             if (in_array(smpro_tg_unit_active($unit), ['failed', 'inactive', 'deactivating'], true)) $down[] = $name;
         }
         if ($down) $push('critical', '&#128308;', 'Service down', implode(', ', array_slice($down, 0, 4)) . ' not running', 'cpanel-services');
@@ -66,14 +66,14 @@ function smpro_dash_attention($m = null) {
 
 /* ---------------- section summary cards ----------------
  * One card per major section with a cheap at-a-glance summary pulled from inside it. Computed once
- * per page render (not on the 2s poll) — light reads only (cached state, one COUNT, exim -bpc). */
+ * per page render (not on the 2s poll) - light reads only (cached state, one COUNT, exim -bpc). */
 function smpro_dash_sections($m = null) {
     if (!is_array($m)) $m = function_exists('smpro_collect_metrics') ? smpro_collect_metrics() : [];
     $cards = [];
     $add = function ($page, $icon, $label, $stat, $sub, $tone = '') use (&$cards) {
         $cards[] = ['page' => $page, 'icon' => $icon, 'label' => $label, 'stat' => $stat, 'sub' => $sub, 'tone' => $tone];
     };
-    // Intrusion Monitor — attacks (24h) + blocked IPs
+    // Intrusion Monitor - attacks (24h) + blocked IPs
     $blocked = 0; $att24 = 0;
     if (function_exists('smpro_in_state')) { $s = smpro_in_state(); $blocked = count($s['autoblocked'] ?? []) + count($s['emergency_blocked'] ?? []); }
     if (function_exists('smpro_in_db')) { try { $db = smpro_in_db(); if ($db) { $st = $db->prepare('SELECT COUNT(*) FROM attacks WHERE ts>=?'); $st->execute([time() - 86400]); $att24 = (int)$st->fetchColumn(); } } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }
@@ -188,9 +188,9 @@ function smpro_sc_render() {
 }
 
 /* ---------------- Security & Health Score ----------------
- * A single 0–100 posture number for the whole server, computed from signals we ALREADY collect:
+ * A single 0-100 posture number for the whole server, computed from signals we ALREADY collect:
  *   - acute conditions surfaced by smpro_dash_attention() (load / RAM / disk / swap / intrusion /
- *     service-down) — these are pre-validated, so we never double-implement the detection here;
+ *     service-down) - these are pre-validated, so we never double-implement the detection here;
  *   - cheap security-posture checks (firewall present, malware scanner present).
  * Pure function (no side effects) so it can be reused by notifications / digests. */
 function smpro_security_score($m = null, $attn = null) {
@@ -203,7 +203,7 @@ function smpro_security_score($m = null, $attn = null) {
         $factors[] = ['pts' => $pts, 'label' => $label, 'page' => $page, 'sev' => $sev];
     };
 
-    // acute issues — weight by the severity attention already assigned
+    // acute issues - weight by the severity attention already assigned
     $sevPts = ['critical' => 14, 'warn' => 7, 'info' => 3];
     foreach ($attn as $x) {
         if (!empty($x['noscore'])) continue;                    // protective/positive notices (e.g. attackers blocked) never lower posture
@@ -211,13 +211,13 @@ function smpro_security_score($m = null, $attn = null) {
         $hit($sevPts[$sev] ?? 7, (string)($x['title'] ?? 'Issue'), (string)($x['page'] ?? 'dashboard'), $sev === 'critical' ? 'crit' : ($sev === 'info' ? 'info' : 'warn'));
     }
 
-    // posture — cheap presence checks (no scans)
+    // posture - cheap presence checks (no scans)
     $csf = is_file('/etc/csf/csf.conf') || (function_exists('smpro_has_bin') && smpro_has_bin('csf'));
     if (!$csf) $hit(15, 'No firewall (CSF) detected', 'firewall-status', 'crit');
     $imun = function_exists('smpro_has_bin') && smpro_has_bin('imunify360-agent');
     if (!$imun) $hit(8, 'No malware scanner (Imunify) detected', 'forensics-audit', 'warn');
 
-    // Open Server Tune-up hardening findings (SSH/Apache/MySQL/CSF/symlink/jail/…). Read a CACHED summary only —
+    // Open Server Tune-up hardening findings (SSH/Apache/MySQL/CSF/symlink/jail/...). Read a CACHED summary only -
     // the dashboard never runs the heavy tune-up scan itself; Server Tune-up + a throttled background job keep it fresh.
     $pd = function_exists('smpro_tun_posture_read') ? smpro_tun_posture_read() : [];
     if (is_array($pd) && !empty($pd['count']) && (time() - (int)($pd['ts'] ?? 0)) < 7 * 86400) {

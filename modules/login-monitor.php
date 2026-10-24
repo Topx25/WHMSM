@@ -1,11 +1,11 @@
 <?php
 /**
- * modules/login-monitor.php — UNIFIED "Login & Access" page (read-only + guarded CSF).
+ * modules/login-monitor.php - UNIFIED "Login & Access" page (read-only + guarded CSF).
  * Merges the former Login Monitor, Login Correlation and Password-Reset auditing
  * into one tabbed page:
- *   tab=overview     → SSH/cPanel failed logins, hardening, cPHulk, risk score, CSF block/allow
- *   tab=correlation  → repeated source IPs correlated across accounts/services, severity
- *   tab=resets       → password change / reset events across all accounts
+ *   tab=overview     -> SSH/cPanel failed logins, hardening, cPHulk, risk score, CSF block/allow
+ *   tab=correlation  -> repeated source IPs correlated across accounts/services, severity
+ *   tab=resets       -> password change / reset events across all accounts
  * Each tab only runs its own collectors when active, so the page stays fast.
  * All state-changing actions are POST + CSRF + root + audit, and never block the
  * admin's own IP or any private/local address.
@@ -19,8 +19,8 @@ define('SMPRO_LC_MULTI', 3);    // distinct accounts hit by one IP = "multi-acco
  * SHARED HELPERS
  * ===================================================================== */
 /** Tail a log INCLUDING its rotated generations. The live file alone covers only as long as this server's
- *  rotation policy allows — measured at ~5 days on a stock weekly-rotating cPanel box, and a few hours where
- *  rotation is daily — so any longer window came back short and the page rendered the shortfall as "nothing
+ *  rotation policy allows - measured at ~5 days on a stock weekly-rotating cPanel box, and a few hours where
+ *  rotation is daily - so any longer window came back short and the page rendered the shortfall as "nothing
  *  happened". Rotated files stream oldest-first and decompress on the fly, so `tail -n` still yields the
  *  newest lines and every existing caller keeps its semantics. */
 function smpro_lm_tail($file, $lines, $days = 14) {
@@ -32,7 +32,7 @@ function smpro_lm_tail($file, $lines, $days = 14) {
     yield from smpro_run_lines('sh -c ' . escapeshellarg($cmd), SMPRO_TIMEOUT_NORMAL);   // generator: one line in memory, not 300k
 }
 /** Days of history the caller's window needs (from its $fromTs), so rotation-aware reads cover the WHOLE window
- *  — not the 14-day default. A 30-day view was silently losing days 15–30 for logs that rotate to siblings. */
+ *  - not the 14-day default. A 30-day view was silently losing days 15-30 for logs that rotate to siblings. */
 function smpro_lm_days($fromTs) { return max(1, (int)ceil((time() - (int)$fromTs) / 86400) + 1); }
 function smpro_lm_syslog_ts($line) {
     $ts = strtotime(substr($line, 0, 15));
@@ -79,7 +79,7 @@ function smpro_lm_csf_action($action, $ip) {
     if ($action === 'block' && function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip))
         return ['ok' => false, 'msg' => 'refused: Cloudflare edge IP — blocking it would cut ALL inbound traffic to every site. Block the real client (CF-Connecting-IP) at Cloudflare, not CSF.'];
     // prefer the verified CSF helper (validates the end-state in csf.deny/allow + detects TESTING mode) over
-    // guessing success from stdout — `csf -d` prints a clean message even when it is a no-op.
+    // guessing success from stdout - `csf -d` prints a clean message even when it is a no-op.
     if (function_exists('smpro_csf_do')) { $r = smpro_csf_do($action, $ip); return ['ok' => !empty($r['ok']), 'msg' => (string)($r['msg'] ?? '')]; }
     $csf = smpro_lm_csf_bin();
     if ($csf === '') return ['ok' => false, 'msg' => 'csf not found'];
@@ -98,7 +98,7 @@ function smpro_la_csf_badge($blocked, $ip) {
 }
 
 /* =====================================================================
- * POST HANDLERS (all Login&Access tabs) — call from the host before output.
+ * POST HANDLERS (all Login&Access tabs) - call from the host before output.
  * Returns true (and exits) when it handled a request; false otherwise.
  * ===================================================================== */
 function smpro_la_handle_post() {
@@ -326,7 +326,7 @@ function smpro_pwr_resolve_account($id) {
     $id = trim((string)$id); if ($id === '' || $id === '-') return '';
     if (strpos($id, '@') !== false) { $dom = strtolower(substr(strrchr($id, '@'), 1)); if (isset($map[$dom])) return $map[$dom]; return $id; }
     $low = strtolower($id);
-    if (isset($map[$low])) return $map[$low];                 // it's a domain → owner account
+    if (isset($map[$low])) return $map[$low];                 // it's a domain -> owner account
     if (in_array($low, $map, true) || smpro_user_home($low) !== '') return $id;  // already a cPanel user
     return $id;
 }
@@ -393,7 +393,7 @@ function smpro_pwr_collect($tail, $fromTs, $toTs) {
 }
 
 /* =====================================================================
- * EXPORTS (per tab) — call from the host before header; exits on a match.
+ * EXPORTS (per tab) - call from the host before header; exits on a match.
  * ===================================================================== */
 function smpro_la_export($tab, $fmt, $days, $from, $to, $fromTs, $toTs) {
 if ($tab === 'overview' && in_array($fmt, ['csv', 'html', 'pdf'], true)) {

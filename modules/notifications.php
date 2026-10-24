@@ -1,6 +1,6 @@
 <?php
 /**
- * modules/notifications.php — Notifications Center.
+ * modules/notifications.php - Notifications Center.
  * Configure delivery channels (Email + Telegram), choose which alert types are
  * on and which channel each uses, link/test the channels, run the live event
  * checker on demand or on a schedule, and review the send log.
@@ -37,7 +37,7 @@ if ($reqMethod === 'POST' && ($_POST['ntf_action'] ?? '') !== '') {
         $cfg['pushbullet']['enabled'] = !empty($_POST['pb_enabled']);
         $cfg['pushbullet']['token']   = trim((string)($_POST['pb_token'] ?? '')) !== '' ? (string)$_POST['pb_token'] : (string)($cfg['pushbullet']['token'] ?? '');  // keep existing if left blank
         // Keep existing values when a field is submitted blank (this card is a secondary
-        // editor — never let an empty box wipe what the WhatsApp section saved).
+        // editor - never let an empty box wipe what the WhatsApp section saved).
         $cfg['whatsapp']['enabled']  = !empty($_POST['wa_enabled']);
         $waB = rtrim(trim((string)($_POST['wa_base'] ?? '')), '/');     if ($waB !== '') $cfg['whatsapp']['base_url'] = $waB;
         $waK = trim((string)($_POST['wa_key'] ?? ''));                  if ($waK !== '') $cfg['whatsapp']['api_key'] = $waK;
@@ -58,7 +58,7 @@ if ($reqMethod === 'POST' && ($_POST['ntf_action'] ?? '') !== '') {
                   'mail_out_hour', 'mail_out_12h', 'remind_hours', 'inbound_spam_min', 'inbound_spam_remind_hours'] as $tk)
             if (isset($_POST['thr'][$tk])) $cfg['thresholds'][$tk] = max(0, (int)$_POST['thr'][$tk]);
         smpro_ntf_save($cfg);
-        // Keep the WhatsApp gateway reachable — allowlist its IP(s) so our auto-block / CSF never blocks it.
+        // Keep the WhatsApp gateway reachable - allowlist its IP(s) so our auto-block / CSF never blocks it.
         $waAllow = ($waB !== '' && function_exists('smpro_ntf_wa_allowlist')) ? smpro_ntf_wa_allowlist($cfg['whatsapp']['base_url']) : [];
         smpro_audit('notify_config_save', ['email' => $cfg['email']['enabled'], 'telegram' => $cfg['telegram']['enabled'], 'wa_allowlisted' => $waAllow]);
         echo json_encode(['ok' => true, 'msg' => 'Settings saved.' . ($waAllow ? ' WhatsApp gateway allow-listed: ' . implode(', ', $waAllow) . '.' : '')]); exit;
@@ -114,7 +114,7 @@ if ($reqMethod === 'POST' && ($_POST['ntf_action'] ?? '') !== '') {
         echo json_encode(['ok' => $ok, 'msg' => $ok ? 'Test message sent to WhatsApp.' : ('Failed: ' . $d . ' — link a session in the WhatsApp section first.')], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;   // $d embeds raw gateway response bytes
     }
     if ($act === 'tg_chats') {
-        $tgTok = trim((string)($_POST['tg_token'] ?? ''));                                  // blank input → use the saved token
+        $tgTok = trim((string)($_POST['tg_token'] ?? ''));                                  // blank input -> use the saved token
         if ($tgTok === '') $tgTok = (string)(smpro_ntf_load()['telegram']['token'] ?? '');
         $chats = smpro_ntf_telegram_chats($tgTok);
         echo json_encode(['ok' => true, 'chats' => $chats, 'msg' => $chats ? '' : 'No chats yet — send any message to your bot first, then retry.']); exit;
@@ -128,8 +128,8 @@ if ($reqMethod === 'POST' && ($_POST['ntf_action'] ?? '') !== '') {
         if ($on) {
             $php = is_executable('/usr/local/cpanel/3rdparty/bin/php') ? '/usr/local/cpanel/3rdparty/bin/php' : trim((string)@shell_exec('command -v php'));
             $bin = dirname(__DIR__) . '/bin/notify_check.php';
-            // flock -n: if a previous run is still going, SKIP this tick — never let runs overlap/pile up
-            // (a long run + no lock = stacking processes every 15 min → resource exhaustion). A hard outer
+            // flock -n: if a previous run is still going, SKIP this tick - never let runs overlap/pile up
+            // (a long run + no lock = stacking processes every 15 min -> resource exhaustion). A hard outer
             // `timeout` is a second backstop so a wedged run can never live forever and block all future ticks.
             $lock = SMPRO_VARLIB . '/locks/notify.lock';
             @is_dir(dirname($lock)) || @mkdir(dirname($lock), 0700, true);
@@ -140,7 +140,7 @@ if ($reqMethod === 'POST' && ($_POST['ntf_action'] ?? '') !== '') {
         } else {
             // The checker is the detection engine and stays scheduled while the plugin is enabled (see
             // smpro_ntf_cron_wanted). Turning "off" here no longer removes it: disable the delivery channels to stop
-            // messages, or Plugin Control → Disabled to stop everything. Saying so beats silently unscheduling detection.
+            // messages, or Plugin Control -> Disabled to stop everything. Saying so beats silently unscheduling detection.
             smpro_audit('notify_cron', ['on' => 0, 'kept' => 1]);
             echo json_encode(['ok' => true, 'msg' => 'Detection keeps running every 15 min — it is what finds foreign logins, File Manager writes from abroad and breaches. To stop messages, switch the channels off; to stop everything, use Plugin Control → Disabled.']); exit;
         }
@@ -434,11 +434,11 @@ smpro_layout_header('Notifications');
       if(!j.ok||!j.chats||!Object.keys(j.chats).length){box.className='nt-res err';box.textContent='⚠ '+(j.msg||'No chats.');return;}
       box.className='nt-res';box.innerHTML='Click to use: ';
       Object.keys(j.chats).forEach(function(id){var a=document.createElement('button');a.className='tp-btn';a.style.cssText='padding:3px 9px;font-size:12px;margin:2px';a.textContent=j.chats[id]+' ('+id+')';a.onclick=function(){document.getElementById('tgChat').value=id;};box.appendChild(a);});
-    }).catch(function(){box.className='nt-res err';box.textContent='⚠ Request failed — try again.';});   // no .catch → box was stuck on "Looking…" forever
+    }).catch(function(){box.className='nt-res err';box.textContent='⚠ Request failed — try again.';});   // no .catch -> box was stuck on "Looking..." forever
   });
   document.getElementById('ntRun').addEventListener('click',function(){var b=this,o=b.innerHTML;b.disabled=true;b.innerHTML='⏳ Checking…';var fd=new URLSearchParams();fd.set('ntf_action','run_checks');fd.set('smpro_csrf',NTF_CSRF);post(fd).then(function(j){b.disabled=false;b.innerHTML=o;res(document.getElementById('ntBarRes'),j);}).catch(function(){b.disabled=false;b.innerHTML=o;});});
   document.getElementById('ntCron').addEventListener('change',function(){var fd=new URLSearchParams();fd.set('ntf_action','cron');fd.set('smpro_csrf',NTF_CSRF);if(this.checked)fd.set('on','1');post(fd).then(function(j){res(document.getElementById('ntBarRes'),j);});});
-  // per-type snooze — fires immediately (no Save needed); option value -1 is just the current-state display
+  // per-type snooze - fires immediately (no Save needed); option value -1 is just the current-state display
   // ---- selection, filter and bulk actions over the alert rows ----
   (function(){
     var rows=Array.prototype.slice.call(document.querySelectorAll('.nt-row')), all=document.getElementById('ntAll'), bulk=document.getElementById('ntBulk'), selN=document.getElementById('ntSelN'), dirty=document.getElementById('ntDirty'), none=document.getElementById('ntNone');

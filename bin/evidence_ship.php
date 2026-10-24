@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/evidence_ship.php — move the evidence journal between a server and its vault.
+ * bin/evidence_ship.php - move the evidence journal between a server and its vault.
  *
  * One worker, both directions, because a server can be either end: a Member sends what it has written, a Hub
  * collects what its members sent. A box that is neither does nothing and says so.
@@ -9,7 +9,7 @@
  * switched off is exactly the server whose recent history somebody will want, and a shipper that stops when the
  * thing it protects is turned off protects nothing.
  *
- * It never deletes a local record because a send succeeded — retention does that on its own schedule, so a vault
+ * It never deletes a local record because a send succeeded - retention does that on its own schedule, so a vault
  * that quietly stopped accepting cannot take the local copy with it.
  */
 define('SMPRO_BOOT', 1);

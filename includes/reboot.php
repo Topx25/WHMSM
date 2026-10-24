@@ -1,10 +1,10 @@
 <?php
 /**
- * includes/reboot.php — Reboot readiness + scheduled reboot.
+ * includes/reboot.php - Reboot readiness + scheduled reboot.
  * Bakes the manual "is this box safe to reboot?" methodology into the plugin: before a reboot (especially when the
  * next-boot kernel differs), verify the CloudLinux LVE module (kmodlve) exists for the NEXT kernel, the boot images
  * are present, RAID is healthy, /boot has room, a fallback kernel exists, the NIC driver exists for the next kernel,
- * and fstab is sane. The scheduled auto-reboot RE-RUNS this check at fire time and ABORTS if a critical item fails —
+ * and fstab is sane. The scheduled auto-reboot RE-RUNS this check at fire time and ABORTS if a critical item fails -
  * so it can never reboot the server into a kernel where LVE/network/boot would break. All actions are POST+CSRF+root+
  * confirm-gated in the module; the cron worker is root already.
  */
@@ -26,22 +26,22 @@ function smpro_rb_next() {
  * KernelCare live-patch state (READ-ONLY; every external call is timeout-bounded). Returns:
  *  ['state' => 'patched'|'stale'|'absent', 'effective' => string, 'detail' => string]
  *  - 'patched': kcarectl installed AND live patches are in effect (or KernelCare confirms the booted kernel needs
- *               none) → the running kernel gets CVE fixes in-memory; a reboot is optional, not urgent for security.
- *  - 'stale'  : kcarectl installed but NO live patches in effect and no confirmation the kernel is current →
- *               the running kernel is NOT being protected — this is the state to alert on.
- *  - 'absent' : kcarectl not installed → the classic kernel-gap logic applies unchanged.
+ *               none) -> the running kernel gets CVE fixes in-memory; a reboot is optional, not urgent for security.
+ *  - 'stale'  : kcarectl installed but NO live patches in effect and no confirmation the kernel is current ->
+ *               the running kernel is NOT being protected - this is the state to alert on.
+ *  - 'absent' : kcarectl not installed -> the classic kernel-gap logic applies unchanged.
  * Output shapes verified on a real CloudLinux 9.8 box (kcarectl 3.8-1.el9):
  *  `kcarectl --uname` prints the EFFECTIVE patched version WITHOUT the arch suffix (e.g. 5.14.0-687.26.1.el9_8
  *  while `uname -r` says 5.14.0-570.30.1.el9_6.x86_64); `--status` prints NOTHING on that build (do not rely on
- *  it); `--uptrack-uname` is a legacy flag (unsupported there — kept only as a fallback for old builds);
+ *  it); `--uptrack-uname` is a legacy flag (unsupported there - kept only as a fallback for old builds);
  *  `--patch-info` lists `kpatch-name:` entries when patches are applied; `--check` prints
- *  "The latest patch is applied." but exits 1 even then — match the text, never the exit code.
+ *  "The latest patch is applied." but exits 1 even then - match the text, never the exit code.
  */
 function smpro_reboot_kernelcare() {
     $bin = '';
     foreach (['/usr/bin/kcarectl', '/usr/sbin/kcarectl', '/usr/local/bin/kcarectl', '/usr/local/sbin/kcarectl'] as $p)
         if (@is_executable($p)) { $bin = $p; break; }
-    // `command` is a shell builtin — timeout(1) cannot exec it, so this lookup runs bare (it is instant, no hang risk)
+    // `command` is a shell builtin - timeout(1) cannot exec it, so this lookup runs bare (it is instant, no hang risk)
     if ($bin === '') $bin = trim((string)@shell_exec('command -v kcarectl 2>/dev/null'));
     if ($bin === '' || strpos($bin, '/') !== 0)
         return ['state' => 'absent', 'effective' => '', 'detail' => 'KernelCare (kcarectl) is not installed'];
@@ -58,7 +58,7 @@ function smpro_reboot_kernelcare() {
     if (stripos($pi, 'kpatch-name') !== false)
         return ['state' => 'patched', 'effective' => ($eff !== '' ? $eff : $run),
                 'detail' => 'Live patches in effect (kcarectl --patch-info lists applied kpatches)'];
-    // no patches applied — ask KernelCare whether that is because none are needed (text match; exit code is unreliable)
+    // no patches applied - ask KernelCare whether that is because none are needed (text match; exit code is unreliable)
     $chk = smpro_rb_sh(escapeshellarg($bin) . ' --check', 12);
     if (stripos($chk, 'latest patch is applied') !== false || stripos($chk, 'kernel is safe') !== false)
         return ['state' => 'patched', 'effective' => ($eff !== '' ? $eff : $run),
@@ -72,8 +72,8 @@ function smpro_reboot_kernelcare() {
  *  ['ready'=>bool,'verdict'=>'ready|caution|blocked','current','next','kernel_change'=>bool,
  *   'kernelcare'=>'patched|stale|absent','kernelcare_effective'=>string,
  *   'checks'=>[{label,status(ok|warn|fail),detail}],'fail','warn']
- * 'blocked' = at least one CRITICAL check failed → do NOT reboot (esp. LVE/boot-images/RAID/NIC for the next kernel).
- * KernelCare-aware: a pending newer kernel is only a WARNING when the running kernel is NOT live-patched — with
+ * 'blocked' = at least one CRITICAL check failed -> do NOT reboot (esp. LVE/boot-images/RAID/NIC for the next kernel).
+ * KernelCare-aware: a pending newer kernel is only a WARNING when the running kernel is NOT live-patched - with
  * KernelCare 'patched' the gap is informational (reboot optional, not urgent for security).
  */
 function smpro_reboot_readiness() {
@@ -86,7 +86,7 @@ function smpro_reboot_readiness() {
         if ($status === 'fail') $fail++; elseif ($status === 'warn') $warn++;
     };
 
-    // 1) kernel change — KernelCare-aware. A pending newer kernel only warrants a "you should reboot" WARNING when
+    // 1) kernel change - KernelCare-aware. A pending newer kernel only warrants a "you should reboot" WARNING when
     //    the running kernel is NOT live-patched; with KernelCare active the gap is informational (seen in production:
     //    145 days uptime on an "old" kernel that was fully CVE-patched in-memory by KernelCare).
     $kc = smpro_reboot_kernelcare();
@@ -112,7 +112,7 @@ function smpro_reboot_readiness() {
     $add('Boot images (vmlinuz + initramfs)', ($vm && $ir) ? 'ok' : 'fail',
         ($vm ? 'vmlinuz present' : 'vmlinuz MISSING') . ' · ' . ($ir ? 'initramfs present' : 'initramfs MISSING'));
 
-    // 3) CloudLinux LVE (kmodlve) for the NEXT kernel — the big one. Module name is kmodlve (NOT "lve").
+    // 3) CloudLinux LVE (kmodlve) for the NEXT kernel - the big one. Module name is kmodlve (NOT "lve").
     if (@is_file('/etc/cloudlinux-release')) {
         $mi = smpro_rb_sh('modinfo -k ' . escapeshellarg($next) . ' kmodlve 2>&1');
         $has = stripos($mi, 'filename:') !== false;
@@ -122,7 +122,7 @@ function smpro_reboot_readiness() {
                  : 'MISSING — LVE resource limits would NOT load on the next kernel. Install/repair kmod-lve for ' . $next . ' (or pin the current kernel) before rebooting.');
     }
 
-    // 4) software RAID health — no degraded array
+    // 4) software RAID health - no degraded array
     $md = @is_file('/proc/mdstat') ? (string)@file_get_contents('/proc/mdstat') : '';
     if (strpos($md, 'md') !== false && preg_match_all('/\[([U_]+)\]/', $md, $m)) {
         $deg = false; foreach ($m[1] as $s) if (strpos($s, '_') !== false) $deg = true;
@@ -134,7 +134,7 @@ function smpro_reboot_readiness() {
     if ($bf !== '' && is_numeric($bf)) $add('/boot free space', ((int)$bf >= 10) ? 'ok' : 'warn', $bf . '% free' . ((int)$bf < 10 ? ' — low; a failed initramfs rebuild could break boot' : ''));
 
     // 6) fallback kernel available (so you can boot the previous one if the new one fails)
-    $kcnt = (int)trim(smpro_rb_sh("grubby --info=ALL 2>/dev/null | grep -c '^kernel'"));   // NB: not $kc — that holds the KernelCare state array read at the return below
+    $kcnt = (int)trim(smpro_rb_sh("grubby --info=ALL 2>/dev/null | grep -c '^kernel'"));   // NB: not $kc - that holds the KernelCare state array read at the return below
     if ($kcnt > 0) $add('Fallback kernel available', ($kcnt >= 2) ? 'ok' : 'warn', $kcnt . ' kernel(s) in the boot menu' . ($kcnt >= 2 ? ' — the previous one is available if the new kernel fails' : ' — only ONE kernel, no fallback'));
 
     // 7) NIC driver present for the next kernel (so the box comes back on the network)
@@ -172,7 +172,7 @@ function smpro_reboot_readiness() {
 }
 
 /** One-click fix for the fstab /tmp fstype mismatch: align the fstab type to what the /usr/tmpDSK image ACTUALLY is
- *  (the mount already works via the ext4 driver, so this is a safe, non-disruptive fstab edit — no remount needed).
+ *  (the mount already works via the ext4 driver, so this is a safe, non-disruptive fstab edit - no remount needed).
  *  Backs up /etc/fstab first and verifies the write. */
 function smpro_reboot_fix_fstab_tmp() {
     $fstab = '/etc/fstab';
@@ -250,7 +250,7 @@ function smpro_reboot_run() {
     if (empty($s['enabled']) || $s['at'] <= 0) return;
     // fire only in a window around the scheduled minute (cron fires at the minute; allow slack, never fire early)
     if (time() < $s['at'] - 90) return;
-    if (time() > $s['at'] + 3600) { smpro_reboot_clear(); return; }   // stale (missed by >1h) → drop it, don't surprise-reboot
+    if (time() > $s['at'] + 3600) { smpro_reboot_clear(); return; }   // stale (missed by >1h) -> drop it, don't surprise-reboot
     $r = smpro_reboot_readiness();
     if (($r['verdict'] ?? '') === 'blocked') {
         $bad = array_map(fn($c) => $c['label'], array_filter($r['checks'], fn($c) => $c['status'] === 'fail'));

@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/lve_tick.php — puts lifted LVE limits back when their time is up (see includes/lvelimits.php). Installed as
+ * bin/lve_tick.php - puts lifted LVE limits back when their time is up (see includes/lvelimits.php). Installed as
  * /etc/cron.d/smpro-lvelimits only while a lift is in force; exits 0 always.
  */
 define('SMPRO_BOOT', 1);

@@ -1,13 +1,13 @@
 <?php
 /**
- * Safety Monitor Pro — processes that are spinning rather than working.
+ * Safety Monitor Pro - processes that are spinning rather than working.
  *
  * A process can hold a core at full speed for weeks without doing anything. It happens when an event loop is
  * woken by a descriptor that is never cleared, so it wakes, finds nothing, and immediately wakes again. From
  * outside it looks exactly like hard work, and every tool that ranks by CPU puts it at the top and leaves the
  * reader to assume it is busy.
  *
- * The difference is not the amount of CPU — it is the SHAPE. Real work varies: it responds to traffic, it pauses
+ * The difference is not the amount of CPU - it is the SHAPE. Real work varies: it responds to traffic, it pauses
  * on I/O, it finishes. A loop does not. So this samples the same process several times and looks for a reading
  * that never moves, on something that has been running far longer than its job should take.
  *
@@ -29,12 +29,12 @@ function smpro_spin_ticks(int $pid): int {
     if ($p === false) return -1;
     $f = preg_split('/\s+/', trim(substr($s, $p + 1)));
     // After the ')' the fields are: state, ppid, pgrp, session, tty, tpgid, flags, minflt, cminflt, majflt,
-    // cmajflt, utime, stime — utime and stime are the 12th and 13th here.
+    // cmajflt, utime, stime - utime and stime are the 12th and 13th here.
     if (!isset($f[12])) return -1;
     return (int)$f[11] + (int)$f[12];
 }
 
-/** Single-character process state, or '' — 'R' means runnable, never sleeping. */
+/** Single-character process state, or '' - 'R' means runnable, never sleeping. */
 function smpro_spin_state(int $pid): string {
     $s = @file_get_contents("/proc/$pid/stat");
     if ($s === false) return '';
@@ -47,10 +47,10 @@ function smpro_spin_state(int $pid): string {
 /**
  * Processes that look like a loop rather than work.
  *
- * $minHours — how long it must have been running. A loop is only interesting once it has outlived any plausible
+ * $minHours - how long it must have been running. A loop is only interesting once it has outlived any plausible
  *             piece of work; a backup or a malware scan is meant to sit at full speed for a while.
- * $minPct   — how much of a core it must hold in EVERY sample.
- * $maxSpread— how much the readings may differ between samples before this is treated as varying, and therefore
+ * $minPct   - how much of a core it must hold in EVERY sample.
+ * $maxSpread- how much the readings may differ between samples before this is treated as varying, and therefore
  *             as real work. This is the check that does the actual separating.
  *
  * Returns ['ok','checked','found'=>[[pid,comm,user,pct,days,state,rss_kb,samples]],'why'].
@@ -109,7 +109,7 @@ function smpro_spin_scan(int $minHours = 24, int $minPct = 80, int $maxSpread = 
     return ['ok' => true, 'checked' => count($cand), 'found' => $found, 'why' => ''];
 }
 
-/** One readable line about a spinning process — what was seen, and why that means a loop. */
+/** One readable line about a spinning process - what was seen, and why that means a loop. */
 function smpro_spin_describe(array $f): string {
     return $f['comm'] . ' (pid ' . $f['pid'] . ', ' . $f['user'] . ') has held about ' . $f['pct']
          . '% of one core for ' . $f['days'] . ' day(s), and the reading does not move between samples ('

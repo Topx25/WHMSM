@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/cron_sync.php — put every enabled feature's scheduled run back in place.
+ * bin/cron_sync.php - put every enabled feature's scheduled run back in place.
  *
  * WHY THIS EXISTS.
  *
@@ -8,7 +8,7 @@
  * settings were saved. Nothing ever called them again. Two consequences, both found on a live server:
  *
  *   - A feature that gains a worker in a later release never gets scheduled for the operator who enabled it
- *     BEFORE that release. They upgrade, the setting still says on, and nothing runs — until they happen to open
+ *     BEFORE that release. They upgrade, the setting still says on, and nothing runs - until they happen to open
  *     the page and press Save for an unrelated reason. Country Login Lock spent a release in exactly that state:
  *     armed, saved, displayed as ARMED, with no schedule and no way to act.
  *   - A cron file lost to an upcp, a cleanup or a half-finished uninstall never comes back. The feature keeps

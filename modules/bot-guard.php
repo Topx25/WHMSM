@@ -1,8 +1,8 @@
 <?php
 /**
- * modules/bot-guard.php — Bot Guard page.
- *   Verified official crawlers → allowed · unverified bots → the admin decides · bots sending attack-signature
- *   requests → gray list · past the threshold → auto-blocked. Core logic: includes/botguard.php (shared with the
+ * modules/bot-guard.php - Bot Guard page.
+ *   Verified official crawlers -> allowed · unverified bots -> the admin decides · bots sending attack-signature
+ *   requests -> gray list · past the threshold -> auto-blocked. Core logic: includes/botguard.php (shared with the
  *   worker bin/botguard_tick.php). This file is routing + rendering only.
  *   Every row carries a verdict (what it is, why, what blocking would cost), its impact on the sites (requests/hour,
  *   bad-request share, domains, last URLs), a live "Verify now", bulk actions with a filter, a 7-day summary, and CSV /
@@ -29,9 +29,9 @@ if ($reqMethod === 'POST' && isset($_POST['bg_action'])) {
             'tail_lines' => (int)($_POST['tail_lines'] ?? 20000), 'max_logs' => (int)($_POST['max_logs'] ?? 150), 'scan_minutes' => (int)($_POST['scan_minutes'] ?? 15),
             'ignore_ips' => array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', (string)($_POST['ignore_ips'] ?? ''))), fn($x) => $x !== '' && (function_exists('smpro_fw_cidr_valid') ? smpro_fw_cidr_valid($x) : filter_var($x, FILTER_VALIDATE_IP)))),
         ];
-        // Operator-defined crawlers, one per line: key | Display name | kind | UA fragment | suffix[,suffix…]
+        // Operator-defined crawlers, one per line: key | Display name | kind | UA fragment | suffix[,suffix...]
         // Anything malformed is dropped by smpro_bg_catalog_custom rather than saved as a rule that looks applied
-        // and is not — the same reasoning as the ignore list above.
+        // and is not - the same reasoning as the ignore list above.
         $custom = [];
         foreach (preg_split('/\r?\n/', (string)($_POST['custom_bots'] ?? '')) as $line) {
             $line = trim($line); if ($line === '' || $line[0] === '#') continue;

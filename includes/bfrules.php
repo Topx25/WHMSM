@@ -1,13 +1,13 @@
 <?php
 /**
- * includes/bfrules.php — Break-in report: rules that block automatically.
+ * includes/bfrules.php - Break-in report: rules that block automatically.
  *
  * The report already says what a network is doing and why, in the operator's words: "tried 141 different
- * accounts — password spraying", "about 79 attempts per address — hammering, not a forgotten password". Those
+ * accounts - password spraying", "about 79 attempts per address - hammering, not a forgotten password". Those
  * sentences are a judgement that has already been made. Until now a person still had to press a button for each
  * one, which means an attack that starts at 3am runs until somebody opens the page.
  *
- * These rules act on that judgement. They add NO new detection — every decision comes from
+ * These rules act on that judgement. They add NO new detection - every decision comes from
  * smpro_aa_bf_assess(), the same function that writes the sentence shown on the page, so what gets blocked is
  * always exactly what the page said was an attack, and the recorded reason is that same sentence.
  *
@@ -36,7 +36,7 @@ if (!defined('SMPRO_BFR_LOG')) define('SMPRO_BFR_LOG', SMPRO_VARLOG . '/bfrules.
  * The patterns the report can produce, and what each one means.
  *
  * The keys are the exact 'what' values smpro_aa_bf_assess() returns. If that function ever grows a new pattern
- * it will simply not be auto-blocked until it is added here — silence, not a surprise block.
+ * it will simply not be auto-blocked until it is added here - silence, not a surprise block.
  */
 function smpro_bfr_patterns(): array {
     return [
@@ -138,7 +138,7 @@ function smpro_bfr_save(array $cfg): bool {
 }
 
 /**
- * Would this network be blocked, and on what grounds? Pure — decides nothing, touches nothing.
+ * Would this network be blocked, and on what grounds? Pure - decides nothing, touches nothing.
  *
  * Returns ['match' => bool, 'pattern' => string, 'why' => string, 'skip' => string]. 'skip' says why a network
  * that LOOKS like a match was passed over, so the page can show the near-misses instead of only the hits: a rule
@@ -181,7 +181,7 @@ function smpro_bfr_match(array $assess, array $nv, array $cfg): array {
 /**
  * Refuse to arm if the operator's own address would be caught.
  *
- * Being locked out of the panel that holds the unblock button is the one failure with no way back from inside —
+ * Being locked out of the panel that holds the unblock button is the one failure with no way back from inside -
  * it needs console access or the hosting provider. Checked BEFORE arming rather than reported afterwards.
  */
 function smpro_bfr_arm_check(array $cfg, string $myIp, array $nets): array {

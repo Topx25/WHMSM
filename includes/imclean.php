@@ -1,9 +1,9 @@
 <?php
 /**
- * includes/imclean.php — hand stuck "found" malware to Imunify360's own cleanup.
+ * includes/imclean.php - hand stuck "found" malware to Imunify360's own cleanup.
  *
  * Imunify cleans automatically only what its background scan finds. Files found by an on-demand scan or a
- * rescan stay "found" forever even when the operator set default_action = cleanup — a production server had
+ * rescan stay "found" forever even when the operator set default_action = cleanup - a production server had
  * 262 of them while SM Pro kept alerting. SM Pro never deletes here: it asks Imunify to run ITS cleanup on those
  * files, which keeps the original (restore-original) for the period set in Imunify.
  *
@@ -29,7 +29,7 @@ function smpro_imc_cfg_save(array $c): void {
     $f = smpro_imc_cfg_file(); $t = $f . '.tmp';
     if (@file_put_contents($t, json_encode($c, JSON_UNESCAPED_SLASHES)) !== false) { @chmod($t, 0600); @rename($t, $f); }
 }
-/** Imunify's own default action for detected malware ('cleanup', 'notify', …); '' when it cannot be read. */
+/** Imunify's own default action for detected malware ('cleanup', 'notify', ...); '' when it cannot be read. */
 function smpro_imc_default_action(): string {
     $b = smpro_imc_bin(); if ($b === '') return '';
     $j = json_decode((string)@shell_exec('timeout 40 ' . escapeshellarg($b) . ' config show --json 2>/dev/null'), true);

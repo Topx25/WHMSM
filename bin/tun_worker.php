@@ -1,6 +1,6 @@
 <?php
 /**
- * bin/tun_worker.php — background worker for Server Tune-up long jobs (AI optimization / Security Advisor).
+ * bin/tun_worker.php - background worker for Server Tune-up long jobs (AI optimization / Security Advisor).
  * Spawned detached by smpro_tun_job_start(); runs the scan and writes the result + timestamp to the job
  * state file so the result survives the user closing the page. Usage: php tun_worker.php <job> <base64-json-args>
  */

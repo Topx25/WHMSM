@@ -1,6 +1,6 @@
 <?php
 /**
- * includes/disk_tmp.php — "Double /tmp capacity" (smpro_ds_tmp_*). tmpfs = instant remount; cPanel loopback
+ * includes/disk_tmp.php - "Double /tmp capacity" (smpro_ds_tmp_*). tmpfs = instant remount; cPanel loopback
  * /usr/tmpDSK = pre-staged 2x rebuild in a detached worker with a rollback ladder that GUARANTEES /tmp stays
  * mounted; a plain /tmp dir is refused. Uses the shared smpro_mnt_* helpers (require maintenance.php first).
  */
@@ -8,7 +8,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 if (!defined('SMPRO_DS_TMP_MAX'))     define('SMPRO_DS_TMP_MAX', 34359738368);   // 32 GiB hard cap on the doubled loop /tmp
 if (!defined('SMPRO_DS_TMP_RAMFRAC')) define('SMPRO_DS_TMP_RAMFRAC', 0.5);       // tmpfs /tmp may not double past this fraction of RAM
 
-/* ==================== A2-tmp — "Double /tmp capacity" =========================================
+/* ==================== A2-tmp - "Double /tmp capacity" =========================================
  * All functions namespaced smpro_ds_tmp_*. This block lives in a NEW includes file (includes/disk_tmp.php)
  * that is require_once'd by BOTH modules/disk-storage.php AND bin/tmp_expand.php (the detached worker),
  * so it MUST stay free of render side effects. Shared helpers assumed present in scope:
@@ -48,14 +48,14 @@ function smpro_ds_tmp_manifest_path(): string { return smpro_ds_tmp_dir() . '/st
 /** Crash-recovery manifest: phase cursor + sizes + options + EXACT MP + loop device + /var/tmp opts. */
 function smpro_ds_tmp_save(array $m): void { smpro_mnt_jwrite(smpro_ds_tmp_manifest_path(), $m); }
 function smpro_ds_tmp_load(): ?array { $m = smpro_mnt_jread(smpro_ds_tmp_manifest_path()); return is_array($m) ? $m : null; }
-/** Modal-poller status file (pct/phase/heartbeat/result) — separate from the recovery manifest. */
+/** Modal-poller status file (pct/phase/heartbeat/result) - separate from the recovery manifest. */
 function smpro_ds_tmp_job_path(): string { return smpro_ds_tmp_dir() . '/job.json'; }
 function smpro_ds_tmp_job_write(array $st): void { $st['updated_at'] = time(); smpro_mnt_jwrite(smpro_ds_tmp_job_path(), $st); }
 function smpro_ds_tmp_job_read(): array { $j = smpro_mnt_jread(smpro_ds_tmp_job_path()); return is_array($j) ? $j : ['phase'=>'idle','pct'=>0,'done'=>false,'updated_at'=>0]; }
 /** Fixed staging mountpoint recorded in the manifest (never a $$/PID path a fresh watchdog can't find). */
 function smpro_ds_tmp_mp(): string { return smpro_ds_tmp_dir() . '/mnt'; }
 
-/* ---------------- DETECT — single source of truth (read-only; fixed literal paths) -------------- */
+/* ---------------- DETECT - single source of truth (read-only; fixed literal paths) -------------- */
 function smpro_ds_tmp_detect(): array {
     $d = [
         'backing'=>'unknown','dev'=>'','fstype'=>'','file'=>'/usr/tmpDSK',
@@ -126,7 +126,7 @@ function smpro_ds_tmp_detect(): array {
     return $d;
 }
 
-/* ---------------- PLAN — pure bounds/safety math + human step list (never mutates) -------------- */
+/* ---------------- PLAN - pure bounds/safety math + human step list (never mutates) -------------- */
 function smpro_ds_tmp_plan(array $d): array {
     $GiB = 1073741824;
     $cap = defined('SMPRO_DS_TMP_MAX') ? SMPRO_DS_TMP_MAX : (32 * $GiB);
@@ -210,7 +210,7 @@ function smpro_ds_tmp_plan(array $d): array {
     return $p;
 }
 
-/* ---------------- VERIFY — authoritative post-mount / watchdog probe ---------------------------- */
+/* ---------------- VERIFY - authoritative post-mount / watchdog probe ---------------------------- */
 function smpro_ds_tmp_verify_mounted(): array {
     $out = ['mounted'=>false,'writable'=>false,'mode1777'=>false,'noexec'=>false,'fstype'=>'','size_bytes'=>0];
     if (trim((string)@shell_exec('findmnt -no TARGET /tmp 2>/dev/null')) !== '/tmp') return $out; // not its own mount
@@ -230,7 +230,7 @@ function smpro_ds_tmp_verify_mounted(): array {
     return $out;
 }
 
-/* ---------------- tmpfs path — instant, contents preserved, safe to run in-request -------------- */
+/* ---------------- tmpfs path - instant, contents preserved, safe to run in-request -------------- */
 function smpro_ds_tmp_expand_tmpfs(array $plan, array &$log): array {
     $cur = (int)$plan['cur_bytes']; $new = (int)$plan['new_bytes'];
     // Re-read LIVE options (atomic single remount); do not trust the preview snapshot.
@@ -264,7 +264,7 @@ function smpro_ds_tmp_expand_tmpfs(array $plan, array &$log): array {
             'msg'=>'/tmp (tmpfs) resized from ' . smpro_ds_tmp_humb($cur) . ' to ' . smpro_ds_tmp_humb($now) . '.' . ($persisted ? ' Persisted in /etc/fstab.' : ' (Not persisted — no matching fstab line; the change lasts until reboot.)')];
 }
 
-/* ---------------- tmpfs fstab persistence — rewrite ONLY size= on an EXISTING line -------------- */
+/* ---------------- tmpfs fstab persistence - rewrite ONLY size= on an EXISTING line -------------- */
 function smpro_ds_tmp_persist_fstab(string $mount, int $new_bytes, array &$log): bool {
     if ($mount !== '/tmp') return false;                         // only ever manage /tmp
     $fstab = '/etc/fstab';
@@ -278,7 +278,7 @@ function smpro_ds_tmp_persist_fstab(string $mount, int $new_bytes, array &$log):
         $c = preg_split('/\s+/', $t);
         if (count($c) >= 4 && $c[1] === '/tmp' && $c[2] === 'tmpfs') { $idx = $i; break; }
     }
-    if ($idx < 0) return false;                                  // no existing tmpfs /tmp line — do NOT invent one
+    if ($idx < 0) return false;                                  // no existing tmpfs /tmp line - do NOT invent one
     $c = preg_split('/\s+/', trim($lines[$idx]));
     $opts = explode(',', $c[3]); $found = false;
     foreach ($opts as $k => $o) if (strpos($o, 'size=') === 0) { $opts[$k] = 'size=' . $new_bytes; $found = true; }
@@ -296,7 +296,7 @@ function smpro_ds_tmp_persist_fstab(string $mount, int $new_bytes, array &$log):
     return true;
 }
 
-/* ---------------- loop path — the RISKY path; runs ONLY in the detached worker under flock ------ */
+/* ---------------- loop path - the RISKY path; runs ONLY in the detached worker under flock ------ */
 function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
     $file = '/usr/tmpDSK'; $new_file = '/usr/tmpDSK.new'; $old_file = '/usr/tmpDSK.old';
     $mp = smpro_ds_tmp_mp();
@@ -329,13 +329,13 @@ function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
     smpro_ds_tmp_save($man);
     smpro_ds_tmp_job_write(['phase'=>'prestage','pct'=>5,'done'=>false,'msg'=>'Preparing new /tmp image','heartbeat'=>time()]);
 
-    /* ---------- PHASE A — build the new fs (old /tmp stays mounted; zero downtime) ---------- */
+    /* ---------- PHASE A - build the new fs (old /tmp stays mounted; zero downtime) ---------- */
     // Reap any leftover staging mount / .new from a previous aborted run (safe: not the live /tmp).
     @shell_exec(smpro_mnt_wrap('umount ' . escapeshellarg($mp) . ' 2>/dev/null', 30));
     @shell_exec('rm -f ' . escapeshellarg($new_file));
     @is_dir($mp) || @mkdir($mp, 0700, true); @chmod($mp, 0700);
 
-    // 1) create image — fallocate (atomic reservation) preferred; dd fallback with a fresh free-space re-check.
+    // 1) create image - fallocate (atomic reservation) preferred; dd fallback with a fresh free-space re-check.
     $created = false;
     if (smpro_ds_tmp_has_bin('fallocate')) {
         @shell_exec(smpro_mnt_wrap('fallocate -l ' . (int)$newB . ' ' . escapeshellarg($new_file) . ' 2>&1', $to));
@@ -384,13 +384,13 @@ function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
     // 4) copy LIVE /tmp -> staging (sessions/sockets/skeleton); services keep running.
     @shell_exec(smpro_mnt_wrap('cp -a /tmp/. ' . escapeshellarg($mp) . '/ 2>/dev/null', $to));
 
-    /* ---------- PHASE B — the swap (sub-second; the ONLY sensitive window) ---------- */
+    /* ---------- PHASE B - the swap (sub-second; the ONLY sensitive window) ---------- */
     smpro_ds_tmp_job_write(['phase'=>'swap','pct'=>70,'done'=>false,'msg'=>'Swapping /tmp','heartbeat'=>time()]);
     // Delta copy for anything written during PHASE A.
     @shell_exec(smpro_mnt_wrap('cp -a -u /tmp/. ' . escapeshellarg($mp) . '/ 2>/dev/null', $to));
     // Free the new fs so it can be mounted at /tmp.
     @shell_exec(smpro_mnt_wrap('umount ' . escapeshellarg($mp) . ' 2>&1', 60));
-    // HARD ASSERT: the staging mount/loop MUST be gone before we open a loop on $new_file at /tmp — on
+    // HARD ASSERT: the staging mount/loop MUST be gone before we open a loop on $new_file at /tmp - on
     // util-linux <2.29 (CentOS7/CL7) a second `mount -o loop` on the same backing file = two rw superblocks
     // = ext4 corruption. The idle-class umount can time out, so lazy-detach + poll losetup, and if it still
     // will not release, ABORT while the OLD /tmp is still mounted (fully recoverable) rather than double-mount.
@@ -407,7 +407,7 @@ function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
     }
     // Enter the sensitive window: record it BEFORE touching the live mounts.
     $man['phase'] = 'swap_detached'; smpro_ds_tmp_save($man);
-    // Detach /var/tmp bind FIRST — only if it actually was a bind.
+    // Detach /var/tmp bind FIRST - only if it actually was a bind.
     if ($varBind) @shell_exec(smpro_mnt_wrap('umount /var/tmp 2>/dev/null', 60));
     // Clean detach of old /tmp; lazy fallback if busy (NEVER fuser -k / kill).
     @shell_exec(smpro_mnt_wrap('umount /tmp 2>&1', 60));
@@ -419,7 +419,7 @@ function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
     $man['phase'] = 'swap_mounted';
     $man['final_loop_dev'] = trim((string)strtok((string)@shell_exec('losetup -j ' . escapeshellarg($new_file) . ' 2>/dev/null'), ':'));
     smpro_ds_tmp_save($man);
-    // AUTHORITATIVE verify: mounted AND mode 1777 (a root write-probe passes on 0755 root:root — not trusted).
+    // AUTHORITATIVE verify: mounted AND mode 1777 (a root write-probe passes on 0755 root:root - not trusted).
     $v = smpro_ds_tmp_verify_mounted();
     if (!$v['mounted'] || !$v['mode1777']) {
         $rb = smpro_ds_tmp_rollback_loop('swap_mounted', $d, $log);
@@ -437,7 +437,7 @@ function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
     }
     // Recreate the /tmp skeleton.
     if (smpro_ds_tmp_has_bin('systemd-tmpfiles')) @shell_exec('timeout 60 systemd-tmpfiles --create 2>/dev/null');
-    // COMMIT — only AFTER verify passed: keep old image as .old, promote new. (loop tracks inode; rename is safe)
+    // COMMIT - only AFTER verify passed: keep old image as .old, promote new. (loop tracks inode; rename is safe)
     @shell_exec('mv -f ' . escapeshellarg($file) . ' ' . escapeshellarg($old_file));
     @shell_exec('mv -f ' . escapeshellarg($new_file) . ' ' . escapeshellarg($file));
     $man['phase'] = 'committed'; $man['committed_at'] = time(); smpro_ds_tmp_save($man);
@@ -446,7 +446,7 @@ function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
             'msg'=>'/tmp expanded from ' . smpro_ds_tmp_humb($cur) . ' to ' . smpro_ds_tmp_humb($newB) . ' (loopback rebuilt, contents preserved). Old image kept as /usr/tmpDSK.old.'];
 }
 
-/* ---------------- ROLLBACK LADDER — GUARANTEES /tmp is mounted at exit (idempotent) ------------- */
+/* ---------------- ROLLBACK LADDER - GUARANTEES /tmp is mounted at exit (idempotent) ------------- */
 function smpro_ds_tmp_rollback_loop(string $phase, array $d, array &$log): array {
     $file = '/usr/tmpDSK'; $new_file = '/usr/tmpDSK.new';
     $man = smpro_ds_tmp_load() ?: [];
@@ -465,7 +465,7 @@ function smpro_ds_tmp_rollback_loop(string $phase, array $d, array &$log): array
         if ($varOpts !== '' && preg_match('#^[a-zA-Z0-9=,._:+%/-]+$#', $varOpts))
             @shell_exec(smpro_mnt_wrap('mount -o ' . escapeshellarg('remount,bind,' . $varOpts) . ' /var/tmp 2>&1', 60));
     };
-    // Release leaked staging artifacts. Resolve loops to detach ONLY path-wise via `losetup -j $new_file` — the
+    // Release leaked staging artifacts. Resolve loops to detach ONLY path-wise via `losetup -j $new_file` - the
     // recorded $loop_dev number is unreliable after AUTOCLEAR (umount auto-frees + the number can be reused by an
     // unrelated process). AND never reap .new while it is the live backing of /tmp (killed-after-mount case).
     $freeStaging = function () use ($mp, $new_file) {
@@ -520,7 +520,7 @@ function smpro_ds_tmp_rollback_loop(string $phase, array $d, array &$log): array
         $log[] = 'rollback: R1 original re-mounted';
         return $out;
     }
-    // R2: last resort — emergency tmpfs so /tmp is NEVER left unmounted.
+    // R2: last resort - emergency tmpfs so /tmp is NEVER left unmounted.
     $sz = $cur > 0 ? $cur : 1073741824;
     @shell_exec(smpro_mnt_wrap('umount /tmp 2>/dev/null', 30));
     @shell_exec(smpro_mnt_wrap('mount -t tmpfs -o ' . escapeshellarg('noexec,nosuid,nodev,size=' . (int)$sz . ',mode=1777') . ' tmpfs /tmp 2>&1', 60));
@@ -532,7 +532,7 @@ function smpro_ds_tmp_rollback_loop(string $phase, array $d, array &$log): array
     return $out;
 }
 
-/* ---------------- WATCHDOG — crash recovery from module top + cron (cheap, single-flight) -------- */
+/* ---------------- WATCHDOG - crash recovery from module top + cron (cheap, single-flight) -------- */
 function smpro_ds_tmp_watchdog(): void {
     $mf = smpro_ds_tmp_manifest_path();
     if (!@is_file($mf)) return;                                  // cheap short-circuit: no run ever recorded
@@ -559,9 +559,9 @@ function smpro_ds_tmp_watchdog(): void {
                 smpro_ds_tmp_save($man);
                 if (function_exists('smpro_audit')) @smpro_audit('ds_tmp_watchdog', ['action'=>'recover','critical'=>!empty($rb['critical']),'phase'=>$phase]);
             } else {
-                // /tmp is mounted — but is it the OLD original, or the NEW image (worker killed after a good mount,
+                // /tmp is mounted - but is it the OLD original, or the NEW image (worker killed after a good mount,
                 // before the commit rename)? If /tmp is already live on .new, the swap SUCCEEDED; only the rename was
-                // missed — finish it (promote) rather than reaping .new (which would silently revert the expansion).
+                // missed - finish it (promote) rather than reaping .new (which would silently revert the expansion).
                 $src = trim((string)@shell_exec('findmnt -no SOURCE /tmp 2>/dev/null'));
                 $newLoopsRaw = trim((string)@shell_exec('losetup -j /usr/tmpDSK.new 2>/dev/null | cut -d: -f1'));
                 $newLoops = $newLoopsRaw !== '' ? array_values(array_filter(preg_split('/\s+/', $newLoopsRaw))) : [];
@@ -630,7 +630,7 @@ function smpro_ds_tmp_launch_worker(array $plan): array {
 
 /* ---------------- ds_action dispatch bodies (called from the module's POST block) --------------- */
 function smpro_ds_tmp_dispatch(string $act): array {
-    if ($act === 'preview_tmp_expand') {                        // READ-ONLY dry run — mirrors preview_boot_kernels
+    if ($act === 'preview_tmp_expand') {                        // READ-ONLY dry run - mirrors preview_boot_kernels
         $d = smpro_ds_tmp_detect(); $p = smpro_ds_tmp_plan($d);
         return [
             'ok'=>!$p['refuse'], 'preview'=>1, 'backing'=>$p['backing'],
