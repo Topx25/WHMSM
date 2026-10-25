@@ -103,3 +103,11 @@ has($cr, "if (\$a['ok']) smpro_cr_robots_apply();   // a refused family is also 
 has($pg, "elseif (\$act === 'cr_robots')", 'F18: the page switch'); has($pg, 'Ask all AI crawlers to stay out (robots.txt)', 'F19: the one-press AI robots button');
 has($pg, "site(s) have no real robots.txt (WordPress serves a virtual one) and are left alone", 'F20: the page says what was left alone');
 
+// G. beta380: removal restores the kept original byte for byte, whatever its trailing-newline shape
+has($cr, 'if ($block === ' . "''" . ' && is_file($orig)) {', 'G1: nothing asked + original kept = the original comes back');
+has($cr, 'if ($ob === $cur) { @unlink($orig); $r[' . "'unchanged'" . ']++; continue; }', 'G2: ...and the copy is removed when the file already equals it');
+has($cr, '@unlink($orig); $r[' . "'written'" . ']++; continue;', 'G3: ...or after it is written back');
+$noNl = "User-agent: *\nDisallow: /tmp/";   // no trailing newline: the splice alone could not give this back
+$spliced = smpro_cr_robots_splice($noNl, smpro_cr_robots_block(['openai']));
+ok(smpro_cr_robots_splice($spliced, '') !== $noNl, 'G4: the splice normalises the end of the file (why the original copy is the source of truth)');
+
