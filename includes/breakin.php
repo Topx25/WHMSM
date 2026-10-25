@@ -185,6 +185,10 @@ function smpro_aa_sort_events(array $events, string $key, string $dir = 'desc'):
 /* ---------- event collection ---------- */
 function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
     $events = []; $hiddenTech = 0;
+    // What this collection could not read. A log that is there but could not be opened or tailed (a tail killed by
+    // its timeout on a loaded box, a permission change) must be reported as "not seen", never as "0 logins", and
+    // such a collection is never cached: the next visit must look again. Read by smpro_aa_cached() and the page.
+    $GLOBALS['smpro_aa_unread'] = [];
     // The page filters events by the search text AFTER collecting; applying the same text to the raw line first
     // keeps the event array to the matches only (an IP audit over 200k lines is usually a few dozen events).
     // Skipped when the text could match a derived label ("Failed Login") that is not in the raw line.
@@ -204,7 +208,8 @@ function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
         if (!function_exists('smpro_lf_success')) { $lf = __DIR__ . '/loginfeed.php'; if (@is_file($lf)) require_once $lf; }
         $feed = function_exists('smpro_lf_success')
               ? smpro_lf_success($fromTs, $tail, ['password', 'operator', 'api', 'unknown', 'other'])
-              : ['events' => []];
+              : ['events' => [], 'sources' => []];
+        foreach ((array)($feed['sources'] ?? []) as $sk => $sv) if (($sv['state'] ?? '') === 'unreadable') $GLOBALS['smpro_aa_unread'][] = basename((string)($sv['path'] ?? $sk)) . ' (successful sign-ins)';
         foreach ((array)$feed['events'] as $e) {
             $ts = (int)$e['ts']; if ($ts < $fromTs || $ts > $toTs) continue;
             if ($pre !== '' && stripos($e['raw'], $pre) === false) continue;
@@ -227,7 +232,9 @@ function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
         }
     }
     if ($wantFailed) {
+        $readN = 0;
         foreach (smpro_aa_tail($loginLog, $tail) as $raw) {
+            $readN++;
             $raw = trim($raw); if ($raw === '') continue;
             if (function_exists('smpro_login_line_real')) $raw = smpro_login_line_real($raw);   // the attempt behind WebShield carries the visitor, not 127.0.0.1
             if ($pre !== '' && stripos($raw, $pre) === false && stripos(rawurldecode($raw), $pre) === false) continue;
@@ -263,9 +270,12 @@ function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
                 'status' => '', 'source' => $loginLog, 'evidence' => smpro_redact_sensitive($raw),
             ];
         }
+        if ($readN === 0 && (int)@filesize($loginLog) > 0) $GLOBALS['smpro_aa_unread'][] = basename($loginLog) . ' (failed sign-ins)';
     }
     if (in_array($type, ['all', 'login_request', 'password_change', 'failed_login', 'technical', 'panel_action'], true)) {
+        $readA = 0;
         foreach (smpro_aa_tail($accessLog, $tail) as $raw) {
+            $readA++;
             $raw = trim($raw); if ($raw === '') continue;
             if ($pre !== '' && stripos($raw, $pre) === false && stripos(rawurldecode($raw), $pre) === false) continue;
             if (!preg_match('/^(\S+)\s+\S+\s+(\S+)\s+\[([^\]]+)\]\s+"([^"]+)"\s+(\d{3})/', $raw, $m)) continue;
@@ -334,6 +344,7 @@ function smpro_aa_collect($user, $type, $tail, $fromTs, $toTs, $needle = '') {
             ];
         }
     }
+    if (isset($readA) && $readA === 0 && (int)@filesize($accessLog) > 0) $GLOBALS['smpro_aa_unread'][] = basename($accessLog) . ' (panel requests)';
     usort($events, fn($a, $b) => $b['ts'] <=> $a['ts']);
     return [$events, $hiddenTech];
 }
@@ -529,8 +540,12 @@ function smpro_aa_cached(array $params, callable $collect, bool $fresh = false):
     $key = smpro_aa_cache_key($params);
     if (!$fresh) { $c = smpro_aa_cache_get($key); if ($c !== null) return [(array)$c['events'], (int)($c['hidden'] ?? 0), ['cached' => true, 'at' => (int)$c['at'], 'took' => (float)($c['took'] ?? 0)]]; }
     $t0 = microtime(true);
+    $GLOBALS['smpro_aa_unread'] = [];
     [$events, $hidden] = $collect();
     $took = round(microtime(true) - $t0, 2);
-    smpro_aa_cache_put($key, ['events' => $events, 'hidden' => (int)$hidden, 'at' => time(), 'took' => $took]);
-    return [$events, (int)$hidden, ['cached' => false, 'at' => time(), 'took' => $took]];
+    $unread = array_values(array_unique((array)($GLOBALS['smpro_aa_unread'] ?? [])));
+    // A collection that could not read one of its logs is shown with that said, and is NOT kept for ten minutes:
+    // a cached empty answer was read as "no successful login on this server" for as long as it lived.
+    if (!$unread) smpro_aa_cache_put($key, ['events' => $events, 'hidden' => (int)$hidden, 'at' => time(), 'took' => $took]);
+    return [$events, (int)$hidden, ['cached' => false, 'at' => time(), 'took' => $took, 'unread' => $unread]];
 }

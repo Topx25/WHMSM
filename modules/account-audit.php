@@ -1598,6 +1598,7 @@ $aaNav = [['aa-events', '&#128203; Events'], ['aaSavedCard', '&#128190; Saved re
   <span class="b <?= $openRange ? 'blue' : 'gray' ?>">&#128197; Period</span>
   <b><?= $periodTxt ?></b>
   <?php if ($openRange): ?><span class="meta">— both date boxes blank means the widest range in the last <?= number_format($dlog) ?> log lines. Set a date to narrow it.</span><?php endif; ?>
+  <?php if (!empty($aaScanMeta['unread'])): ?><div style="margin:8px 0;padding:8px 12px;border-radius:8px;background:var(--dang-bg);color:var(--dang);font-size:12.5px;border:1px solid var(--dang)">&#9888; <b>This scan could not read: <?= smpro_h(implode(', ', (array)$aaScanMeta['unread'])) ?>.</b> The counts below are "not seen", not "nothing happened" - the log exists but could not be tailed (a loaded server kills the read at its timeout). Nothing was cached; reload to look again.</div><?php endif; ?>
   <?php if (!empty($aaScanMeta)): ?><span class="meta" style="margin-left:8px"><?= !empty($aaScanMeta['cached']) ? 'from the scan of ' . smpro_h(date('H:i:s', (int)$aaScanMeta['at'])) . ' (paging and sorting do not re-read the log)' : 'scan took ' . smpro_h((string)$aaScanMeta['took']) . ' s' ?> &middot; <a href="<?= smpro_h(smpro_aa_qs(['page'=>'account-audit','audit_user'=>$user,'event_type'=>$type,'country'=>$country,'showlocal'=>($showlocal?'1':'0'),'from'=>$from,'to'=>$to,'loglines'=>$dlog,'q'=>$search,'do'=>'search','fresh'=>1])) ?>">re-scan now</a></span><?php endif; ?>
 </div>
 

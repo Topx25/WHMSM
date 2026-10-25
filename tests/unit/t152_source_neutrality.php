@@ -48,3 +48,14 @@ has($in, "['sig'=>'spike:' . \$band(count(\$spiked)),", 'D2: the spike signature
 hasnt($in, "md5(implode(',', \$spiked))", 'D3: not the "domain (count)" lines');
 has($in, "['sig'=>'served:' . (count(\$sd) <= 1 ? 1 : (count(\$sd) <= 5 ? 5 : 99)),", 'D4: the served-exploit signature is a band too');
 has($nt, "elseif ((int)((\$st['intrusion_attack#atk']['ts'] ?? 0)) < \$now - 1800) \$maybe('intrusion_attack', 'clear', '', '');", 'D5: a dip under the line clears the slot only after thirty quiet minutes');
+
+// E. beta376: an audit scan that could not read a log says so and is never cached as "0 logins"
+$bk = $shipped[SMPRO_BASE . '/includes/breakin.php']; $aa = $shipped[SMPRO_BASE . '/modules/account-audit.php'];
+has($bk, "\$GLOBALS['smpro_aa_unread'] = [];", 'E1: the collector starts with nothing unread');
+has($bk, "if ((\$sv['state'] ?? '') === 'unreadable') \$GLOBALS['smpro_aa_unread'][] = basename((string)(\$sv['path'] ?? \$sk)) . ' (successful sign-ins)';", 'E2: an unreadable sign-in feed is named');
+has($bk, "if (\$readN === 0 && (int)@filesize(\$loginLog) > 0) \$GLOBALS['smpro_aa_unread'][] = basename(\$loginLog) . ' (failed sign-ins)';", 'E3: zero lines from a non-empty login_log = not read');
+has($bk, "if (isset(\$readA) && \$readA === 0 && (int)@filesize(\$accessLog) > 0) \$GLOBALS['smpro_aa_unread'][] = basename(\$accessLog) . ' (panel requests)';", 'E4: ...and from access_log');
+has($bk, "if (!\$unread) smpro_aa_cache_put(\$key,", 'E5: an unread collection is never cached');
+has($bk, "'unread' => \$unread]];", 'E6: ...and the page is told');
+has($aa, "This scan could not read: <?= smpro_h(implode(', ', (array)\$aaScanMeta['unread'])) ?>.", 'E7: the page says what was not seen');
+
