@@ -2264,13 +2264,18 @@ function smpro_im_alert_scan() {
     $served = array_filter($recent, fn($e) => smpro_im_exploit_kind($e['kind']) && (int)$e['code'] >= 200 && (int)$e['code'] < 400);
     if ($served) {
         $sd = array_values(array_unique(array_filter(array_map(fn($e) => $e['domain'], $served))));
-        $alerts['critical'] = ['sig'=>'served:' . count($served), 'subject'=>count($served) . ' exploit attempt(s) SERVED 2xx (possible success) in last ' . $win . 'm',
+        $sdSig = $sd; sort($sdSig);
+        $alerts['critical'] = ['sig'=>'served:' . md5(implode(',', $sdSig)), 'subject'=>count($served) . ' exploit attempt(s) SERVED 2xx (possible success) in last ' . $win . 'm',
             'body'=>'Domains: ' . implode(', ', array_slice($sd, 0, 12)) . (count($sd) > 12 ? ' +' . (count($sd) - 12) : '') . "\nThese were NOT blocked by the WAF — review immediately."];
     }
     // domain spikes (blocked + served attempts) - high baseline on a busy shared server, so the threshold is high
     $by = smpro_im_by_domain($recent); $thr = (int)$cfg['thr_domain_attacks']; $spiked = [];
     foreach ($by as $g) if ($g['total'] >= $thr) $spiked[] = $g['domain'] . ' (' . $g['total'] . ')';
-    if ($spiked) $alerts['spike'] = ['sig'=>'spike:' . md5(implode(',', $spiked)), 'subject'=>count($spiked) . ' domain(s) under heavy attack (>=' . $thr . ' attempts/' . $win . 'm, mostly blocked)', 'body'=>implode("\n", array_slice($spiked, 0, 15)) . "\n(These are blocked + served attempts; most are blocked WAF noise.)"];
+    // The signature is the SET of domains under attack, never the counts: a count changes with every 15-minute
+    // window, so a signature built from it was new on every run and the same alert went out every five minutes
+    // with "only when it changes" switched on. It is sent again when a domain joins or leaves the list.
+    $spikedDoms = array_map(fn($g) => $g['domain'], array_filter($by, fn($g) => $g['total'] >= $thr)); sort($spikedDoms);
+    if ($spiked) $alerts['spike'] = ['sig'=>'spike:' . md5(implode(',', $spikedDoms)), 'subject'=>count($spiked) . ' domain(s) under heavy attack (>=' . $thr . ' attempts/' . $win . 'm, mostly blocked)', 'body'=>implode("\n", array_slice($spiked, 0, 15)) . "\n(These are blocked + served attempts; most are blocked WAF noise.)"];
     // distributed scanners
     $camp = smpro_im_campaigns($recent);
     if ($camp['distributed']) {

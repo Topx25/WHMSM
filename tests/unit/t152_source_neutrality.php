@@ -40,3 +40,11 @@ is_eq(count($bad), 0, 'B2: no typographic dash, arrow or ellipsis in a comment l
 // C. the account-side scan is loaded where it is shown
 $pc = $shipped[SMPRO_BASE . '/modules/plugin-control.php'];
 has($pc, "if (!function_exists('smpro_cps_scan') && is_file(SMPRO_INCLUDES . '/cpsidescan.php')) require_once SMPRO_INCLUDES . '/cpsidescan.php';", 'C1: Plugin Control loads the scan before asking for it');
+
+// D. beta374: a web-attack alert's signature is the set of domains, not their counts (it re-sent every five minutes)
+$in = $shipped[SMPRO_BASE . '/includes/intrusion.php'];
+has($in, "\$spikedDoms = array_map(fn(\$g) => \$g['domain'], array_filter(\$by, fn(\$g) => \$g['total'] >= \$thr)); sort(\$spikedDoms);", 'D1: the spike signature is built from domain names');
+has($in, "['sig'=>'spike:' . md5(implode(',', \$spikedDoms)),", 'D2: ...and only them');
+hasnt($in, "['sig'=>'spike:' . md5(implode(',', \$spiked)),", 'D3: not from the "domain (count)" lines');
+has($in, "['sig'=>'served:' . md5(implode(',', \$sdSig)),", 'D4: the served-exploit signature is the domain set too, not a count');
+
