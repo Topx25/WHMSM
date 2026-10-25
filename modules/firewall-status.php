@@ -1193,7 +1193,10 @@ if (function_exists('smpro_gw_cfg')):
       connection before it reaches SSH or the panel at all.
       <br><br>
       <b>Ports 80 and 443 are never included and cannot be added</b>, so a shop stays readable and buyable from
-      every country on earth. What is covered is the doors people sign in and upload through.
+      every country on earth. What is covered is the doors people sign in and upload through - <b>including the
+      panel's own subdomains</b> (cpanel.&hellip;, whm.&hellip;, webmail.&hellip; over 443), which reach the same
+      sign-in page through the web server: those are refused in Apache from the same address set.
+      <?php if ($gwUp): ?><?= function_exists('smpro_gw_panel_live') && smpro_gw_panel_live() ? '<span class="ph-badge" style="background:rgba(22,163,74,.12)">panel subdomains covered</span>' : '<span class="ph-badge" style="background:rgba(220,38,38,.12)">panel subdomains NOT covered - re-arm the wall</span>' ?><?php endif; ?>
       <br><br>
       <b style="color:var(--dang)">This can lock you out of your own server &mdash; panel and SSH together.</b>
       So: arming is refused unless your own address is proven to be inside; every address on your allow-list is

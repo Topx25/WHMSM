@@ -365,15 +365,81 @@ function smpro_gw_apply(array $cfg, string $myIp, bool $dry = false): array {
 
     $live = smpro_gw_live();
     $r['ok'] = $live;
+    $panel = $live ? smpro_gw_panel_apply($cfg, $ranges, $always) : ['ok' => false, 'msg' => 'not attempted'];
+    $r['panel'] = $panel;
     $r['msg'] = $live
-        ? ('Up: ' . $n . ' range(s) may reach ' . count($ports) . ' login port(s); everything else is dropped there. Web ports untouched.')
+        ? ('Up: ' . $n . ' range(s) may reach ' . count($ports) . ' login port(s); everything else is dropped there. Web ports untouched; ' . ($panel['ok'] ? 'the panel subdomains (cpanel./whm./webmail. over 443) are covered too - ' . $panel['msg'] : 'the panel subdomains are NOT covered: ' . $panel['msg']) . '.')
         : 'The rule did not appear in iptables. Nothing is enforcing.';
     smpro_gw_record($live ? 'applied' : 'apply_failed', $r['msg']);
     return $r;
 }
 
+/* =====================================================================================================
+ * THE OTHER DOOR: the panel's proxy subdomains.
+ *
+ * cPanel serves the panel on cpanel./whm./webmail./webdisk./cpcalendars./cpcontacts.<domain> over ports 80 and
+ * 443 as well: the web server (nginx in front of Apache, or Apache alone) forwards those hosts to cpsrvd on
+ * 127.0.0.1. The kernel rule above covers the numbered ports only, and 80/443 are deliberately never in it, so a
+ * sign-in through cpanel.example.com walked straight past the wall - and past the cPHulk country lock too, which
+ * saw 127.0.0.1. Verified on a production server: two foreign sign-ins minutes after the wall went up.
+ *
+ * Apache sees the visitor's real address behind nginx (mod_remoteip, which cPanel configures for its own proxy),
+ * so one Apache rule covers both layouts: when the Host is a panel subdomain, only the wall's own address set may
+ * pass. It lives in a file of its own under conf.d (read by every EasyApache build, never touched by a rebuild),
+ * is proven by configtest before Apache is asked to reload, and is removed whenever the wall comes down. The
+ * prefixes follow the doors: no cPanel door selected, no cpanel./webdisk. prefix; the same for whm and webmail.
+ * ===================================================================================================== */
+define('SMPRO_GW_HTTPD_FILE', '/etc/apache2/conf.d/smpro-geowall-panel.conf');
+function smpro_gw_panel_prefixes(array $cfg): array {
+    $doors = (array)($cfg['doors'] ?? []); $p = [];
+    if (in_array('cpanel', $doors, true))  $p = array_merge($p, ['cpanel', 'webdisk', 'cpcalendars', 'cpcontacts']);
+    if (in_array('whm', $doors, true))     $p[] = 'whm';
+    if (in_array('webmail', $doors, true)) $p[] = 'webmail';
+    return $p;
+}
+function smpro_gw_panel_live(): bool { return @is_file(SMPRO_GW_HTTPD_FILE) && (int)@filesize(SMPRO_GW_HTTPD_FILE) > 0; }
+function smpro_gw_httpd_run(string $cmd, int $t = 90): array { $o = (string)@shell_exec('timeout ' . $t . ' ' . $cmd . ' 2>&1; echo "__rc=$?"'); preg_match('/__rc=(\d+)\s*$/', $o, $m); return [(int)($m[1] ?? 1), trim(preg_replace('/__rc=\d+\s*$/', '', $o))]; }
+/** Write the Apache half from the SAME ranges and always-list the kernel set was built from; refuse and leave nothing behind when Apache does not accept it. */
+function smpro_gw_panel_apply(array $cfg, array $ranges, array $always): array {
+    $r = ['ok' => false, 'msg' => '', 'prefixes' => smpro_gw_panel_prefixes($cfg)];
+    if (!is_dir('/etc/apache2/conf.d') || !is_executable('/usr/sbin/apachectl')) { $r['msg'] = 'no Apache on this server; the panel subdomains are not covered'; return $r; }
+    if (!$r['prefixes']) { smpro_gw_panel_remove(true); $r['ok'] = true; $r['msg'] = 'no panel door selected'; return $r; }
+    $ips = array_values(array_unique(array_filter(array_merge(['127.0.0.0/8'], $always, $ranges), fn($c) => preg_match('#^\d{1,3}(\.\d{1,3}){3}(/\d{1,2})?$#', (string)$c))));
+    if (count($ips) < 2) { $r['msg'] = 'the address set is empty; refused'; return $r; }
+    $lines = ["# Safety Monitor Pro - country wall for the panel's proxy subdomains over 80/443. Generated; do not edit.",
+              "# Rewritten whenever the wall is applied, removed when it comes down. Hosts: " . implode('. ', $r['prefixes']) . '.',
+              '<If "%{HTTP_HOST} =~ m#^(' . implode('|', $r['prefixes']) . ')\.#i">'];
+    foreach (array_chunk($ips, 200) as $chunk) $lines[] = '    Require ip ' . implode(' ', $chunk);
+    $lines[] = '</If>';
+    $body = implode("\n", $lines) . "\n";
+    $prev = @is_file(SMPRO_GW_HTTPD_FILE) ? (string)@file_get_contents(SMPRO_GW_HTTPD_FILE) : null;
+    if ($prev === $body) { $r['ok'] = true; $r['msg'] = 'panel subdomains covered (' . count($ips) . ' addresses, unchanged)'; return $r; }
+    if (@file_put_contents(SMPRO_GW_HTTPD_FILE . '.tmp', $body, LOCK_EX) === false) { $r['msg'] = 'could not write ' . SMPRO_GW_HTTPD_FILE; return $r; }
+    @chmod(SMPRO_GW_HTTPD_FILE . '.tmp', 0644);
+    @rename(SMPRO_GW_HTTPD_FILE . '.tmp', SMPRO_GW_HTTPD_FILE);
+    [$rc, $o] = smpro_gw_httpd_run('/usr/sbin/apachectl configtest', 60);
+    if ($rc !== 0 || stripos($o, 'Syntax OK') === false) {
+        // Apache refused the file: put the previous one back (or none) so a broken include never reaches a reload
+        if ($prev === null) @unlink(SMPRO_GW_HTTPD_FILE); else @file_put_contents(SMPRO_GW_HTTPD_FILE, $prev, LOCK_EX);
+        $r['msg'] = 'Apache configtest refused the panel rule; nothing was changed there: ' . substr($o, -200); return $r;
+    }
+    [$rc, $o] = smpro_gw_httpd_run('/usr/sbin/apachectl graceful', 60);
+    $r['ok'] = $rc === 0; $r['msg'] = $rc === 0 ? ('panel subdomains covered (' . count($ips) . ' addresses)') : ('Apache graceful reload failed: ' . substr($o, -200));
+    return $r;
+}
+/** Remove the Apache half and reload. Idempotent. */
+function smpro_gw_panel_remove(bool $quiet = false): array {
+    if (!@is_file(SMPRO_GW_HTTPD_FILE)) return ['ok' => true, 'removed' => false];
+    @unlink(SMPRO_GW_HTTPD_FILE);
+    [$rc, $o] = smpro_gw_httpd_run('/usr/sbin/apachectl configtest', 60);
+    if ($rc === 0 && stripos($o, 'Syntax OK') !== false) smpro_gw_httpd_run('/usr/sbin/apachectl graceful', 60);
+    if (!$quiet) smpro_gw_record('panel_removed', 'the panel-subdomain rule was removed from Apache');
+    return ['ok' => !@is_file(SMPRO_GW_HTTPD_FILE), 'removed' => true];
+}
+
 /** Take it down. Idempotent, and safe to call when nothing is up. */
 function smpro_gw_remove(bool $quiet = false): array {
+    smpro_gw_panel_remove($quiet);
     // Matches on the marker PREFIX, so the accept rules that accompany the drop are removed with it. Leaving
     // them behind would be harmless but untidy; leaving the drop behind would not be harmless at all, so the
     // loop below is bounded and then verified rather than trusted.

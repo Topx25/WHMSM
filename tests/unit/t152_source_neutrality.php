@@ -59,3 +59,15 @@ has($bk, "if (!\$unread) smpro_aa_cache_put(\$key,", 'E5: an unread collection i
 has($bk, "'unread' => \$unread]];", 'E6: ...and the page is told');
 has($aa, "This scan could not read: <?= smpro_h(implode(', ', (array)\$aaScanMeta['unread'])) ?>.", 'E7: the page says what was not seen');
 
+
+
+// F. beta377: the wall covers the panel's proxy subdomains (cpanel./whm./webmail. over 80/443) through Apache
+$gw = $shipped[SMPRO_BASE . '/includes/geowall.php']; $fw = $shipped[SMPRO_BASE . '/modules/firewall-status.php'];
+has($gw, "define('SMPRO_GW_HTTPD_FILE', '/etc/apache2/conf.d/smpro-geowall-panel.conf');", 'F1: a file of its own under conf.d');
+has($gw, "'<If \"%{HTTP_HOST} =~ m#^(' . implode('|', \$r['prefixes']) . ')\\.#i\">'", 'F2: only when the Host is a panel subdomain');
+has($gw, "foreach (array_chunk(\$ips, 200) as \$chunk) \$lines[] = '    Require ip ' . implode(' ', \$chunk);", 'F3: the same address set as the kernel rule');
+has($gw, "if (\$prev === null) @unlink(SMPRO_GW_HTTPD_FILE); else @file_put_contents(SMPRO_GW_HTTPD_FILE, \$prev, LOCK_EX);", 'F4: a refused configtest leaves Apache as it was');
+has($gw, "\$panel = \$live ? smpro_gw_panel_apply(\$cfg, \$ranges, \$always) : ['ok' => false, 'msg' => 'not attempted'];", 'F5: applied with the kernel rule, from the same ranges');
+has($gw, "function smpro_gw_remove(bool \$quiet = false): array {\n    smpro_gw_panel_remove(\$quiet);", 'F6: removed with it');
+has($gw, "if (in_array('cpanel', \$doors, true))  \$p = array_merge(\$p, ['cpanel', 'webdisk', 'cpcalendars', 'cpcontacts']);", 'F7: prefixes follow the doors');
+has($fw, "panel subdomains covered", 'F8: the card says whether the second door is covered');
