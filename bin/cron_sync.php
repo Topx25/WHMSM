@@ -22,7 +22,7 @@ define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);
 foreach (['defines', 'mmdb', 'helpers', 'secret', 'license',
           'notify', 'botguard', 'geologin', 'bfrules', 'maintenance', 'reboot', 'svcmon', 'spqueue',
-          'fwallow', 'disk_home', 'benchdiag', 'geowall', 'loginfeed', 'evidence', 'hub', 'compcheck', 'ccfix', 'loadhist', 'cooler', 'tgbot', 'update', 'intrusion', 'backupmon', 'evship', 'fileaudit', 'learn', 'sysupd', 'slmaint', 'lvelimits', 'trustfeed'] as $m) {
+          'fwallow', 'disk_home', 'benchdiag', 'geowall', 'loginfeed', 'evidence', 'hub', 'compcheck', 'ccfix', 'loadhist', 'cooler', 'tgbot', 'update', 'intrusion', 'backupmon', 'evship', 'fileaudit', 'learn', 'sysupd', 'slmaint', 'lvelimits', 'trustfeed', 'botguard', 'crawlers'] as $m) {
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require_once $f;
 }
@@ -63,6 +63,8 @@ foreach ([
     'lve lifts'          => 'smpro_lv_cron_sync',
     // The signed trusted-bots list from the licence server, every six hours.
     'trusted bots list'  => 'smpro_tf_cron_sync',
+    // Crawler Control: crawler traffic counted every ten minutes from where the last pass stopped.
+    'crawler control'    => 'smpro_cr_cron_sync',
     // One load sample a minute so "Load - last 24 hours" is 24 hours, not the moments somebody had the page open.
     'load history'       => 'smpro_lo_cron_sync',
     // These six were installed only from their own Save button or from the page's self-heal and were never put

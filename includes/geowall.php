@@ -41,6 +41,15 @@
  * from the firewall's own country data.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
+// The country-code cleaner lives in geologin.php. The wall's config read and write used to call it only when it
+// happened to be loaded, and on every page except Firewall it was not: the layout's dead-man heartbeat then saved
+// the config with countries = [] - the wall disarmed itself at the next tick and re-arms refused ("No country is
+// allowed"). The helper is loaded here, and a local cleaner stands in if it ever is not.
+if (!function_exists('smpro_gl_clean_cc')) { $glf = __DIR__ . '/geologin.php'; if (is_file($glf)) require_once $glf; }
+function smpro_gw_clean_cc(array $in): array {
+    if (function_exists('smpro_gl_clean_cc')) return smpro_gl_clean_cc($in);
+    $out = []; foreach ($in as $c) { $c = strtoupper(preg_replace('/[^A-Za-z]/', '', (string)$c)); if (strlen($c) === 2) $out[$c] = 1; } return array_keys($out);
+}
 
 if (!defined('SMPRO_GW_CFG'))  define('SMPRO_GW_CFG',  SMPRO_VARLIB . '/geowall.json');
 if (!defined('SMPRO_GW_LOG'))  define('SMPRO_GW_LOG',  SMPRO_VARLOG . '/geowall.log');
@@ -79,7 +88,7 @@ function smpro_gw_cfg(): array {
     if (!is_array($j)) return $d;
     $out = array_replace($d, array_intersect_key($j, $d));
     $out['enabled']   = !empty($j['enabled']);
-    $out['countries'] = function_exists('smpro_gl_clean_cc') ? smpro_gl_clean_cc((array)($j['countries'] ?? [])) : [];
+    $out['countries'] = smpro_gw_clean_cc((array)($j['countries'] ?? []));
     $out['doors']     = array_values(array_intersect((array)($j['doors'] ?? []), array_keys(smpro_gw_doors())));
     $out['deadman_minutes'] = max(5, min(10080, (int)($j['deadman_minutes'] ?? 60)));
     $out['last_seen'] = (int)($j['last_seen'] ?? 0);
@@ -91,7 +100,7 @@ function smpro_gw_cfg(): array {
 function smpro_gw_save(array $cfg): bool {
     $c = array_replace(smpro_gw_cfg(), $cfg);
     $c['enabled']   = !empty($cfg['enabled']);
-    $c['countries'] = function_exists('smpro_gl_clean_cc') ? smpro_gl_clean_cc((array)($c['countries'] ?? [])) : [];
+    $c['countries'] = smpro_gw_clean_cc((array)($c['countries'] ?? []));
     $c['doors']     = array_values(array_intersect((array)$c['doors'], array_keys(smpro_gw_doors())));
     // Carried explicitly. Every other field is rewritten from the patch, and armed_from is the one value
     // that is written by apply() rather than by the page - so a save that forgot it erased the only

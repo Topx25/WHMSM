@@ -20,6 +20,9 @@ if ($reqMethod === 'POST' && isset($_POST['bg_action'])) {
     $act = (string)$_POST['bg_action']; $by = function_exists('smpro_current_actor') ? smpro_current_actor() : 'root';
     $out = ['ok' => false, 'msg' => 'Unknown action.'];
     if ($act === 'rows') { $bgRowsReq = true; }   // one page of one list: answered below, once the lists exist
+    elseif ($act === 'cr_set')      { $out = function_exists('smpro_cr_set') ? smpro_cr_set((string)($_POST['family'] ?? ''), ($_POST['block'] ?? '') === '1', $by, ($_POST['confirm'] ?? '') === 'search') : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode($out); exit; }
+    elseif ($act === 'cr_category') { $out = function_exists('smpro_cr_set_category') ? smpro_cr_set_category((string)($_POST['category'] ?? ''), ($_POST['block'] ?? '') === '1', $by) : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode($out); exit; }
+    elseif ($act === 'cr_count')    { $r = function_exists('smpro_cr_collect') ? smpro_cr_collect(120 * 1024 * 1024, 90) : ['ok' => false, 'why' => 'not available in this build']; echo json_encode(['ok' => (bool)$r['ok'], 'msg' => $r['ok'] ? ($r['files'] . ' log(s), ' . number_format((int)$r['lines']) . ' line(s) counted' . (!empty($r['partial']) ? ' (partial: the rest on the next pass)' : '')) : (string)($r['why'] ?? 'failed')]); exit; }
     elseif ($act === 'tf_refresh') { $r = function_exists('smpro_tf_fetch') ? smpro_tf_fetch() : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode(['ok' => (bool)$r['ok'], 'msg' => (string)$r['msg']]); exit; }
     elseif ($act === 'settings') {
         $patch = [
@@ -336,8 +339,64 @@ if (!$print): ?>
   <a class="fw-kpi muted" href="#bg-ignored" data-go="bg-ignored"><div class="l">Ignored / not legit</div><div class="v"><?= (int)$bgIgnN ?></div><div class="s">kept out of the queue</div></a>
   <a class="fw-kpi <?= $bgStale ?>" href="#bg-scan" data-go="bg-scan"><div class="l">Last scan</div><div class="v"><?= $lastScan ? smpro_h($ago($lastScan)) : 'never' ?></div><div class="s"><?= smpro_h($bgScanS) ?></div></a>
 </div>
-<nav class="fw-nav" id="bgNav"><a href="#bg-scan" data-go="bg-scan">&#128269; Scan</a><a href="#bg-hist" data-go="bg-hist">&#128197; Last 7 days</a><a href="#bg-pending" data-go="bg-pending">&#9203; Pending</a><a href="#bg-gray" data-go="bg-gray">&#9888; Gray</a><a href="#bg-blocked" data-go="bg-blocked">&#10006; Blocked</a><a href="#bg-allowed" data-go="bg-allowed">&#10003; Allowed</a><a href="#bg-ignored" data-go="bg-ignored">Ignored</a><a href="#bg-settings" data-go="bg-settings">&#9881; Settings</a><a href="#bg-cat" data-go="bg-cat">Families</a><span class="sp"></span><button type="button" class="fw-navx" id="bgOpenAll">expand all</button><button type="button" class="fw-navx" id="bgCloseAll">collapse all</button></nav>
+<nav class="fw-nav" id="bgNav"><a href="#bg-crawlers" data-go="bg-crawlers">&#129302; Crawlers</a><a href="#bg-scan" data-go="bg-scan">&#128269; Scan</a><a href="#bg-hist" data-go="bg-hist">&#128197; Last 7 days</a><a href="#bg-pending" data-go="bg-pending">&#9203; Pending</a><a href="#bg-gray" data-go="bg-gray">&#9888; Gray</a><a href="#bg-blocked" data-go="bg-blocked">&#10006; Blocked</a><a href="#bg-allowed" data-go="bg-allowed">&#10003; Allowed</a><a href="#bg-ignored" data-go="bg-ignored">Ignored</a><a href="#bg-settings" data-go="bg-settings">&#9881; Settings</a><a href="#bg-cat" data-go="bg-cat">Families</a><span class="sp"></span><button type="button" class="fw-navx" id="bgOpenAll">expand all</button><button type="button" class="fw-navx" id="bgCloseAll">collapse all</button></nav>
 <?php endif; ?>
+
+<?php
+/* ---------------- Crawler Control: every family, what it took, one switch per family ---------------- */
+$crWin = in_array((string)($_GET['crwin'] ?? '7d'), ['24h', '7d', '30d'], true) ? (string)($_GET['crwin'] ?? '7d') : '7d';
+$crRows = function_exists('smpro_cr_rows') ? smpro_cr_rows($crWin) : [];
+$crState = function_exists('smpro_cr_state') ? smpro_cr_state() : [];
+$crLast = (int)($crState['last_run'] ?? 0); $crLastR = (array)($crState['last'] ?? []);
+$crBlockedN = count(array_filter($crRows, fn($r) => $r['blocked'])); $crSeenN = count(array_filter($crRows, fn($r) => $r['hits'] > 0));
+$crCats = []; foreach ($crRows as $r) { $crCats[$r['category']] = $crCats[$r['category']] ?? ['n' => 0, 'hits' => 0, 'bytes' => 0, 'blocked' => 0]; $crCats[$r['category']]['n']++; $crCats[$r['category']]['hits'] += $r['hits']; $crCats[$r['category']]['bytes'] += $r['bytes']; if ($r['blocked']) $crCats[$r['category']]['blocked']++; }
+$crBytes = fn($b) => function_exists('smpro_bytes') ? smpro_bytes((int)$b) : number_format((int)$b);
+$crAi = ['ai_crawler', 'ai_assistant', 'ai_search']; $crAiN = 0; $crAiBlocked = 0; foreach ($crRows as $r) if (in_array($r['category'], $crAi, true)) { $crAiN++; if ($r['blocked']) $crAiBlocked++; }
+$crCronOk = @is_file('/etc/cron.d/smpro-crawlers');
+?>
+<style>
+.cr-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.cr-tools .sp{flex:1}
+.cr-win a{display:inline-block;padding:4px 10px;border:1px solid var(--line,#d1d5db);border-radius:999px;font-size:12px;text-decoration:none;color:inherit;margin-right:4px}.cr-win a.on{background:var(--brand,#2563eb);border-color:var(--brand,#2563eb);color:#fff}
+.cr-cat{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--bg,#f3f4f6);border:1px solid var(--line,#e5e7eb);white-space:nowrap}
+.cr-cat.ai_crawler,.cr-cat.ai_assistant,.cr-cat.ai_search{background:rgba(147,51,234,.10);border-color:rgba(147,51,234,.35);color:#6d28d9}.cr-cat.search{background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.35);color:#15803d}
+.cr-sw{position:relative;display:inline-block;width:40px;height:22px;vertical-align:middle}.cr-sw input{opacity:0;width:0;height:0}.cr-sw i{position:absolute;inset:0;background:#cbd5e1;border-radius:22px;transition:.15s;cursor:pointer}.cr-sw i:before{content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.15s}
+.cr-sw input:checked+i{background:#dc2626}.cr-sw input:checked+i:before{transform:translateX(18px)}.cr-sw input:disabled+i{opacity:.5;cursor:wait}
+.cr-num{font-variant-numeric:tabular-nums;white-space:nowrap}.cr-sub{font-size:11px;opacity:.7}
+.cr-tbl td,.cr-tbl th{vertical-align:middle}.cr-tbl tr.cr-blk td{background:rgba(220,38,38,.04)}
+.cr-note{font-size:12px;opacity:.8;line-height:1.6}
+</style>
+<div class="card bg-c" id="bg-crawlers"><div class="bg-hd"><b>&#129302; Crawlers</b><span class="bg-n"><?= $crBlockedN ?></span><span class="meta">every known crawler family, what it took from this server, and one switch per family that refuses it on every site (403 from Apache, before PHP runs). Counted by a worker from where it last stopped; nothing is estimated.</span></div><div class="pad">
+  <?php if (!$crCronOk): ?><div class="bg-warn">&#9888; The counting worker's cron entry is not installed yet - the numbers below start from the first pass. Press "Count now" once; the worker continues every 10 minutes.</div><?php endif; ?>
+  <?php if (!empty($crLastR['unreadable'])): ?><div class="bg-warn">&#9888; The last pass could not open <?= (int)$crLastR['unreadable'] ?> log file(s); their traffic is not counted ("not seen", not "none").</div><?php endif; ?>
+  <div class="cr-tools">
+    <span class="cr-win"><?php foreach (['24h' => 'Last 24 hours', '7d' => 'Last 7 days', '30d' => 'Last 30 days'] as $w => $wl): ?><a class="<?= $crWin === $w ? 'on' : '' ?>" href="index.cgi?page=bot-guard&amp;crwin=<?= $w ?>#bg-crawlers"><?= $wl ?></a><?php endforeach; ?></span>
+    <input type="text" id="crQ" class="ld-search" placeholder="search crawler, vendor, category…" style="padding:5px 8px;border:1px solid var(--line,#d1d5db);border-radius:8px;font-size:12px;min-width:200px">
+    <select id="crCat" style="padding:5px 8px;border:1px solid var(--line,#d1d5db);border-radius:8px;font-size:12px"><option value="">all categories</option><?php foreach ($crCats as $c => $n): ?><option value="<?= smpro_h($c) ?>"><?= smpro_h(smpro_cr_category_label($c)) ?> (<?= (int)$n['n'] ?>)</option><?php endforeach; ?></select>
+    <label style="font-size:12px;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="crSeen"> seen in this window only</label>
+    <span class="sp"></span>
+    <button class="bg-act <?= $crAiBlocked < $crAiN ? 'bad' : '' ?>" type="button" data-crcat="ai_crawler,ai_assistant,ai_search" data-block="1" title="GPTBot, ClaudeBot, Bytespider, CCBot, Google-Extended, Applebot-Extended, PerplexityBot, Diffbot, the assistants' fetchers…">&#9940; Refuse all AI crawlers (<?= $crAiBlocked ?>/<?= $crAiN ?>)</button>
+    <button class="bg-act" type="button" data-crcat="ai_crawler,ai_assistant,ai_search" data-block="0">Allow all AI again</button>
+    <button class="bg-act" type="button" id="crCount">&#8635; Count now</button>
+  </div>
+  <div class="cr-note" style="margin-bottom:8px"><?= $crLast ? 'Last count ' . smpro_h($ago($crLast)) . ' · ' . (int)($crLastR['files'] ?? 0) . ' log(s), ' . number_format((int)($crLastR['lines'] ?? 0)) . ' line(s) in that pass' . (!empty($crLastR['partial']) ? ' · <b>partial</b> (budget reached; the rest on the next pass)' : '') : 'No pass has run yet.' ?> · <?= $crSeenN ?> of <?= count($crRows) ?> families seen in this window · <b style="color:var(--dang,#dc2626)"><?= $crBlockedN ?> refused</b> on every site.
+    A <b>refused</b> crawler gets <b>403</b> on all <?= function_exists('smpro_ss_domains') ? count(smpro_ss_domains()) : '' ?> sites; real search engines are protected by a second confirmation because blocking one removes your customers from its results. Verified-vs-impersonator checks stay in the lists below: this switch is about crawlers you do not want <i>even when real</i>.</div>
+  <div class="smpro-tablewrap"><table class="bg-tbl cr-tbl" id="crTbl" data-nopage="1"><thead><tr><th>Crawler</th><th>Category</th><th class="num">Requests</th><th class="num">Served / refused</th><th class="num">Bytes</th><th class="num">Sites</th><th>Last seen</th><th>Refuse</th></tr></thead><tbody>
+  <?php foreach ($crRows as $k => $r): ?>
+    <tr data-k="<?= smpro_h($k) ?>" data-cat="<?= smpro_h($r['category']) ?>" data-q="<?= smpro_h(strtolower($r['name'] . ' ' . $r['vendor'] . ' ' . $k . ' ' . smpro_cr_category_label($r['category']))) ?>" data-seen="<?= $r['hits'] > 0 ? 1 : 0 ?>" class="<?= $r['blocked'] ? 'cr-blk' : '' ?>">
+      <td><b><?= smpro_h($r['name']) ?></b><?= $r['vendor'] !== '' ? '<div class="cr-sub">' . smpro_h($r['vendor']) . '</div>' : '' ?><?= $r['custom'] ? '<div class="cr-sub">your own entry</div>' : '' ?></td>
+      <td><span class="cr-cat <?= smpro_h($r['category']) ?>"><?= smpro_h(smpro_cr_category_label($r['category'])) ?></span></td>
+      <td class="num cr-num"><?= number_format((int)$r['hits']) ?></td>
+      <td class="num cr-num"><span style="color:#16a34a"><?= number_format((int)$r['served']) ?></span> / <span style="color:#dc2626"><?= number_format((int)$r['refused']) ?></span></td>
+      <td class="num cr-num"><?= smpro_h($crBytes($r['bytes'])) ?></td>
+      <td class="num cr-num" title="<?= smpro_h(implode(', ', (array)$r['top_domains'])) ?>"><?= (int)$r['domain_count'] ?></td>
+      <td class="cr-sub"><?= $r['last'] ? smpro_h($ago($r['last'])) : '—' ?></td>
+      <td><label class="cr-sw" title="<?= $r['blocked'] ? 'refused on every site - switch off to allow again' : 'allowed - switch on to refuse on every site' ?>"><input type="checkbox" class="crSw" data-k="<?= smpro_h($k) ?>" data-protected="<?= $r['protected'] ? 1 : 0 ?>" data-name="<?= smpro_h($r['name']) ?>"<?= $r['blocked'] ? ' checked' : '' ?>><i></i></label>
+        <?php if ($r['blocked'] && !$r['live']): ?><div class="cr-sub" style="color:#dc2626">not live in Apache</div><?php endif; ?></td>
+    </tr>
+  <?php endforeach; ?>
+  </tbody></table></div>
+  <div class="bg-msg" id="crMsg"></div>
+</div></div>
 
 <div class="card bg-c" id="bg-scan"><div class="bg-hd"><b>&#128269; Scan &amp; export</b><span class="meta">reads the newest logs now; the worker does the same on its schedule</span></div><div class="pad">
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -537,6 +596,30 @@ if (!$print): ?>
 <script>(function(){
   var ssOn=document.getElementById('ssOn'); if(ssOn) ssOn.onclick=function(){var d=document.getElementById('ssDomain').value; if(!d) return; var m=document.getElementById('ssMsg'); m.textContent='Installing (rebuild + configtest + graceful reload)…'; ssOn.disabled=true; var fd=new URLSearchParams(); fd.set('act','shield_on'); fd.set('domain',d); post(fd,function(r){m.textContent=r.msg||''; if(r.ok) setTimeout(function(){location.reload();},1200); else ssOn.disabled=false;});};
   document.querySelectorAll('.ssOff').forEach(function(b){b.onclick=function(){if(!confirm('Remove the shield from '+b.dataset.d+'?')) return; var fd=new URLSearchParams(); fd.set('act','shield_off'); fd.set('domain',b.dataset.d); post(fd,function(r){document.getElementById('ssMsg').textContent=r.msg||''; if(r.ok) setTimeout(function(){location.reload();},1000);});};});
+  /* Crawler Control */
+  (function(){
+    var m=document.getElementById('crMsg'); if(!m) return;
+    function say(ok,t){m.style.color=ok?'#16a34a':'#dc2626';m.textContent=(ok?'✅ ':'⚠ ')+t;}
+    function filt(){var q=(document.getElementById('crQ').value||'').toLowerCase(),c=document.getElementById('crCat').value,s=document.getElementById('crSeen').checked;
+      document.querySelectorAll('#crTbl tbody tr').forEach(function(r){var ok=true;if(q&&r.dataset.q.indexOf(q)<0)ok=false;if(c&&r.dataset.cat!==c)ok=false;if(s&&r.dataset.seen!=='1')ok=false;r.style.display=ok?'':'none';});}
+    ['crQ','crCat','crSeen'].forEach(function(id){var e=document.getElementById(id);e.addEventListener('input',filt);e.addEventListener('change',filt);});
+    document.querySelectorAll('.crSw').forEach(function(c){c.addEventListener('change',function(){
+      var block=c.checked, k=c.dataset.k, name=c.dataset.name, fd=new URLSearchParams();
+      if(block&&c.dataset.protected==='1'){ if(!confirm(name+' is a SEARCH ENGINE. Refusing it removes your customers\' sites from its results. Refuse it anyway?')){c.checked=false;return;} if(!confirm('Second confirmation: refuse '+name+' on EVERY site of this server?')){c.checked=false;return;} fd.set('confirm','search'); }
+      else if(block){ if(!confirm('Refuse '+name+' on every site of this server? It will get 403 from Apache.')){c.checked=false;return;} }
+      c.disabled=true; fd.set('bg_action','cr_set'); fd.set('family',k); fd.set('block',block?'1':'0');
+      post(fd,function(j){c.disabled=false; if(j&&j.ok){say(true,j.msg||'done'); c.closest('tr').classList.toggle('cr-blk',block);} else {c.checked=!block; say(false,(j&&j.msg)||'failed');}});
+    });});
+    document.querySelectorAll('[data-crcat]').forEach(function(b){b.addEventListener('click',function(){
+      var block=b.dataset.block==='1', cats=b.dataset.crcat.split(',');
+      if(block&&!confirm('Refuse every AI crawler family on every site of this server? (search engines are never touched by this button)')) return;
+      b.disabled=true; var left=cats.length, okAll=true, msgs=[];
+      cats.forEach(function(cat){var fd=new URLSearchParams();fd.set('bg_action','cr_category');fd.set('category',cat);fd.set('block',block?'1':'0');
+        post(fd,function(j){okAll=okAll&&j&&j.ok;msgs.push((j&&j.msg)||'failed');if(--left===0){say(okAll,msgs.join(' · '));setTimeout(function(){location.reload();},900);}});});
+    });});
+    var cb=document.getElementById('crCount'); if(cb) cb.addEventListener('click',function(){cb.disabled=true;var o=cb.innerHTML;cb.innerHTML='Counting…';var fd=new URLSearchParams();fd.set('bg_action','cr_count');
+      post(fd,function(j){cb.disabled=false;cb.innerHTML=o;say(!!(j&&j.ok),(j&&j.msg)||'failed');if(j&&j.ok)setTimeout(function(){location.reload();},900);});});
+  })();
   function post(fd,cb){fd.set('smpro_csrf',BG_CSRF);fetch('index.cgi?page=bot-guard',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString(),cache:'no-store'}).then(function(r){return r.json();}).then(cb).catch(function(){cb({ok:false,msg:'Request failed'});});}
   var sb=document.getElementById('bgScan');sb.addEventListener('click',function(){var o=sb.innerHTML;sb.disabled=true;sb.innerHTML='Scanning… (streams the logs; up to a few minutes on a busy server)';var m=document.getElementById('bgScanMsg');m.textContent='';var fd=new URLSearchParams();fd.set('bg_action','scan');
     post(fd,function(j){sb.disabled=false;sb.innerHTML=o;m.style.color=j&&j.ok?'#16a34a':'#dc2626';m.textContent=(j&&j.ok?'✅ ':'⚠ ')+((j&&j.msg)||'Failed');if(j&&j.ok)setTimeout(function(){location.reload();},1200);});});

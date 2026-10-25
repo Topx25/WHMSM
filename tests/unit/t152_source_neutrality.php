@@ -71,3 +71,11 @@ has($gw, "\$panel = \$live ? smpro_gw_panel_apply(\$cfg, \$ranges, \$always) : [
 has($gw, "function smpro_gw_remove(bool \$quiet = false): array {\n    smpro_gw_panel_remove(\$quiet);", 'F6: removed with it');
 has($gw, "if (in_array('cpanel', \$doors, true))  \$p = array_merge(\$p, ['cpanel', 'webdisk', 'cpcalendars', 'cpcontacts']);", 'F7: prefixes follow the doors');
 has($fw, "panel subdomains covered", 'F8: the card says whether the second door is covered');
+
+// G. beta378: the wall's country list survives a save from any page (the cleaner is always there)
+$gw = $shipped[SMPRO_BASE . '/includes/geowall.php'];
+has($gw, "if (!function_exists('smpro_gl_clean_cc')) { \$glf = __DIR__ . '/geologin.php'; if (is_file(\$glf)) require_once \$glf; }", 'G1: geowall loads the cleaner itself');
+has($gw, "function smpro_gw_clean_cc(array \$in): array {", 'G2: ...and has one of its own');
+hasnt($gw, "function_exists('smpro_gl_clean_cc') ? smpro_gl_clean_cc((array)(\$j['countries'] ?? [])) : []", 'G3: the read never degrades to an empty list');
+hasnt($gw, "function_exists('smpro_gl_clean_cc') ? smpro_gl_clean_cc((array)(\$c['countries'] ?? [])) : []", 'G4: nor the write');
+
