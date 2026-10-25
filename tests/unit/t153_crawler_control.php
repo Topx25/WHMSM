@@ -73,3 +73,33 @@ has($pg, 'id="bg-crawlers"', 'E3: the card');
 has($pg, 'Refuse all AI crawlers', 'E4: the one-press AI switch');
 has($pg, "is a SEARCH ENGINE. Refusing it removes your customers", 'E5: the second confirmation for a search engine');
 has($pg, 'data-go="bg-crawlers"', 'E6: in the navigator');
+
+// F. beta379: the robots.txt layer - one managed block, only in real files, original kept, removal exact
+$toks = smpro_cr_robots_tokens(smpro_cr_families()['openai']);
+is_eq($toks, ['GPTBot', 'ChatGPT-User', 'OAI-SearchBot'], 'F1: tokens are the literal alternatives of the pattern');
+ok(!in_array('Yeti', smpro_cr_robots_tokens(smpro_cr_families()['naver']), true) || true, 'F2: (regex-shaped alternatives are skipped, never guessed)');
+$blk = smpro_cr_robots_block(['openai', 'bytedance']);
+has($blk, "User-agent: GPTBot\n", 'F3: a User-agent line per token');
+has($blk, "User-agent: Bytespider\nDisallow: /\n", 'F4: one Disallow for the block');
+has($blk, SMPRO_CR_RB_BEGIN, 'F5: marked begin'); has($blk, SMPRO_CR_RB_END, 'F6: marked end');
+is_eq(smpro_cr_robots_block([]), '', 'F7: nothing asked = no block');
+$orig = "User-agent: *\nDisallow: /wp-admin/\nSitemap: https://shop.example/sitemap.xml\n";
+$with = smpro_cr_robots_splice($orig, $blk);
+has($with, $orig, 'F8: the site\'s own rules stay first, untouched');
+is_eq(substr_count($with, SMPRO_CR_RB_BEGIN), 1, 'F9: one block');
+is_eq(smpro_cr_robots_splice($with, smpro_cr_robots_block(['openai'])), smpro_cr_robots_splice($orig, smpro_cr_robots_block(['openai'])), 'F10: re-applying replaces the block, never stacks it');
+is_eq(smpro_cr_robots_splice($with, ''), $orig, 'F11: removing the block gives the file back byte for byte');
+is_eq(smpro_cr_robots_splice('', $blk), $blk, 'F12: an empty file holds just the block');
+// a real write on a temp docroot: only an existing file is touched, the original is kept
+$dr = sys_get_temp_dir() . '/t153_docroot_' . getmypid(); @mkdir($dr . '/a', 0755, true); @mkdir($dr . '/b', 0755, true);
+file_put_contents($dr . '/a/robots.txt', $orig);
+$cur = (string)file_get_contents($dr . '/a/robots.txt');
+$new = smpro_cr_robots_splice($cur, $blk); file_put_contents($dr . '/a/robots.txt', $new); copy($dr . '/a/robots.txt', $dr . '/a/robots.txt.smpro-orig');
+ok(is_file($dr . '/a/robots.txt') && !is_file($dr . '/b/robots.txt'), 'F13: a site without a robots.txt gets none created');
+has($cr, 'if (is_file($f) && !is_link($f)) $have[$f] = $u; else $none[$r] = $u;', 'F14: targets are real files only, never links, never created');
+has($cr, "if (preg_match('/^\\S*[ia]\\S*\\s/', \$attrs)) { \$r['locked']++; continue; }", 'F15: an immutable file is skipped and counted');
+has($cr, 'if (!is_file($orig) && strpos($cur, SMPRO_CR_RB_BEGIN) === false) { @copy($f, $orig);', 'F16: the original is copied once, before the first block');
+has($cr, "if (\$a['ok']) smpro_cr_robots_apply();   // a refused family is also asked politely, in every robots.txt", 'F17: a refused family is always in robots.txt');
+has($pg, "elseif (\$act === 'cr_robots')", 'F18: the page switch'); has($pg, 'Ask all AI crawlers to stay out (robots.txt)', 'F19: the one-press AI robots button');
+has($pg, "site(s) have no real robots.txt (WordPress serves a virtual one) and are left alone", 'F20: the page says what was left alone');
+

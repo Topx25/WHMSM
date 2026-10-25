@@ -10,6 +10,7 @@ foreach (['defines', 'env', 'mmdb', 'helpers', 'secret', 'license', 'trustfeed',
 }
 try {
     if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) exit(0);
+    if (function_exists('smpro_cr_robots_apply') && function_exists('smpro_cr_robots_families') && smpro_cr_robots_families() && (int)date('G') === 4 && (int)date('i') < 10) smpro_cr_robots_apply();   // once a day: new sites, files put back by a restore
     if (function_exists('smpro_cr_collect')) { $r = smpro_cr_collect(); fwrite(STDOUT, ($r['ok'] ? 'ok: ' : 'skipped: ') . $r['files'] . ' file(s), ' . $r['lines'] . ' line(s)' . ($r['partial'] ? ', partial' : '') . ($r['why'] !== '' ? ' - ' . $r['why'] : '') . "\n"); }
 } catch (\Throwable $e) {
     if (function_exists('smpro_soft_fail')) smpro_soft_fail('crawlers_tick', $e);

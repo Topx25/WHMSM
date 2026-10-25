@@ -101,6 +101,7 @@ function smpro_cr_set(string $key, bool $block, string $by, bool $confirmed = fa
     if ($block) $p['blocked'][$key] = ['since' => time(), 'by' => $by]; else unset($p['blocked'][$key]);
     smpro_cr_save(SMPRO_CR_CFG, $p);
     $a = smpro_cr_apply();
+    if ($a['ok']) smpro_cr_robots_apply();   // a refused family is also asked politely, in every robots.txt
     if (!$a['ok']) {
         // the rule did not go live: the policy must not claim it did
         $p = smpro_cr_policy(); if ($block) unset($p['blocked'][$key]); else $p['blocked'][$key] = ['since' => time(), 'by' => $by]; smpro_cr_save(SMPRO_CR_CFG, $p);
@@ -120,6 +121,7 @@ function smpro_cr_set_category(string $cat, bool $block, string $by): array {
         smpro_cr_save(SMPRO_CR_CFG, $p); $n++;
     }
     $a = smpro_cr_apply();
+    if ($a['ok']) smpro_cr_robots_apply();
     if (function_exists('smpro_audit')) smpro_audit('crawler_category_' . ($block ? 'block' : 'allow'), ['category' => $cat, 'families' => $n, 'by' => $by]);
     return ['ok' => $a['ok'], 'msg' => $n . ' famil' . ($n === 1 ? 'y' : 'ies') . ($block ? ' refused' : ' allowed') . ($skipped ? ', ' . $skipped . ' search engine(s) left alone' : '') . '. ' . $a['msg']];
 }
@@ -283,15 +285,116 @@ function smpro_cr_stats(string $win = '7d'): array {
 }
 /** The rows the page draws: every family, with its window numbers (zeros when unseen), policy and live state. */
 function smpro_cr_rows(string $win = '7d'): array {
-    $stats = smpro_cr_stats($win); $blocked = array_flip(smpro_cr_blocked()); $live = array_flip(smpro_cr_live()); $rows = [];
+    $stats = smpro_cr_stats($win); $blocked = array_flip(smpro_cr_blocked()); $live = array_flip(smpro_cr_live()); $robots = array_flip(array_keys((array)(smpro_cr_policy()['robots'] ?? []))); $rows = [];
     foreach (smpro_cr_families() as $k => $f) {
         $s = $stats[$k] ?? ['hits' => 0, 'bytes' => 0, 'served' => 0, 'refused' => 0, 'domain_count' => 0, 'top_domains' => [], 'last' => 0];
-        $rows[$k] = $f + $s + ['blocked' => isset($blocked[$k]), 'live' => isset($live[$k]), 'protected' => $f['category'] === 'search'];
+        $rows[$k] = $f + $s + ['blocked' => isset($blocked[$k]), 'live' => isset($live[$k]), 'protected' => $f['category'] === 'search', 'robots' => isset($robots[$k]) || isset($blocked[$k]), 'robots_own' => isset($robots[$k])];
     }
     uasort($rows, fn($a, $b) => ($b['hits'] <=> $a['hits']) ?: strcmp($a['name'], $b['name']));
     return $rows;
 }
 function smpro_cr_state(): array { return smpro_cr_load(SMPRO_CR_STATE); }
+
+/* ---------------- the polite layer: robots.txt ----------------
+ * A refused crawler gets 403 whatever it asks for; robots.txt is the other half - the published request not to crawl,
+ * which the well-behaved ones (and only those) obey, and the one thing a site owner can point to. It is written into
+ * each site's robots.txt as ONE marked block, never anywhere else:
+ *   - only into a robots.txt that already exists as a real file. A site without one (WordPress serves a virtual
+ *     robots.txt with its sitemap line) is LEFT ALONE and counted, because creating a file there would silently
+ *     replace what the application serves;
+ *   - the original is copied once beside it before the first write (robots.txt.smpro-orig), and removing the block
+ *     gives the file back byte for byte;
+ *   - an immutable file (Safety Lock, WP Guard) is skipped and counted, never unlocked for this;
+ *   - the User-agent tokens come from the catalogue's own patterns (their literal alternatives), nothing invented.
+ */
+define('SMPRO_CR_RB_BEGIN', '# BEGIN Safety Monitor Pro - Crawler Control (managed block; edits inside it are overwritten)');
+define('SMPRO_CR_RB_END',   '# END Safety Monitor Pro - Crawler Control');
+/** The robots User-agent tokens of one family: the literal alternatives of its pattern. */
+function smpro_cr_robots_tokens(array $f): array {
+    $re = (string)($f['ua'] ?? ''); if (preg_match('#^/(.*)/[a-z]*$#s', $re, $m)) $re = $m[1];
+    $out = [];
+    foreach (preg_split('/\|/', preg_replace('/\(\?:|[()]/', '', $re)) as $a) {
+        $a = trim($a); if ($a === '') continue;
+        $a = str_replace(['\\-', '\\.', '\\/', '\\ '], ['-', '.', '/', ' '], $a);
+        if (preg_match('/[\\\\^$*+?\[\]{}]/', $a)) continue;          // not a literal name: skip rather than guess
+        $a = rtrim($a, '/');
+        if ($a !== '' && !in_array($a, $out, true)) $out[] = $a;
+    }
+    return $out;
+}
+/** Families that carry the robots request: those switched on for it plus every refused one. */
+function smpro_cr_robots_families(): array {
+    $p = smpro_cr_policy(); $set = [];
+    foreach (array_keys((array)($p['robots'] ?? [])) as $k) $set[$k] = 1;
+    foreach (array_keys((array)($p['blocked'] ?? [])) as $k) $set[$k] = 1;
+    return array_keys($set);
+}
+/** The managed block for the current policy ('' when nothing is asked). */
+function smpro_cr_robots_block(?array $families = null): string {
+    $families = $families ?? smpro_cr_robots_families(); $fams = smpro_cr_families(); $lines = [];
+    foreach ($families as $k) { if (!isset($fams[$k])) continue; foreach (smpro_cr_robots_tokens($fams[$k]) as $t) $lines[] = 'User-agent: ' . $t; }
+    if (!$lines) return '';
+    return SMPRO_CR_RB_BEGIN . "\n" . implode("\n", array_unique($lines)) . "\nDisallow: /\n" . SMPRO_CR_RB_END . "\n";
+}
+/** One file: put the block in (replacing an older one) or take it out. Pure on strings. */
+function smpro_cr_robots_splice(string $content, string $block): string {
+    $re = '/\n?' . preg_quote(SMPRO_CR_RB_BEGIN, '/') . '.*?' . preg_quote(SMPRO_CR_RB_END, '/') . '\n?/s';
+    $base = preg_replace($re, "\n", $content);
+    $base = rtrim((string)$base, "\n");
+    if ($block === '') return $base === '' ? '' : $base . "\n";
+    return ($base === '' ? '' : $base . "\n\n") . $block;
+}
+/** Every document root with a REAL robots.txt, and those without. */
+function smpro_cr_robots_targets(): array {
+    if (!function_exists('smpro_lr_docroots')) { $lf = __DIR__ . '/learn.php'; if (is_file($lf)) require_once $lf; }
+    $roots = function_exists('smpro_lr_docroots') ? smpro_lr_docroots() : [];
+    $have = []; $none = [];
+    foreach ($roots as $r => $u) { $f = $r . '/robots.txt'; if (is_file($f) && !is_link($f)) $have[$f] = $u; else $none[$r] = $u; }
+    return ['have' => $have, 'none' => $none];
+}
+/** Write the block into every real robots.txt (or remove it when nothing is asked). Returns counts; never creates a file. */
+function smpro_cr_robots_apply(): array {
+    $r = ['ok' => true, 'written' => 0, 'unchanged' => 0, 'left_alone' => 0, 'locked' => 0, 'failed' => 0, 'block' => false];
+    if (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) { $r['ok'] = false; $r['why'] = 'dry-run'; return $r; }
+    $block = smpro_cr_robots_block(); $r['block'] = $block !== '';
+    $t = smpro_cr_robots_targets(); $r['left_alone'] = count($t['none']);
+    foreach ($t['have'] as $f => $user) {
+        $cur = (string)@file_get_contents($f);
+        $new = smpro_cr_robots_splice($cur, $block);
+        if ($new === $cur) { $r['unchanged']++; continue; }
+        $attrs = (string)@shell_exec('lsattr -d ' . escapeshellarg($f) . ' 2>/dev/null');
+        if (preg_match('/^\S*[ia]\S*\s/', $attrs)) { $r['locked']++; continue; }
+        $orig = $f . '.smpro-orig';
+        if (!is_file($orig) && strpos($cur, SMPRO_CR_RB_BEGIN) === false) { @copy($f, $orig); @chown($orig, fileowner($f)); @chgrp($orig, filegroup($f)); @chmod($orig, 0644); }
+        $st = @stat($f);
+        if (@file_put_contents($f . '.smpro-tmp', $new, LOCK_EX) === false) { $r['failed']++; continue; }
+        @chown($f . '.smpro-tmp', (int)($st['uid'] ?? 0)); @chgrp($f . '.smpro-tmp', (int)($st['gid'] ?? 0)); @chmod($f . '.smpro-tmp', ($st['mode'] ?? 0644) & 07777);
+        if (!@rename($f . '.smpro-tmp', $f)) { @unlink($f . '.smpro-tmp'); $r['failed']++; continue; }
+        $r['written']++;
+    }
+    $st = smpro_cr_load(SMPRO_CR_STATE); $st['robots'] = $r + ['at' => time()]; smpro_cr_save(SMPRO_CR_STATE, $st);
+    if (function_exists('smpro_audit')) smpro_audit('crawler_robots_apply', ['written' => $r['written'], 'left_alone' => $r['left_alone'], 'locked' => $r['locked'], 'block' => $r['block'] ? 1 : 0]);
+    return $r;
+}
+/** Switch the robots request for one family (independent of refusing it). */
+function smpro_cr_robots_set(string $key, bool $on, string $by): array {
+    $fams = smpro_cr_families(); if (!isset($fams[$key])) return ['ok' => false, 'msg' => 'Unknown crawler family.'];
+    $p = smpro_cr_policy(); $p['robots'] = (array)($p['robots'] ?? []);
+    if ($on) $p['robots'][$key] = ['since' => time(), 'by' => $by]; else unset($p['robots'][$key]);
+    smpro_cr_save(SMPRO_CR_CFG, $p);
+    $a = smpro_cr_robots_apply();
+    if (!$a['ok']) return ['ok' => false, 'msg' => 'Not changed - ' . (string)($a['why'] ?? 'robots.txt could not be written')];
+    if (function_exists('smpro_audit')) smpro_audit('crawler_robots_' . ($on ? 'on' : 'off'), ['family' => $key, 'by' => $by]);
+    return ['ok' => true, 'msg' => ($on ? 'Disallow written for ' : 'Disallow removed for ') . $fams[$key]['name'] . ': ' . $a['written'] . ' robots.txt file(s) changed, ' . $a['unchanged'] . ' already right, ' . $a['left_alone'] . ' site(s) without a real robots.txt left alone' . ($a['locked'] ? ', ' . $a['locked'] . ' locked file(s) skipped' : '') . '.'];
+}
+function smpro_cr_robots_set_category(string $cat, bool $on, string $by): array {
+    $n = 0; $p = smpro_cr_policy(); $p['robots'] = (array)($p['robots'] ?? []);
+    foreach (smpro_cr_families() as $k => $f) { if ($f['category'] !== $cat) continue; if ($on) $p['robots'][$k] = ['since' => time(), 'by' => $by]; else unset($p['robots'][$k]); $n++; }
+    smpro_cr_save(SMPRO_CR_CFG, $p);
+    $a = smpro_cr_robots_apply();
+    if (function_exists('smpro_audit')) smpro_audit('crawler_robots_category_' . ($on ? 'on' : 'off'), ['category' => $cat, 'families' => $n, 'by' => $by]);
+    return ['ok' => $a['ok'], 'msg' => $n . ' famil' . ($n === 1 ? 'y' : 'ies') . ($on ? ' added to' : ' removed from') . ' robots.txt: ' . $a['written'] . ' file(s) changed, ' . $a['left_alone'] . ' site(s) without a real robots.txt left alone' . ($a['locked'] ? ', ' . $a['locked'] . ' locked skipped' : '') . '.'];
+}
 
 /* ---------------- cron ---------------- */
 function smpro_cr_cron_sync(): bool {

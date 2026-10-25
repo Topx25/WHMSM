@@ -22,6 +22,8 @@ if ($reqMethod === 'POST' && isset($_POST['bg_action'])) {
     if ($act === 'rows') { $bgRowsReq = true; }   // one page of one list: answered below, once the lists exist
     elseif ($act === 'cr_set')      { $out = function_exists('smpro_cr_set') ? smpro_cr_set((string)($_POST['family'] ?? ''), ($_POST['block'] ?? '') === '1', $by, ($_POST['confirm'] ?? '') === 'search') : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode($out); exit; }
     elseif ($act === 'cr_category') { $out = function_exists('smpro_cr_set_category') ? smpro_cr_set_category((string)($_POST['category'] ?? ''), ($_POST['block'] ?? '') === '1', $by) : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode($out); exit; }
+    elseif ($act === 'cr_robots')     { $out = function_exists('smpro_cr_robots_set') ? smpro_cr_robots_set((string)($_POST['family'] ?? ''), ($_POST['on'] ?? '') === '1', $by) : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode($out); exit; }
+    elseif ($act === 'cr_robots_cat') { $out = function_exists('smpro_cr_robots_set_category') ? smpro_cr_robots_set_category((string)($_POST['category'] ?? ''), ($_POST['on'] ?? '') === '1', $by) : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode($out); exit; }
     elseif ($act === 'cr_count')    { $r = function_exists('smpro_cr_collect') ? smpro_cr_collect(120 * 1024 * 1024, 90) : ['ok' => false, 'why' => 'not available in this build']; echo json_encode(['ok' => (bool)$r['ok'], 'msg' => $r['ok'] ? ($r['files'] . ' log(s), ' . number_format((int)$r['lines']) . ' line(s) counted' . (!empty($r['partial']) ? ' (partial: the rest on the next pass)' : '')) : (string)($r['why'] ?? 'failed')]); exit; }
     elseif ($act === 'tf_refresh') { $r = function_exists('smpro_tf_fetch') ? smpro_tf_fetch() : ['ok' => false, 'msg' => 'not available in this build']; echo json_encode(['ok' => (bool)$r['ok'], 'msg' => (string)$r['msg']]); exit; }
     elseif ($act === 'settings') {
@@ -353,6 +355,7 @@ $crCats = []; foreach ($crRows as $r) { $crCats[$r['category']] = $crCats[$r['ca
 $crBytes = fn($b) => function_exists('smpro_bytes') ? smpro_bytes((int)$b) : number_format((int)$b);
 $crAi = ['ai_crawler', 'ai_assistant', 'ai_search']; $crAiN = 0; $crAiBlocked = 0; foreach ($crRows as $r) if (in_array($r['category'], $crAi, true)) { $crAiN++; if ($r['blocked']) $crAiBlocked++; }
 $crCronOk = @is_file('/etc/cron.d/smpro-crawlers');
+$crRb = (array)($crState['robots'] ?? []); $crRbN = count(array_filter($crRows, fn($r) => !empty($r['robots'])));
 ?>
 <style>
 .cr-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.cr-tools .sp{flex:1}
@@ -360,7 +363,7 @@ $crCronOk = @is_file('/etc/cron.d/smpro-crawlers');
 .cr-cat{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--bg,#f3f4f6);border:1px solid var(--line,#e5e7eb);white-space:nowrap}
 .cr-cat.ai_crawler,.cr-cat.ai_assistant,.cr-cat.ai_search{background:rgba(147,51,234,.10);border-color:rgba(147,51,234,.35);color:#6d28d9}.cr-cat.search{background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.35);color:#15803d}
 .cr-sw{position:relative;display:inline-block;width:40px;height:22px;vertical-align:middle}.cr-sw input{opacity:0;width:0;height:0}.cr-sw i{position:absolute;inset:0;background:#cbd5e1;border-radius:22px;transition:.15s;cursor:pointer}.cr-sw i:before{content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.15s}
-.cr-sw input:checked+i{background:#dc2626}.cr-sw input:checked+i:before{transform:translateX(18px)}.cr-sw input:disabled+i{opacity:.5;cursor:wait}
+.cr-sw input:checked+i{background:#dc2626}.cr-sw input:checked+i.rb{background:#b45309}.cr-sw input:checked+i:before{transform:translateX(18px)}.cr-sw input:disabled+i{opacity:.5;cursor:wait}
 .cr-num{font-variant-numeric:tabular-nums;white-space:nowrap}.cr-sub{font-size:11px;opacity:.7}
 .cr-tbl td,.cr-tbl th{vertical-align:middle}.cr-tbl tr.cr-blk td{background:rgba(220,38,38,.04)}
 .cr-note{font-size:12px;opacity:.8;line-height:1.6}
@@ -376,11 +379,13 @@ $crCronOk = @is_file('/etc/cron.d/smpro-crawlers');
     <span class="sp"></span>
     <button class="bg-act <?= $crAiBlocked < $crAiN ? 'bad' : '' ?>" type="button" data-crcat="ai_crawler,ai_assistant,ai_search" data-block="1" title="GPTBot, ClaudeBot, Bytespider, CCBot, Google-Extended, Applebot-Extended, PerplexityBot, Diffbot, the assistants' fetchers…">&#9940; Refuse all AI crawlers (<?= $crAiBlocked ?>/<?= $crAiN ?>)</button>
     <button class="bg-act" type="button" data-crcat="ai_crawler,ai_assistant,ai_search" data-block="0">Allow all AI again</button>
+    <button class="bg-act" type="button" data-crrbcat="ai_crawler,ai_assistant,ai_search" data-on="1" title="writes a Disallow block for every AI family into each site's existing robots.txt - the polite request, without a 403">&#128220; Ask all AI crawlers to stay out (robots.txt)</button>
     <button class="bg-act" type="button" id="crCount">&#8635; Count now</button>
   </div>
   <div class="cr-note" style="margin-bottom:8px"><?= $crLast ? 'Last count ' . smpro_h($ago($crLast)) . ' · ' . (int)($crLastR['files'] ?? 0) . ' log(s), ' . number_format((int)($crLastR['lines'] ?? 0)) . ' line(s) in that pass' . (!empty($crLastR['partial']) ? ' · <b>partial</b> (budget reached; the rest on the next pass)' : '') : 'No pass has run yet.' ?> · <?= $crSeenN ?> of <?= count($crRows) ?> families seen in this window · <b style="color:var(--dang,#dc2626)"><?= $crBlockedN ?> refused</b> on every site.
-    A <b>refused</b> crawler gets <b>403</b> on all <?= function_exists('smpro_ss_domains') ? count(smpro_ss_domains()) : '' ?> sites; real search engines are protected by a second confirmation because blocking one removes your customers from its results. Verified-vs-impersonator checks stay in the lists below: this switch is about crawlers you do not want <i>even when real</i>.</div>
-  <div class="smpro-tablewrap"><table class="bg-tbl cr-tbl" id="crTbl" data-nopage="1"><thead><tr><th>Crawler</th><th>Category</th><th class="num">Requests</th><th class="num">Served / refused</th><th class="num">Bytes</th><th class="num">Sites</th><th>Last seen</th><th>Refuse</th></tr></thead><tbody>
+    A <b>refused</b> crawler gets <b>403</b> on all <?= function_exists('smpro_ss_domains') ? count(smpro_ss_domains()) : '' ?> sites; real search engines are protected by a second confirmation because blocking one removes your customers from its results. Verified-vs-impersonator checks stay in the lists below: this switch is about crawlers you do not want <i>even when real</i>.
+    <br><b>robots.txt</b> is the polite half: a managed block (<code>User-agent: &hellip; / Disallow: /</code>) written into each site's <i>existing</i> robots.txt; a refused family is always in it, and any family can be added without refusing it. <?= $crRb ? '<b>' . (int)($crRb['written'] ?? 0) . '</b> file(s) changed and <b>' . (int)($crRb['unchanged'] ?? 0) . '</b> already right at the last write (' . smpro_h($ago((int)($crRb['at'] ?? 0))) . '); <b>' . (int)($crRb['left_alone'] ?? 0) . '</b> site(s) have no real robots.txt (WordPress serves a virtual one) and are left alone' . (!empty($crRb['locked']) ? '; <b>' . (int)$crRb['locked'] . '</b> locked file(s) skipped' : '') . '.' : 'Nothing written yet.' ?> The original is kept beside the file as <code>robots.txt.smpro-orig</code>; removing the block gives it back exactly.</div>
+  <div class="smpro-tablewrap"><table class="bg-tbl cr-tbl" id="crTbl" data-nopage="1"><thead><tr><th>Crawler</th><th>Category</th><th class="num">Requests</th><th class="num">Served / refused</th><th class="num">Bytes</th><th class="num">Sites</th><th>Last seen</th><th>robots.txt</th><th>Refuse</th></tr></thead><tbody>
   <?php foreach ($crRows as $k => $r): ?>
     <tr data-k="<?= smpro_h($k) ?>" data-cat="<?= smpro_h($r['category']) ?>" data-q="<?= smpro_h(strtolower($r['name'] . ' ' . $r['vendor'] . ' ' . $k . ' ' . smpro_cr_category_label($r['category']))) ?>" data-seen="<?= $r['hits'] > 0 ? 1 : 0 ?>" class="<?= $r['blocked'] ? 'cr-blk' : '' ?>">
       <td><b><?= smpro_h($r['name']) ?></b><?= $r['vendor'] !== '' ? '<div class="cr-sub">' . smpro_h($r['vendor']) . '</div>' : '' ?><?= $r['custom'] ? '<div class="cr-sub">your own entry</div>' : '' ?></td>
@@ -390,6 +395,7 @@ $crCronOk = @is_file('/etc/cron.d/smpro-crawlers');
       <td class="num cr-num"><?= smpro_h($crBytes($r['bytes'])) ?></td>
       <td class="num cr-num" title="<?= smpro_h(implode(', ', (array)$r['top_domains'])) ?>"><?= (int)$r['domain_count'] ?></td>
       <td class="cr-sub"><?= $r['last'] ? smpro_h($ago($r['last'])) : '—' ?></td>
+      <td><label class="cr-sw" style="--on:#b45309" title="<?= $r['blocked'] ? 'refused families are always in robots.txt' : ($r['robots'] ? 'Disallow is written in every real robots.txt - switch off to remove it' : 'switch on to write a Disallow for this family into every real robots.txt (no 403)') ?>"><input type="checkbox" class="crRb" data-k="<?= smpro_h($k) ?>" data-name="<?= smpro_h($r['name']) ?>"<?= $r['robots'] ? ' checked' : '' ?><?= $r['blocked'] ? ' disabled' : '' ?>><i class="rb"></i></label></td>
       <td><label class="cr-sw" title="<?= $r['blocked'] ? 'refused on every site - switch off to allow again' : 'allowed - switch on to refuse on every site' ?>"><input type="checkbox" class="crSw" data-k="<?= smpro_h($k) ?>" data-protected="<?= $r['protected'] ? 1 : 0 ?>" data-name="<?= smpro_h($r['name']) ?>"<?= $r['blocked'] ? ' checked' : '' ?>><i></i></label>
         <?php if ($r['blocked'] && !$r['live']): ?><div class="cr-sub" style="color:#dc2626">not live in Apache</div><?php endif; ?></td>
     </tr>
@@ -615,6 +621,17 @@ $crCronOk = @is_file('/etc/cron.d/smpro-crawlers');
       if(block&&!confirm('Refuse every AI crawler family on every site of this server? (search engines are never touched by this button)')) return;
       b.disabled=true; var left=cats.length, okAll=true, msgs=[];
       cats.forEach(function(cat){var fd=new URLSearchParams();fd.set('bg_action','cr_category');fd.set('category',cat);fd.set('block',block?'1':'0');
+        post(fd,function(j){okAll=okAll&&j&&j.ok;msgs.push((j&&j.msg)||'failed');if(--left===0){say(okAll,msgs.join(' · '));setTimeout(function(){location.reload();},900);}});});
+    });});
+    document.querySelectorAll('.crRb').forEach(function(c){c.addEventListener('change',function(){
+      var on=c.checked, fd=new URLSearchParams(); c.disabled=true; fd.set('bg_action','cr_robots'); fd.set('family',c.dataset.k); fd.set('on',on?'1':'0');
+      post(fd,function(j){c.disabled=false; if(j&&j.ok) say(true,j.msg||'done'); else {c.checked=!on; say(false,(j&&j.msg)||'failed');}});
+    });});
+    document.querySelectorAll('[data-crrbcat]').forEach(function(b){b.addEventListener('click',function(){
+      var cats=b.dataset.crrbcat.split(','), on=b.dataset.on==='1';
+      if(on&&!confirm('Write a robots.txt Disallow for every AI crawler family into each site\'s existing robots.txt? Sites without a real robots.txt are left alone; originals are kept beside the files.')) return;
+      b.disabled=true; var left=cats.length, okAll=true, msgs=[];
+      cats.forEach(function(cat){var fd=new URLSearchParams();fd.set('bg_action','cr_robots_cat');fd.set('category',cat);fd.set('on',on?'1':'0');
         post(fd,function(j){okAll=okAll&&j&&j.ok;msgs.push((j&&j.msg)||'failed');if(--left===0){say(okAll,msgs.join(' · '));setTimeout(function(){location.reload();},900);}});});
     });});
     var cb=document.getElementById('crCount'); if(cb) cb.addEventListener('click',function(){cb.disabled=true;var o=cb.innerHTML;cb.innerHTML='Counting…';var fd=new URLSearchParams();fd.set('bg_action','cr_count');
