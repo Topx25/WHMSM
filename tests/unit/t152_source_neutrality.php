@@ -41,10 +41,10 @@ is_eq(count($bad), 0, 'B2: no typographic dash, arrow or ellipsis in a comment l
 $pc = $shipped[SMPRO_BASE . '/modules/plugin-control.php'];
 has($pc, "if (!function_exists('smpro_cps_scan') && is_file(SMPRO_INCLUDES . '/cpsidescan.php')) require_once SMPRO_INCLUDES . '/cpsidescan.php';", 'C1: Plugin Control loads the scan before asking for it');
 
-// D. beta374: a web-attack alert's signature is the set of domains, not their counts (it re-sent every five minutes)
-$in = $shipped[SMPRO_BASE . '/includes/intrusion.php'];
-has($in, "\$spikedDoms = array_map(fn(\$g) => \$g['domain'], array_filter(\$by, fn(\$g) => \$g['total'] >= \$thr)); sort(\$spikedDoms);", 'D1: the spike signature is built from domain names');
-has($in, "['sig'=>'spike:' . md5(implode(',', \$spikedDoms)),", 'D2: ...and only them');
-hasnt($in, "['sig'=>'spike:' . md5(implode(',', \$spiked)),", 'D3: not from the "domain (count)" lines');
-has($in, "['sig'=>'served:' . md5(implode(',', \$sdSig)),", 'D4: the served-exploit signature is the domain set too, not a count');
-
+// D. beta375: a web-attack alert's signature is how wide the attack is (a band), not counts and not names
+$in = $shipped[SMPRO_BASE . '/includes/intrusion.php']; $nt = $shipped[SMPRO_BASE . '/includes/notify.php'];
+has($in, "\$band = fn(int \$n): int => \$n <= 1 ? 1 : (\$n <= 2 ? 2 : (\$n <= 5 ? 5 : (\$n <= 10 ? 10 : 99)));", 'D1: the band');
+has($in, "['sig'=>'spike:' . \$band(count(\$spiked)),", 'D2: the spike signature is the band of the domain count');
+hasnt($in, "md5(implode(',', \$spiked))", 'D3: not the "domain (count)" lines');
+has($in, "['sig'=>'served:' . (count(\$sd) <= 1 ? 1 : (count(\$sd) <= 5 ? 5 : 99)),", 'D4: the served-exploit signature is a band too');
+has($nt, "elseif ((int)((\$st['intrusion_attack#atk']['ts'] ?? 0)) < \$now - 1800) \$maybe('intrusion_attack', 'clear', '', '');", 'D5: a dip under the line clears the slot only after thirty quiet minutes');

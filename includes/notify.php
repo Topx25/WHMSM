@@ -815,7 +815,9 @@ function smpro_notify_run_checks($verbose = false) {
         $parts = []; $sig = [];
         foreach (['selfattack', 'critical', 'spike', 'distributed'] as $k) if (isset($al[$k])) { $parts[] = $al[$k]['subject'] . "\n" . $al[$k]['body']; $sig[] = $al[$k]['sig']; }
         if ($parts) $maybe('intrusion_attack', 'atk:' . md5(implode('|', $sig)), 'Web-attack activity detected', implode("\n\n", $parts), ['severity' => (isset($al['critical']) || isset($al['selfattack'])) ? 'critical' : 'high']);
-        else $maybe('intrusion_attack', 'clear', '', '');
+        // An attack that dips under the line for one window and comes back is the same attack: the slot is
+        // cleared only after thirty quiet minutes, so a flicker around the threshold does not re-send the alert.
+        elseif ((int)(($st['intrusion_attack#atk']['ts'] ?? 0)) < $now - 1800) $maybe('intrusion_attack', 'clear', '', '');
         if (isset($al['breach']))    $maybe('intrusion_breach', $al['breach']['sig'], $al['breach']['subject'], $al['breach']['body'], ['severity' => 'critical']);
         else $maybe('intrusion_breach', 'clear', '', '');
         if (isset($al['upload_cluster'])) $maybe('intrusion_upload_cluster', $al['upload_cluster']['sig'], $al['upload_cluster']['subject'], $al['upload_cluster']['body'], $al['upload_cluster']['meta']);
