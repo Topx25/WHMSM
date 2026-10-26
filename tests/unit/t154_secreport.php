@@ -88,6 +88,10 @@ is_eq(smpro_sr_verify_exposure('example.com', '/../x')['exposed'], false, 'E10: 
 
 // F. beta388: a Host header that is not a site on this server is labelled so (wildcard DNS), in the alert and the report
 has($in, "function smpro_im_host_known(\$domain) {", 'F1: known-host check');
-has($in, "    foreach (\$by as \$g) if (\$g['total'] >= \$thr) \$spiked[] = smpro_im_host_label(\$g['domain']) . ' (' . \$g['total'] . ')';", 'F2: the spike alert labels unknown hosts');
+has($in, "else \$phantom[] = smpro_im_host_label(\$g['domain']) . ' (' . \$g['total'] . ')'; }", 'F2: unknown hosts are labelled (and, since beta389, kept internal)');
 has($sr, "if (function_exists('smpro_im_host_known') && !smpro_im_host_known(\$dom)) \$d[\$k]['note'] =", 'F3: the per-domain row carries the note');
 has($sr, "if (!empty(\$d[\$dom]['note'])) continue; \$root = smpro_sr_docroot_of(\$dom);", 'F4: ...and is not scanned for vulnerabilities (no docroot of its own)');
+
+// G. beta389: heavy attack on an invented hostname never reaches the phone; it is recorded as held, for the report
+has($in, "if (smpro_im_host_known(\$g['domain'])) \$spiked[] = \$g['domain'] . ' (' . \$g['total'] . ')'; else \$phantom[] =", 'G1: only real sites make the alert');
+has($in, "smpro_ntf_held('intrusion_attack', count(\$phantom) . ' invented hostname(s) under heavy attack (wildcard DNS)', 'kept internal: not a site on this server; the WAF handles it on the parent site', 'phantom:' . count(\$phantom));", 'G2: ...the rest is held with its reason, so section 3 of the report shows it');

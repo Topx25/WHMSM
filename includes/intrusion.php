@@ -2303,8 +2303,11 @@ function smpro_im_alert_scan() {
             'body'=>'Domains: ' . implode(', ', array_slice($sd, 0, 12)) . (count($sd) > 12 ? ' +' . (count($sd) - 12) : '') . "\nThese were NOT blocked by the WAF — review immediately."];
     }
     // domain spikes (blocked + served attempts) - high baseline on a busy shared server, so the threshold is high
-    $by = smpro_im_by_domain($recent); $thr = (int)$cfg['thr_domain_attacks']; $spiked = [];
-    foreach ($by as $g) if ($g['total'] >= $thr) $spiked[] = smpro_im_host_label($g['domain']) . ' (' . $g['total'] . ')';
+    $by = smpro_im_by_domain($recent); $thr = (int)$cfg['thr_domain_attacks']; $spiked = []; $phantom = [];
+    // A name that is not a site here (a wildcard DNS record lands it on the parent) stays INTERNAL: the panel and the
+    // daily report show it, the operator's phone does not. Only real sites make the alert.
+    foreach ($by as $g) if ($g['total'] >= $thr) { if (smpro_im_host_known($g['domain'])) $spiked[] = $g['domain'] . ' (' . $g['total'] . ')'; else $phantom[] = smpro_im_host_label($g['domain']) . ' (' . $g['total'] . ')'; }
+    if ($phantom && function_exists('smpro_ntf_held')) smpro_ntf_held('intrusion_attack', count($phantom) . ' invented hostname(s) under heavy attack (wildcard DNS)', 'kept internal: not a site on this server; the WAF handles it on the parent site', 'phantom:' . count($phantom));
     // The signature is how WIDE the attack is (a band of the number of domains), never the counts and not the
     // names either: a count changes with every 15-minute window, and a scanner walking one server's vhosts
     // changes the NAMES every window too, so either made the signature new on every run and the same alert went
