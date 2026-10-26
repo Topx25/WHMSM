@@ -3,7 +3,7 @@ require __DIR__ . '/../support/bootstrap.php';
 /** t95 - "only when it changes": an unchanged report is not repeated after the remind window; a changed one is. */
 $n = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/notify.php'));
 has($n, "\$onlyChanges = !empty(\$cfg['types'][\$type]['only_changes']);", 'U1: the engine reads the per-type switch');
-has($n, "if (\$sameSig && \$sameChan && (\$fresh || \$onlyChanges)) return;", 'U1: an UNCHANGED signature is held back when the switch is on, whatever the remind window says');
+has($n, "if (\$sameSig && \$sameChan && (\$fresh || \$onlyChanges)) { smpro_ntf_held(", 'U1: an UNCHANGED signature is held back when the switch is on, whatever the remind window says');
 // the signature of the foreign-login report is built from the rows themselves, so a new account/address changes it
 has($n, "\$ids = array_unique(array_map(\$rowId, \$fp)); sort(\$ids);", 'U1: the cPanel/webmail foreign-login signature is built from the identity of every row - a new account, country or network changes it');
 $m = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/notifications.php'));

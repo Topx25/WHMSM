@@ -6,6 +6,32 @@
  * with Block / Allow / export; and (2) a directory of every saved report across all sections.
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
+/* ---------------- Daily Security Report: endpoints (root + CSRF for writes; downloads need the WHM session only) ---------------- */
+if (function_exists('smpro_sr_get') && isset($_GET['sr'])) {
+    smpro_require_root();
+    $srWhat = (string)$_GET['sr']; $srId = preg_replace('/[^0-9]/', '', (string)($_GET['id'] ?? ''));
+    if ($srWhat === 'html' || $srWhat === 'print') {
+        $rep = smpro_sr_get($srId); if (!$rep) { http_response_code(404); exit('no such report'); }
+        $html = smpro_sr_render_html($rep, true);
+        if ($srWhat === 'html') { header('Content-Type: text/html; charset=UTF-8'); header('Content-Disposition: attachment; filename="security-report-' . $rep['day'] . '.html"'); echo $html; exit; }
+        header('Content-Type: text/html; charset=UTF-8'); echo str_replace('</body>', '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},400);});</script></body>', $html); exit;
+    }
+    if ($srWhat === 'pdf') {
+        $rep = smpro_sr_get($srId); if (!$rep) { http_response_code(404); exit('no such report'); }
+        $pdf = smpro_sr_dir() . '/' . $rep['id'] . '.pdf';
+        if (!is_file($pdf)) smpro_sr_pdf(smpro_sr_render_html($rep, true), $pdf);
+        if (is_file($pdf)) { header('Content-Type: application/pdf'); header('Content-Disposition: attachment; filename="security-report-' . $rep['day'] . '.pdf"'); readfile($pdf); exit; }
+        header('Location: index.cgi?page=reports-center&sr=print&id=' . $rep['id']); exit;   // no renderer here: the print view saves as PDF from the browser
+    }
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        smpro_require_valid_csrf('secreport'); header('Content-Type: application/json'); @ignore_user_abort(true); @set_time_limit(600);
+        if ($srWhat === 'generate') { $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_POST['day'] ?? '')) ? strtotime($_POST['day'] . ' 00:00:00') : 0; $r = smpro_sr_run(true, $day); echo json_encode(['ok' => !empty($r['ok']), 'id' => (string)($r['id'] ?? ''), 'score' => (int)($r['score'] ?? 0), 'msg' => !empty($r['ok']) ? 'Report built for ' . date('Y-m-d', $day ?: strtotime('yesterday')) . ' (score ' . (int)$r['score'] . ').' : 'Not built.']); exit; }
+        if ($srWhat === 'send') { $rep = smpro_sr_get($srId); if (!$rep) { echo json_encode(['ok' => false, 'msg' => 'No such report.']); exit; } $ch = []; foreach (['email', 'telegram', 'whatsapp'] as $c) if (!empty($_POST[$c])) $ch[$c] = true; $d = smpro_sr_deliver($rep, $ch); $okc = array_keys(array_filter($d, fn($x) => !empty($x['ok']))); $bad = []; foreach ($d as $c => $x) if (empty($x['ok'])) $bad[] = $c . ': ' . (string)$x['detail']; echo json_encode(['ok' => (bool)$okc, 'msg' => ($okc ? 'Sent on ' . implode(', ', $okc) : 'Not sent') . ($bad ? ' · ' . implode(' · ', $bad) : '') . '.']); exit; }
+        if ($srWhat === 'settings') { $c = smpro_sr_cfg(); $c['enabled'] = !empty($_POST['enabled']); $c['hour'] = max(0, min(23, (int)($_POST['hour'] ?? 6))); foreach (['panel', 'email', 'telegram', 'whatsapp'] as $k) $c['channels'][$k] = $k === 'panel' ? true : !empty($_POST['ch_' . $k]); smpro_sr_cfg_save($c); smpro_sr_cron_sync(); smpro_audit('daily_security_report_settings', $c); echo json_encode(['ok' => true, 'msg' => $c['enabled'] ? 'Scheduled: every day at ' . sprintf('%02d:07', $c['hour']) . ' for the previous day, to ' . implode(', ', array_keys(array_filter($c['channels']))) . '.' : 'Schedule switched off; reports can still be built by hand.']); exit; }
+        echo json_encode(['ok' => false, 'msg' => 'Unknown action.']); exit;
+    }
+}
+
 
 /* Collect saved reports from every section's store into one list. */
 function smpro_rc_collect() {
@@ -816,6 +842,55 @@ $winLbl = ($rcFrom || $rcTo) ? (($gfrom ?: '…') . ' → ' . ($gto ?: 'now')) :
 smpro_audit('reports_center_view', ['tab'=>$tab,'ip'=>$qip]);
 smpro_layout_header('Reports Center');
 ?>
+<?php if (function_exists('smpro_sr_list')): $srCfg = smpro_sr_cfg(); $srList = smpro_sr_list(30); $srCsrf = smpro_csrf_generate('secreport'); $srLatest = $srList[0] ?? null; $srHasPdf = trim((string)@shell_exec('command -v wkhtmltopdf chromium chromium-browser google-chrome 2>/dev/null')) !== ''; ?>
+<style>
+.sr-card{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:0 0 16px;overflow:hidden}.sr-hd{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}.sr-hd b{font-size:14px}.sr-hd .meta{margin-left:auto}
+.sr-body{padding:12px 16px}.sr-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.sr-score{font-size:30px;font-weight:800;color:var(--brand);line-height:1}
+.sr-tbl{width:100%;border-collapse:collapse;font-size:12.5px}.sr-tbl th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line)}.sr-tbl td{padding:6px 8px;border-bottom:1px solid var(--line)}.sr-tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.sr-set{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12.5px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;margin-top:10px}.sr-msg{font-size:12.5px;margin-top:6px;min-height:16px}
+</style>
+<div class="sr-card" id="sr">
+  <div class="sr-hd"><b>&#128203; Daily Security Report</b><span class="meta"><?= $srLatest ? 'latest: ' . smpro_h($srLatest['day']) . ' · score ' . (int)$srLatest['score'] : 'no report built yet' ?> · <?= $srCfg['enabled'] ? 'scheduled every day at ' . sprintf('%02d:07', (int)$srCfg['hour']) : 'not scheduled' ?></span></div>
+  <div class="sr-body">
+    <div class="sr-row">
+      <?php if ($srLatest): ?><span class="sr-score"><?= (int)$srLatest['score'] ?></span><span class="meta" style="max-width:260px">security score for <?= smpro_h($srLatest['day']) ?> · <?= (int)$srLatest['served'] ?> served exploit(s) · <?= (int)$srLatest['foreign'] ?> foreign sign-in(s) · <?= (int)$srLatest['sent'] ?> alert(s) sent, <?= (int)$srLatest['held'] ?> held</span>
+      <a class="btn btn-xs btn-secondary" href="index.cgi?page=reports-center&amp;sr=print&amp;id=<?= smpro_h($srLatest['id']) ?>" target="_blank">Open</a>
+      <a class="btn btn-xs btn-ghost" href="index.cgi?page=reports-center&amp;sr=html&amp;id=<?= smpro_h($srLatest['id']) ?>">Download HTML</a>
+      <a class="btn btn-xs btn-ghost" href="index.cgi?page=reports-center&amp;sr=pdf&amp;id=<?= smpro_h($srLatest['id']) ?>" title="<?= $srHasPdf ? 'rendered on the server' : 'no PDF renderer on this server: the print view opens, save it as PDF from the browser' ?>">Download PDF</a>
+      <button type="button" class="btn btn-xs btn-ghost" data-srsend="<?= smpro_h($srLatest['id']) ?>">Send now</button>
+      <?php endif; ?>
+      <span style="flex:1"></span>
+      <input type="date" id="srDay" class="tp-in" value="<?= smpro_h(date('Y-m-d', strtotime('yesterday'))) ?>" max="<?= smpro_h(date('Y-m-d')) ?>" style="font-size:12px"><button type="button" class="btn btn-xs btn-danger" id="srGen">Build report for that day</button>
+    </div>
+    <div class="sr-msg" id="srMsg"></div>
+    <?php if (count($srList) > 1): ?><details style="margin-top:6px"><summary class="meta" style="cursor:pointer">Earlier reports (<?= count($srList) ?>)</summary><table class="sr-tbl" data-nopage="1"><thead><tr><th>Day</th><th class="num">Score</th><th class="num">Served</th><th class="num">Foreign</th><th class="num">Sent / held</th><th></th></tr></thead><tbody>
+      <?php foreach ($srList as $x): ?><tr><td><?= smpro_h($x['day']) ?></td><td class="num"><?= (int)$x['score'] ?></td><td class="num"><?= (int)$x['served'] ?></td><td class="num"><?= (int)$x['foreign'] ?></td><td class="num"><?= (int)$x['sent'] ?> / <?= (int)$x['held'] ?></td><td><a class="fa-lnk" href="index.cgi?page=reports-center&amp;sr=print&amp;id=<?= smpro_h($x['id']) ?>" target="_blank">open</a> · <a class="fa-lnk" href="index.cgi?page=reports-center&amp;sr=html&amp;id=<?= smpro_h($x['id']) ?>">html</a> · <a class="fa-lnk" href="index.cgi?page=reports-center&amp;sr=pdf&amp;id=<?= smpro_h($x['id']) ?>">pdf</a></td></tr><?php endforeach; ?>
+    </tbody></table></details><?php endif; ?>
+    <div class="sr-set">
+      <label style="font-weight:700"><input type="checkbox" id="srEn"<?= $srCfg['enabled'] ? ' checked' : '' ?>> Build and send every day</label>
+      <label>at <select id="srHour" class="tp-sel"><?php for ($hh = 0; $hh < 24; $hh++) echo '<option value="' . $hh . '"' . ((int)$srCfg['hour'] === $hh ? ' selected' : '') . '>' . sprintf('%02d:07', $hh) . '</option>'; ?></select></label>
+      <span class="meta">to:</span>
+      <label><input type="checkbox" checked disabled> Panel (always kept, 90 days)</label>
+      <label><input type="checkbox" id="srEmail"<?= !empty($srCfg['channels']['email']) ? ' checked' : '' ?>> Email (<?= $srHasPdf ? 'PDF' : 'HTML' ?> attached)</label>
+      <label><input type="checkbox" id="srTg"<?= !empty($srCfg['channels']['telegram']) ? ' checked' : '' ?>> Telegram (summary)</label>
+      <label><input type="checkbox" id="srWa"<?= !empty($srCfg['channels']['whatsapp']) ? ' checked' : '' ?>> WhatsApp (summary + where to open)</label>
+      <button type="button" class="btn btn-xs btn-ghost" id="srSave">Save schedule</button>
+      <span class="meta">Channels and recipients are the ones set in Notifications.</span>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var m=document.getElementById('srMsg'); if(!m) return; var CS=<?= json_encode($srCsrf) ?>;
+  function say(ok,t){m.style.color=ok?'var(--good)':'var(--dang)';m.textContent=(ok?'\u2705 ':'\u26a0 ')+t;}
+  function post(what,fd,cb){fd.set('smpro_csrf',CS);fetch('index.cgi?page=reports-center&sr='+what,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString(),cache:'no-store'}).then(function(r){return r.json();}).then(cb).catch(function(){say(false,'the request did not complete');});}
+  var g=document.getElementById('srGen'); g.addEventListener('click',function(){g.disabled=true;say(true,'building\u2026 (reads the whole day; up to two minutes)');var fd=new URLSearchParams();fd.set('day',document.getElementById('srDay').value);post('generate',fd,function(j){g.disabled=false;say(!!(j&&j.ok),(j&&j.msg)||'failed');if(j&&j.ok)setTimeout(function(){location.href='index.cgi?page=reports-center#sr';location.reload();},900);});});
+  document.querySelectorAll('[data-srsend]').forEach(function(b){b.addEventListener('click',function(){var ch=prompt('Send on which channels? (email, telegram, whatsapp - comma separated)','email');if(!ch)return;b.disabled=true;var fd=new URLSearchParams();fd.set('id',b.dataset.srsend);ch.split(',').forEach(function(c){fd.set(c.trim().toLowerCase(),'1');});post('send&id='+encodeURIComponent(b.dataset.srsend),fd,function(j){b.disabled=false;say(!!(j&&j.ok),(j&&j.msg)||'failed');});});});
+  document.getElementById('srSave').addEventListener('click',function(){var fd=new URLSearchParams();fd.set('enabled',document.getElementById('srEn').checked?'1':'0');fd.set('hour',document.getElementById('srHour').value);fd.set('ch_email',document.getElementById('srEmail').checked?'1':'0');fd.set('ch_telegram',document.getElementById('srTg').checked?'1':'0');fd.set('ch_whatsapp',document.getElementById('srWa').checked?'1':'0');post('settings',fd,function(j){say(!!(j&&j.ok),(j&&j.msg)||'failed');});});
+})();
+</script>
+<?php endif; ?>
+
 <script>var RC_CSRF=<?= json_encode($csrf) ?>;</script>
 <div class="svc-kicker">Reports</div>
 <h1 class="h" style="margin:2px 0 4px" data-i18n>Reports Center</h1>

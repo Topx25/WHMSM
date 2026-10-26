@@ -48,6 +48,7 @@ function smpro_dg_hold($type, array $meta = []) {
 }
 
 function smpro_dg_queue($type, $subject, $body, array $meta = []) {
+    if (function_exists('smpro_ntf_held')) smpro_ntf_held($type, $subject, 'held for the digest (sent later in one batch)', (string)($meta['sig'] ?? ''));
     $q = is_file(SMPRO_DG_QUEUE) ? json_decode((string)@file_get_contents(SMPRO_DG_QUEUE), true) : [];
     if (!is_array($q)) $q = [];
     $q[] = ['ts' => time(), 'type' => (string)$type, 'sev' => (string)($meta['severity'] ?? ''), 'subject' => (string)$subject, 'body' => mb_substr((string)$body, 0, 600)];

@@ -18,6 +18,7 @@ define('SMPRO_NTF_DIR',   SMPRO_VARLIB . '/notifications');
 define('SMPRO_NTF_CONF',  SMPRO_VARLIB . '/notifications/config.json');
 define('SMPRO_NTF_STATE', SMPRO_VARLIB . '/notifications/state.json');
 define('SMPRO_NTF_LOG',   SMPRO_VARLIB . '/notifications/log.jsonl');
+define('SMPRO_NTF_HELD',  SMPRO_VARLIB . '/notifications/held.jsonl');   // every alert evaluated and NOT sent, with the reason
 
 /** Catalogue of notification types: key => [label, description, severity]. */
 function smpro_ntf_types() {
@@ -402,6 +403,25 @@ function smpro_ntf_log($type, $subject, $channels, $results) {
     // keep the log bounded
     if (@filesize(SMPRO_NTF_LOG) > 512 * 1024) { $lines = @file(SMPRO_NTF_LOG, FILE_IGNORE_NEW_LINES) ?: []; @file_put_contents(SMPRO_NTF_LOG, implode("\n", array_slice($lines, -400)) . "\n", LOCK_EX); }
 }
+/** An alert the engine evaluated and did not send: the daily report lists these next to the ones that went out. */
+function smpro_ntf_held($type, $subject, $why, $sig = '') {
+    @is_dir(SMPRO_NTF_DIR) || @mkdir(SMPRO_NTF_DIR, 0700, true);
+    $row = ['ts' => time(), 'at' => date('c'), 'type' => (string)$type, 'subject' => (string)$subject, 'why' => (string)$why, 'sig' => (string)$sig];
+    @file_put_contents(SMPRO_NTF_HELD, json_encode($row, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+    if (@filesize(SMPRO_NTF_HELD) > 1024 * 1024) { $lines = @file(SMPRO_NTF_HELD, FILE_IGNORE_NEW_LINES) ?: []; @file_put_contents(SMPRO_NTF_HELD, implode("\n", array_slice($lines, -6000)) . "\n", LOCK_EX); }
+}
+function smpro_ntf_held_between($from, $to) {
+    if (!is_file(SMPRO_NTF_HELD)) return [];
+    $out = [];
+    foreach (@file(SMPRO_NTF_HELD, FILE_IGNORE_NEW_LINES) ?: [] as $l) { $j = json_decode($l, true); if (is_array($j) && (int)$j['ts'] >= $from && (int)$j['ts'] <= $to) $out[] = $j; }
+    return $out;
+}
+function smpro_ntf_sent_between($from, $to) {
+    if (!is_file(SMPRO_NTF_LOG)) return [];
+    $out = [];
+    foreach (@file(SMPRO_NTF_LOG, FILE_IGNORE_NEW_LINES) ?: [] as $l) { $j = json_decode($l, true); if (is_array($j) && (int)$j['ts'] >= $from && (int)$j['ts'] <= $to) $out[] = $j; }
+    return $out;
+}
 function smpro_ntf_recent($limit = 40) {
     if (!is_file(SMPRO_NTF_LOG)) return [];
     $lines = []; @exec('tail -n ' . (int)($limit + 20) . ' ' . escapeshellarg(SMPRO_NTF_LOG) . ' 2>/dev/null', $lines);
@@ -681,8 +701,9 @@ function smpro_notify_run_checks($verbose = false) {
         return (string)($d['user'] ?? '') . '|' . $cc . '|' . ($asn !== '' ? $asn : $ip);
     };
     $maybe = function ($type, $sig, $subject, $body, $meta = [], $remindOverride = 0) use (&$st, &$fired, $cfg, $chanSig, $remindSecs, $now) {
-        if (empty($cfg['types'][$type]['on'])) return;
-        if ((int)($cfg['types'][$type]['mute_until'] ?? 0) > $now) return;   // snoozed -> suppress; state is left untouched so it re-evaluates (and fires once if still active) when the snooze expires
+        $isClear = ($sig === 'clear' || strpos($sig, 'clear:') === 0);
+        if (empty($cfg['types'][$type]['on'])) { if (!$isClear && $subject !== '') smpro_ntf_held($type, $subject, 'this alert type is switched off in Notifications', $sig); return; }
+        if ((int)($cfg['types'][$type]['mute_until'] ?? 0) > $now) { if (!$isClear && $subject !== '') smpro_ntf_held($type, $subject, 'snoozed until ' . date('Y-m-d H:i', (int)$cfg['types'][$type]['mute_until']), $sig); return; }   // snoozed -> suppress; state is left untouched so it re-evaluates (and fires once if still active) when the snooze expires
         /*
          * One alert TYPE can be fed by several independent checks (foreign_login: the SSH scan and the
          * cPanel/webmail scan; mem_pressure: the host and the CloudLinux tenants). They used to share ONE state
@@ -699,7 +720,7 @@ function smpro_notify_run_checks($verbose = false) {
         $prev = $st[$slot] ?? ($st[$type] ?? null);   // the legacy shared slot answers once, so the upgrade itself re-sends nothing
         if (is_string($prev)) $prev = ['sig' => $prev, 'ch' => '', 'ts' => 0];   // migrate legacy state
         $ch = $chanSig($type);
-        if ($ch === '') return;                                   // no channel yet -> keep pending, fire when one turns on
+        if ($ch === '') { smpro_ntf_held($type, $subject, 'no channel is enabled for this alert type', $sig); return; }   // no channel yet -> keep pending, fire when one turns on
         $window   = $remindOverride > 0 ? $remindOverride : $remindSecs;
         $sameSig  = $prev && ($prev['sig'] ?? null) === $sig;
         $sameChan = $prev && ($prev['ch']  ?? '')   === $ch;
@@ -708,7 +729,7 @@ function smpro_notify_run_checks($verbose = false) {
         // window. It is sent again the moment its signature changes - a new account, a new address, a new
         // finding for the same account - because the signature is built from exactly those.
         $onlyChanges = !empty($cfg['types'][$type]['only_changes']);
-        if ($sameSig && $sameChan && ($fresh || $onlyChanges)) return;   // unchanged: within the remind window, or muted until it changes
+        if ($sameSig && $sameChan && ($fresh || $onlyChanges)) { smpro_ntf_held($type, $subject, $onlyChanges ? 'unchanged since it was last sent ("only when it changes" is on)' : 'unchanged and still inside the reminder window', $sig); return; }   // unchanged: within the remind window, or muted until it changes
         $st[$slot] = ['sig' => $sig, 'ch' => $ch, 'ts' => $now];
         smpro_ntf_state_save([$slot => $st[$slot]]);   // recorded the moment it is sent: the full save waits for the END of the run, and a run killed before it re-sent every alert next time
         smpro_notify($type, $subject, $body, $meta);
