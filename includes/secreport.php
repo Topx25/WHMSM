@@ -112,14 +112,20 @@ function smpro_sr_collect_access(int $from, int $to, array $allowedCc): array {
                  'cphulk_lock' => $gh ? ['enabled' => !empty($gh['cfg']['enabled']), 'state' => (string)($gh['state'] ?? '')] : null];
 }
 function smpro_sr_collect_attacks(int $from, int $to): array {
-    if (!function_exists('smpro_in_history')) return smpro_sr_nc('intrusion index not loaded');
-    $rows = smpro_in_history($from, 100000); $rows = array_values(array_filter($rows, fn($r) => (int)$r['ts'] <= $to));
-    $total = count($rows); $served = []; $byDom = []; $byAsn = []; $kinds = []; $hours = array_fill(0, 24, 0); $ips = [];
-    foreach ($rows as $r) {
+    if (!function_exists('smpro_in_db')) return smpro_sr_nc('intrusion index not loaded');
+    $db = smpro_in_db(); if (!$db) return smpro_sr_nc('the attack index could not be opened');
+    // read one row at a time: a busy day holds a hundred thousand rows, and all of them at once is more than a CGI's memory
+    try { $st = $db->prepare('SELECT ts, ip, domain, kind, code, rule, uri FROM attacks WHERE ts >= ? AND ts <= ? ORDER BY ts'); $st->execute([$from, $to]); }
+    catch (\Throwable $e) { return smpro_sr_nc('the attack index could not be read: ' . $e->getMessage()); }
+    $total = 0; $served = []; $byDom = []; $kinds = []; $hours = array_fill(0, 24, 0); $ips = [];
+    while (($r = $st->fetch(PDO::FETCH_ASSOC)) !== false) {
+        if (function_exists('smpro_im_is_noise_ip') && smpro_im_is_noise_ip((string)($r['ip'] ?? ''))) continue;   // CF-edge / local rows, as the page hides them
+        $total++;
         $dom = (string)($r['domain'] ?? '') ?: '(no host)'; $code = (string)($r['code'] ?? ''); $kind = (string)($r['kind'] ?? '');
         $byDom[$dom] = $byDom[$dom] ?? ['total' => 0, 'served' => 0, 'ips' => [], 'kinds' => [], 'served_rows' => []];
-        $byDom[$dom]['total']++; $byDom[$dom]['ips'][(string)$r['ip']] = 1; $byDom[$dom]['kinds'][$kind] = ($byDom[$dom]['kinds'][$kind] ?? 0) + 1;
+        $byDom[$dom]['total']++; if (count($byDom[$dom]['ips']) < 5000) $byDom[$dom]['ips'][(string)$r['ip']] = 1; $byDom[$dom]['kinds'][$kind] = ($byDom[$dom]['kinds'][$kind] ?? 0) + 1;
         $kinds[$kind] = ($kinds[$kind] ?? 0) + 1; $ips[(string)$r['ip']] = ($ips[(string)$r['ip']] ?? 0) + 1;
+        if (count($ips) > 20000) { arsort($ips); $ips = array_slice($ips, 0, 5000, true); }   // keep the heavy hitters, not every address
         $hours[(int)date('G', (int)$r['ts'])]++;
         if ($code !== '' && $code[0] === '2') { $byDom[$dom]['served']++; if (count($byDom[$dom]['served_rows']) < 5) $byDom[$dom]['served_rows'][] = ['ts' => (int)$r['ts'], 'ip' => (string)$r['ip'], 'uri' => (string)($r['uri'] ?? ''), 'rule' => (string)($r['rule'] ?? '')]; $served[] = $dom; }
     }
@@ -129,7 +135,8 @@ function smpro_sr_collect_attacks(int $from, int $to): array {
     foreach ($byDom as $d => &$g) { $g['uniq_ips'] = count($g['ips']); unset($g['ips']); arsort($g['kinds']); } unset($g);
     uasort($byDom, fn($a, $b) => ($b['served'] <=> $a['served']) ?: ($b['total'] <=> $a['total']));
     $blocked = 0; if (function_exists('smpro_in_state')) { $st = smpro_in_state(); foreach ((array)($st['autoblocked'] ?? []) as $ip => $v) { $t = is_array($v) ? (int)($v['ts'] ?? $v['at'] ?? 0) : (int)$v; if ($t >= $from && $t <= $to) $blocked++; } }
-    return ['checked' => true, 'total' => $total, 'served' => count($served), 'served_domains' => array_values(array_unique($served)), 'domains' => count($byDom), 'by_domain' => $byDom, 'kinds' => $kinds, 'hours' => $hours, 'top_nets' => array_slice($topNets, 0, 5, true), 'autoblocked' => $blocked];
+    $served = array_values(array_unique($served)); arsort($kinds);
+    return ['checked' => true, 'total' => $total, 'served' => array_sum(array_column($byDom, 'served')), 'served_domains' => $served, 'domains' => count($byDom), 'by_domain' => $byDom, 'kinds' => $kinds, 'hours' => $hours, 'top_nets' => array_slice($topNets, 0, 5, true), 'autoblocked' => $blocked];
 }
 function smpro_sr_collect_malware(int $from, int $to): array {
     $o = ['checked' => true];
@@ -432,7 +439,7 @@ function smpro_sr_run(bool $force = false, int $dayStart = 0): array {
     $cfg = smpro_sr_cfg();
     $now = smpro_sr_now(); $today = $now->format('Ymd'); $mins = (int)$now->format('G') * 60 + (int)$now->format('i');
     if (!$force && (!$cfg['enabled'] || $mins < $cfg['hour'] * 60 + $cfg['minute'] || $cfg['last_day'] === $today)) return ['ok' => false, 'skipped' => 'not due'];
-    @set_time_limit(600);
+    @set_time_limit(600); if ((int)@ini_get('memory_limit') > 0 && (int)@ini_get('memory_limit') < 512) @ini_set('memory_limit', '512M');
     $r = smpro_sr_build($dayStart); smpro_sr_save($r);
     $d = $force ? [] : smpro_sr_deliver($r, $cfg['channels']);
     if (!$force) { $cfg['last_run'] = time(); $cfg['last_day'] = $today; $cfg['last_id'] = $r['id']; smpro_sr_cfg_save($cfg); }

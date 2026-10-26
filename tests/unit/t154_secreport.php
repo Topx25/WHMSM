@@ -65,3 +65,9 @@ has($rc, "if (\$srWhat === 'html' || \$srWhat === 'print') {", 'C4: download and
 has($rc, "header('Location: index.cgi?page=reports-center&sr=print&id=' . \$rep['id']); exit;   // no renderer here: the print view saves as PDF from the browser", 'C5: PDF without a renderer falls back honestly to the print view');
 has($rc, "smpro_require_valid_csrf('secreport');", 'C6: writes need CSRF');
 has($sr, 'Content-Type: multipart/mixed; boundary=', 'C7: email carries the report as an attachment');
+
+// D. beta385: a busy day's attacks are read row by row, never as one array (a hundred thousand rows broke a 128M CGI)
+has($sr, "\$st = \$db->prepare('SELECT ts, ip, domain, kind, code, rule, uri FROM attacks WHERE ts >= ? AND ts <= ? ORDER BY ts'); \$st->execute([\$from, \$to]);", 'D1: one query for the day window');
+has($sr, "while ((\$r = \$st->fetch(PDO::FETCH_ASSOC)) !== false) {", 'D2: ...fetched one row at a time');
+hasnt($sr, "smpro_in_history(\$from, 100000)", 'D3: the whole-day array is gone');
+has($sr, "@ini_set('memory_limit', '512M')", 'D4: headroom for the rest of the build');
