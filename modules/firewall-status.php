@@ -1196,7 +1196,11 @@ if (function_exists('smpro_gw_cfg')):
       every country on earth. What is covered is the doors people sign in and upload through - <b>including the
       panel's own subdomains</b> (cpanel.&hellip;, whm.&hellip;, webmail.&hellip; over 443), which reach the same
       sign-in page through the web server: those are refused in Apache from the same address set.
-      <?php if ($gwUp): ?><?= function_exists('smpro_gw_panel_live') && smpro_gw_panel_live() ? '<span class="ph-badge" style="background:rgba(22,163,74,.12)">panel subdomains covered</span>' : '<span class="ph-badge" style="background:rgba(220,38,38,.12)">panel subdomains NOT covered - re-arm the wall</span>' ?><?php endif; ?>
+      <?php if ($gwUp): ?><?= function_exists('smpro_gw_panel_live') && smpro_gw_panel_live() ? '<span class="ph-badge" style="background:rgba(22,163,74,.12)">panel subdomains covered</span>' : '<span class="ph-badge" style="background:rgba(220,38,38,.12)">panel subdomains NOT covered - re-arm the wall</span>' ?>
+      <?php $gwSz = function_exists('smpro_gw_set_size') ? smpro_gw_set_size() : -1; $gwBuilt = (int)($gwCfg['set_size'] ?? 0); $gwDr = function_exists('smpro_gw_dropped') ? smpro_gw_dropped(60, (array)$gwCfg['countries']) : ['total' => 0, 'allowed' => []]; ?>
+      <span class="ph-badge" style="background:<?= ($gwSz > 0 && ($gwBuilt === 0 || $gwSz >= (int)($gwBuilt * 0.9))) ? 'rgba(22,163,74,.12)' : 'rgba(220,38,38,.12)' ?>">address set: <?= number_format(max(0, $gwSz)) ?> of <?= number_format($gwBuilt) ?> built</span>
+      <span class="ph-badge" style="background:<?= function_exists('smpro_gw_hook_present') && smpro_gw_hook_present() ? 'rgba(22,163,74,.12)' : 'rgba(180,83,9,.14)' ?>">CSF restart hook <?= function_exists('smpro_gw_hook_present') && smpro_gw_hook_present() ? 'installed' : 'missing' ?></span>
+      <span class="ph-badge" style="background:<?= $gwDr['allowed'] ? 'rgba(220,38,38,.12)' : 'rgba(107,114,128,.16)' ?>">refused in the last hour: <?= (int)$gwDr['total'] ?> address(es)<?= $gwDr['allowed'] ? ', <b>' . count($gwDr['allowed']) . ' from allowed countries</b>' : '' ?></span><?php endif; ?>
       <br><br>
       <b style="color:var(--dang)">This can lock you out of your own server &mdash; panel and SSH together.</b>
       So: arming is refused unless your own address is proven to be inside; every address on your allow-list is

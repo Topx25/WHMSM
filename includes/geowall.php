@@ -79,6 +79,7 @@ function smpro_gw_defaults(): array {
         // back by itself - but re-asserting needs an operator address to prove the set still contains, and
         // cron has no browser. The one proven at arm time is the honest answer; nothing else is.
         'armed_from' => '',
+        'set_size'   => 0,    // members the address set had when it was built; the watcher compares the live set with it
     ];
 }
 
@@ -94,6 +95,7 @@ function smpro_gw_cfg(): array {
     $out['last_seen'] = (int)($j['last_seen'] ?? 0);
     $ip = (string)($j['armed_from'] ?? '');
     $out['armed_from'] = filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '';
+    $out['set_size']   = max(0, (int)($j['set_size'] ?? 0));
     return $out;
 }
 
@@ -111,6 +113,7 @@ function smpro_gw_save(array $cfg): bool {
     // widened later, once the operator has seen it let them back in.
     $firstTime = ((string)($c['armed_from'] ?? '') === '');
     $c['deadman_minutes'] = max(5, min($firstTime ? 60 : 10080, (int)$c['deadman_minutes']));
+    $c['set_size'] = max(0, (int)($cfg['set_size'] ?? $c['set_size'] ?? 0));
     @is_dir(SMPRO_VARLIB) || @mkdir(SMPRO_VARLIB, 0700, true);
     $t = SMPRO_GW_CFG . '.tmp';
     if (@file_put_contents($t, json_encode($c, JSON_UNESCAPED_SLASHES), LOCK_EX) === false) return false;
@@ -208,11 +211,92 @@ function smpro_gw_arm_check(array $cfg, string $myIp): array {
     if ($myIp === '' || !filter_var($myIp, FILTER_VALIDATE_IP)) {
         $p[] = 'Your own address could not be determined, so it cannot be proven to survive this rule.';
     } else {
-        $ranges = smpro_gw_ranges($ccs);
-        $ok = in_array($myIp, smpro_gw_always($myIp), true) || smpro_gw_ip_in($myIp, $ranges);
+        $ranges = smpro_gw_ranges($ccs); $always = smpro_gw_always($myIp);
+        $ok = in_array($myIp, $always, true) || smpro_gw_ip_in($myIp, $ranges);
         if (!$ok) $p[] = 'Your address (' . $myIp . ') is not inside the allowed countries. Arming would lock you out of SSH and the panel at the same time.';
+        // csf.allow is honoured by CSF BEFORE this wall's rules and survives a CSF restart; the wall's own set does
+        // not. The operator's address must be there, or a firewall restart can shut the operator out.
+        $inAllow = false;
+        foreach ((array)@file('/etc/csf/csf.allow', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) { $line = trim((string)$line); if ($line === '' || $line[0] === '#') continue; if (preg_split('/[\s#]+/', $line)[0] === $myIp) { $inAllow = true; break; } }
+        if (!$inAllow) $p[] = 'Your address (' . $myIp . ') is not in csf.allow. Add it first (Firewall > Allow my IP): csf.allow is honoured before this wall and survives a firewall restart; the wall\'s own set does not.';
+        $unc = smpro_gw_uncovered_logins($ccs, $ranges, $always);
+        if ($unc) { $lst = []; foreach (array_slice($unc, 0, 5, true) as $ip => $cc) $lst[] = $ip . ' (' . $cc . ')'; $p[] = 'The firewall\'s range list is incomplete: ' . count($unc) . ' address(es) that signed in from an allowed country in the last 7 days would be refused - ' . implode(', ', $lst) . (count($unc) > 5 ? ', ...' : '') . '. Refresh the firewall\'s country data (csf -r) and try again.'; }
     }
     return ['ok' => !$p, 'problems' => $p];
+}
+
+/** Members the live set holds right now (0 = empty or missing). */
+function smpro_gw_set_size(): int { return (int)trim((string)@shell_exec('ipset list ' . escapeshellarg(SMPRO_GW_SET) . ' 2>/dev/null | grep -c ^[0-9]')); }
+/** The LOG rule that sits just above the drop: what the wall refused, rate-limited, read back by the watcher. */
+function smpro_gw_log_args(array $ports): string {
+    return '-p tcp -m multiport --dports ' . implode(',', $ports) . ' -m conntrack --ctstate NEW -m set ! --match-set ' . SMPRO_GW_SET . ' src'
+         . ' -m limit --limit 30/min --limit-burst 60 -m comment --comment ' . SMPRO_GW_MARK . '_LOG -j LOG --log-prefix "SMPRO_GEOWALL_DROP: " --log-level 4';
+}
+/**
+ * The addresses the wall refused in the last $minutes, with what THIS product's own geo database says about each.
+ * Read from the kernel log (the LOG rule above). Pure over the lines; the lookup is local.
+ * @return array{total:int, allowed:array<string,string>}  allowed = ip => country, for countries the wall is supposed to let in
+ */
+function smpro_gw_dropped(int $minutes, array $ccs, ?string $raw = null): array {
+    if ($raw === null) {
+        $raw = (string)@shell_exec('timeout 20 journalctl -k --since ' . escapeshellarg('-' . max(1, $minutes) . 'min') . ' --no-pager 2>/dev/null | grep -a SMPRO_GEOWALL_DROP');
+        if (trim($raw) === '' && @is_readable('/var/log/messages')) $raw = (string)@shell_exec('timeout 20 tail -n 20000 /var/log/messages 2>/dev/null | grep -a SMPRO_GEOWALL_DROP');
+    }
+    $seen = []; foreach (explode("\n", $raw) as $l) if (preg_match('/SRC=(\d{1,3}(?:\.\d{1,3}){3})/', $l, $m)) $seen[$m[1]] = 1;
+    $out = ['total' => count($seen), 'allowed' => []];
+    $ccs = array_map('strtoupper', $ccs);
+    foreach (array_keys($seen) as $ip) {
+        $cc = function_exists('smpro_gl_country') ? strtoupper((string)smpro_gl_country($ip)) : '';
+        if ($cc !== '' && in_array($cc, $ccs, true)) $out['allowed'][$ip] = $cc;
+    }
+    return $out;
+}
+/**
+ * The CSF post-start hook: CSF flushes every ipset when it restarts (LF_IPSET), ours included, while the iptables
+ * rules that point at the set stay - an empty set behind "drop what is not in the set" drops everyone. Seen on a
+ * production server: an overnight LFD restart emptied the set and every customer outside csf.allow lost mail and
+ * the panel until a person noticed. The hook re-asserts the wall the moment CSF has finished, and the watcher
+ * below is the second line.
+ */
+function smpro_gw_hook_install(): bool {
+    if (defined('SMPRO_TEST_SRC')) return true;
+    if (!is_dir('/etc/csf')) return false;
+    $f = is_file('/usr/local/csf/bin/csfpost.sh') ? '/usr/local/csf/bin/csfpost.sh' : '/etc/csf/csfpost.sh';
+    $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : '/usr/local/cpanel/3rdparty/bin/php';
+    $tag = '# ' . SMPRO_GW_MARK . ' re-assert';
+    $block = $tag . " (Safety Monitor Pro): CSF emptied every ipset on restart; put the country wall's set back now, not at the next tick\n"
+           . "timeout 90 $php " . SMPRO_BASE . "/bin/geowall_tick.php >/dev/null 2>&1 || true\n";
+    $cur = @is_file($f) ? (string)@file_get_contents($f) : "#!/usr/bin/env bash\n";
+    $lines = explode("\n", $cur); $out = []; $i = 0; $had = false;
+    while ($i < count($lines)) { if (strpos($lines[$i], $tag) === 0) { $had = true; $i += 2; continue; } $out[] = $lines[$i]; $i++; }
+    if ($had && isset($lines[1]) && strpos($lines[1], $tag) === 0) return true;
+    $first = ($out && strpos($out[0], '#!') === 0) ? array_shift($out) : '#!/usr/bin/env bash';
+    $new = $first . "\n" . trim($block) . "\n" . ltrim(implode("\n", $out), "\n");
+    if (@file_put_contents($f, rtrim($new, "\n") . "\n", LOCK_EX) === false) return false;
+    @chmod($f, 0700);
+    return true;
+}
+function smpro_gw_hook_present(): bool {
+    foreach (['/usr/local/csf/bin/csfpost.sh', '/etc/csf/csfpost.sh'] as $f) if (@is_file($f) && strpos((string)@file_get_contents($f), '# ' . SMPRO_GW_MARK . ' re-assert') !== false) return true;
+    return false;
+}
+/**
+ * Would this address set shut out people who signed in from an allowed country lately? The list of ranges comes
+ * from the firewall's country data; when it is incomplete for a country (a whole ISP block missing) the only honest
+ * test is against addresses that REALLY signed in from there. Returns the uncovered ones (ip => country).
+ */
+function smpro_gw_uncovered_logins(array $ccs, array $ranges, array $always, int $days = 7): array {
+    if (!function_exists('smpro_lf_success')) { $lf = __DIR__ . '/loginfeed.php'; if (@is_file($lf)) require_once $lf; }
+    if (!function_exists('smpro_lf_success') || !function_exists('smpro_gl_country')) return [];
+    $ccs = array_map('strtoupper', $ccs); $out = [];
+    foreach ((array)(smpro_lf_success(time() - $days * 86400, 40000)['events'] ?? []) as $e) {
+        $ip = (string)($e['ip'] ?? ''); if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || isset($out[$ip])) continue;
+        if ($ip === '127.0.0.1') continue;
+        $cc = strtoupper((string)smpro_gl_country($ip)); if ($cc === '' || !in_array($cc, $ccs, true)) continue;
+        if (in_array($ip, $always, true) || smpro_gw_ip_in($ip, $ranges)) continue;
+        $out[$ip] = $cc;
+    }
+    return $out;
 }
 
 /** Is an address inside any of these CIDRs? Plain IPv4 arithmetic - no shelling out for a membership test. */
@@ -359,6 +443,7 @@ function smpro_gw_apply(array $cfg, string $myIp, bool $dry = false): array {
     @shell_exec('ipset create ' . escapeshellarg(SMPRO_GW_SET) . ' hash:net family inet maxelem 262144 2>/dev/null');
     @shell_exec('ipset swap ' . escapeshellarg($tmpSet) . ' ' . escapeshellarg(SMPRO_GW_SET) . ' 2>/dev/null');
     @shell_exec('ipset destroy ' . escapeshellarg($tmpSet) . ' 2>/dev/null');
+    $keepN = smpro_gw_cfg(); $keepN['set_size'] = $n; smpro_gw_save($keepN);   // what the watcher compares the live set with
 
     // Record the address this was proven from, so the reboot re-assert has something true to check against.
     if (empty($cfg['armed_from']) || $cfg['armed_from'] !== $myIp) {
@@ -368,6 +453,7 @@ function smpro_gw_apply(array $cfg, string $myIp, bool $dry = false): array {
     // Inserted at position 1 in reverse order, so they end up ABOVE the drop in the order written here: allow
     // established, allow loopback, then drop the rest. Getting this order wrong is what cut live sessions.
     @shell_exec('timeout 10 iptables -I INPUT 1 ' . smpro_gw_rule_args($ports) . ' 2>/dev/null');
+    @shell_exec('timeout 10 iptables -I INPUT 1 ' . smpro_gw_log_args($ports) . ' 2>/dev/null');   // above the drop: what was refused, for the watcher
     foreach (array_reverse(smpro_gw_pre_rules($ports)) as $pre) {
         @shell_exec('timeout 10 iptables -I INPUT 1 ' . $pre . ' 2>/dev/null');
     }
@@ -379,6 +465,7 @@ function smpro_gw_apply(array $cfg, string $myIp, bool $dry = false): array {
     $r['msg'] = $live
         ? ('Up: ' . $n . ' range(s) may reach ' . count($ports) . ' login port(s); everything else is dropped there. Web ports untouched; ' . ($panel['ok'] ? 'the panel subdomains (cpanel./whm./webmail. over 443) are covered too - ' . $panel['msg'] : 'the panel subdomains are NOT covered: ' . $panel['msg']) . '.')
         : 'The rule did not appear in iptables. Nothing is enforcing.';
+    if ($live) smpro_gw_hook_install();
     smpro_gw_record($live ? 'applied' : 'apply_failed', $r['msg']);
     return $r;
 }
@@ -488,6 +575,38 @@ function smpro_gw_deadman(): array {
         if (smpro_gw_live()) { smpro_gw_remove(); return ['ok' => true, 'action' => 'removed', 'why' => 'the wall is switched off']; }
         return ['ok' => true, 'action' => 'none', 'why' => 'off'];
     }
+    if (smpro_gw_live()) {
+        // 1. The set must be whole. CSF flushes every ipset on restart while the rules stay: an empty set behind
+        //    "drop what is not in the set" drops everyone. Lift the rules at once, rebuild, and only then enforce.
+        $size = smpro_gw_set_size(); $built = (int)$cfg['set_size'];
+        if ($size === 0 || ($built > 0 && $size < (int)($built * 0.9))) {
+            smpro_gw_remove(true);
+            smpro_gw_record('set_lost', 'the address set held ' . $size . ' of ' . $built . ' members - rules lifted, rebuilding');
+            $r = smpro_gw_apply($cfg, '', false);
+            if (empty($r['ok'])) {
+                $cfg['enabled'] = false; smpro_gw_save($cfg);
+                smpro_gw_record('set_lost_down', 'the set could not be rebuilt (' . (string)($r['msg'] ?? '') . ') - the wall stays down');
+                if (function_exists('smpro_notify')) @smpro_notify('geowall_deadman', 'Country wall taken down: its address set was emptied',
+                    'A firewall restart emptied the country wall\'s address set while its rules were still up, which refuses everyone. The rules were lifted at once; the set could not be rebuilt (' . (string)($r['msg'] ?? '') . '), so the wall stays down. Open Firewall and arm it again.');
+                return ['ok' => true, 'action' => 'removed', 'why' => 'set lost and not rebuilt'];
+            }
+            if (function_exists('smpro_notify')) @smpro_notify('geowall_deadman', 'Country wall: address set rebuilt after a firewall restart',
+                'The country wall\'s address set had been emptied (a firewall restart does that) while its rules were up. The rules were lifted within the watcher\'s minute and the set was rebuilt (' . (int)($r['ranges'] ?? 0) . ' ranges + ' . (int)($r['always'] ?? 0) . ' always-allowed). Nothing to do; this is the record.', ['severity' => 'info']);
+            return ['ok' => true, 'action' => 'rebuilt', 'why' => 'set lost and rebuilt'];
+        }
+        // 2. The wall must not be hurting people it is meant to let in. The product's own geo database is the judge:
+        //    refused addresses it places in an allowed country mean the firewall's range list is incomplete.
+        $d = smpro_gw_dropped(10, (array)$cfg['countries']);
+        if (count($d['allowed']) >= 3) {
+            smpro_gw_remove(true);
+            $cfg['enabled'] = false; smpro_gw_save($cfg);
+            $lst = []; foreach (array_slice($d['allowed'], 0, 8, true) as $ip => $cc) $lst[] = $ip . ' (' . $cc . ')';
+            smpro_gw_record('hurting', count($d['allowed']) . ' address(es) from allowed countries were refused in 10 minutes - the wall took itself down: ' . implode(', ', $lst));
+            if (function_exists('smpro_notify')) @smpro_notify('geowall_deadman', 'Country wall taken down: it was refusing allowed-country users',
+                'In the last ten minutes the wall refused ' . count($d['allowed']) . ' address(es) that this server\'s own geo database places in an allowed country: ' . implode(', ', $lst) . '. That means the firewall\'s country range list is incomplete for those countries. The wall took itself down so customers are not shut out. Refresh the firewall\'s country data (csf -r), then arm it again - arming now checks recent sign-ins against the list first.', ['severity' => 'critical']);
+            return ['ok' => true, 'action' => 'removed', 'why' => 'refusing allowed-country users'];
+        }
+    }
     // Before judging silence, read cPanel's own record of WHM sign-ins from outside: that is the operator reaching
     // the panel, whether or not this product's pages were open.
     $proof = smpro_gw_reachability_proof((int)$cfg['last_seen']);
@@ -537,6 +656,7 @@ function smpro_gw_cron_sync(): bool {
     if (empty($cfg['enabled'])) { if (@is_file($f)) @unlink($f); return true; }
     $bin = SMPRO_BASE . '/bin/geowall_tick.php';
     if (!@is_file($bin)) return false;
+    smpro_gw_hook_install();
     $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin()
          : (is_executable('/usr/local/cpanel/3rdparty/bin/php') ? '/usr/local/cpanel/3rdparty/bin/php' : 'php');
     $lockDir = defined('SMPRO_LOCKS') ? SMPRO_LOCKS : (SMPRO_VARLIB . '/locks');

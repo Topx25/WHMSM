@@ -79,3 +79,19 @@ has($gw, "function smpro_gw_clean_cc(array \$in): array {", 'G2: ...and has one 
 hasnt($gw, "function_exists('smpro_gl_clean_cc') ? smpro_gl_clean_cc((array)(\$j['countries'] ?? [])) : []", 'G3: the read never degrades to an empty list');
 hasnt($gw, "function_exists('smpro_gl_clean_cc') ? smpro_gl_clean_cc((array)(\$c['countries'] ?? [])) : []", 'G4: nor the write');
 
+// H. beta381: the wall heals itself - an emptied set lifts the rules, a CSF restart re-asserts, refused allowed-country
+//    users take it down, and arming checks recent sign-ins against the list
+$gw = $shipped[SMPRO_BASE . '/includes/geowall.php'];
+has($gw, "'set_size'   => 0,", 'H1: the built size is remembered');
+has($gw, "if (\$size === 0 || (\$built > 0 && \$size < (int)(\$built * 0.9))) {", 'H2: the watcher compares the live set with it');
+has($gw, "smpro_gw_remove(true);\n            smpro_gw_record('set_lost',", 'H3: ...and lifts the rules BEFORE rebuilding');
+has($gw, "-j LOG --log-prefix \"SMPRO_GEOWALL_DROP: \"", 'H4: a LOG rule above the drop');
+has($gw, "if (count(\$d['allowed']) >= 3) {", 'H5: three refused allowed-country addresses in ten minutes take the wall down');
+has($gw, "function smpro_gw_hook_install(): bool {", 'H6: the CSF post-start hook');
+has($gw, "if (!\$inAllow) \$p[] = 'Your address (' . \$myIp . ') is not in csf.allow.", 'H7: arming needs the operator in csf.allow');
+has($gw, "\$unc = smpro_gw_uncovered_logins(\$ccs, \$ranges, \$always);", 'H8: arming checks recent allowed-country sign-ins against the list');
+if (!function_exists('smpro_gw_dropped')) { require_once SMPRO_BASE . '/includes/geowall.php'; }
+$raw = "Oct 26 01:02:03 host kernel: SMPRO_GEOWALL_DROP: IN=eth0 SRC=203.0.113.5 DST=10.0.0.1 PROTO=TCP DPT=2083\nOct 26 01:02:04 host kernel: SMPRO_GEOWALL_DROP: IN=eth0 SRC=203.0.113.5 DST=10.0.0.1 PROTO=TCP DPT=22\nOct 26 01:02:05 host kernel: SMPRO_GEOWALL_DROP: IN=eth0 SRC=198.51.100.9 DST=10.0.0.1 PROTO=TCP DPT=993\n";
+$d = smpro_gw_dropped(10, ['EG'], $raw);
+is_eq($d['total'], 2, 'H9: refused addresses are counted once each');
+
