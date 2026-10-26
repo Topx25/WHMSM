@@ -109,3 +109,12 @@ has($ph, "\$sw = function_exists('smpro_ph_sweep_attrs') ? smpro_ph_sweep_attrs(
 has($ph, "' lock(s) set outside this product removed ('", 'X5: ...and the summary names them');
 has($ph, "' · the sweep for other locks did not finish (deep tree); run again'", 'X6: an unfinished sweep is said, never silent');
 has($ph, "' root-owned item(s) inside the web root (the account cannot edit them; e.g. '", 'X7: root-owned files are reported');
+
+// beta391: an excluded account is kept free unattended; other accounts are never swept here
+$sq = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/spqueue.php'));
+$sqb = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/sp_queue.php'));
+has($sq, "function smpro_spq_keep_free(\$perTick = 3, \$everySeconds = 3600) {", 'Y1: the hourly keep-free pass');
+has($sq, "        if ((\$row['scope'] ?? 'all') !== 'all') continue;", 'Y2: only accounts excluded from ALL protection');
+has($sq, "        \$sw = smpro_ph_sweep_attrs(\$u, 4, 15);", 'Y3: ...are swept with the bounded sweep');
+has($sq, "smpro_ph_audit_log(\$u, 'php_harden_kept_free', \$msg,", 'Y4: ...and what was removed is written to the account log');
+has($sqb, "\$kept = function_exists('smpro_spq_keep_free') ? smpro_spq_keep_free() : 0;", 'Y5: the worker runs it every minute (a few accounts per tick)');

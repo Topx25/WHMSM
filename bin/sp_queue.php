@@ -43,8 +43,9 @@ try {
     $r = smpro_spq_run();
     $relocked = smpro_spq_relock_due();
     $regranted = function_exists('smpro_spq_retry_pending') ? smpro_spq_retry_pending() : 0;   // rules get another look at what waits
-    if (function_exists('smpro_audit') && ((int)($r['handled'] ?? 0) > 0 || $relocked > 0 || $regranted > 0)) {
-        smpro_audit('siteprotection_worker', ['handled' => (int)($r['handled'] ?? 0), 'relocked' => $relocked, 'auto_granted_on_retry' => $regranted]);
+    $kept = function_exists('smpro_spq_keep_free') ? smpro_spq_keep_free() : 0;                 // excluded accounts stay free of anyone's locks
+    if (function_exists('smpro_audit') && ((int)($r['handled'] ?? 0) > 0 || $relocked > 0 || $regranted > 0 || $kept > 0)) {
+        smpro_audit('siteprotection_worker', ['handled' => (int)($r['handled'] ?? 0), 'relocked' => $relocked, 'auto_granted_on_retry' => $regranted, 'kept_free' => $kept]);
     }
 } catch (\Throwable $e) {
     if (function_exists('smpro_audit')) smpro_audit('siteprotection_worker', ['ok' => 0, 'why' => $e->getMessage()]);

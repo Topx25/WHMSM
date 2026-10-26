@@ -768,7 +768,7 @@ if ($igNow): ?>
       Added by <b><?= smpro_h($igNow['by'] !== '' ? $igNow['by'] : 'unknown') ?></b>
       <?= $igNow['at'] !== '' ? ' on ' . smpro_h(date('Y-m-d H:i', strtotime($igNow['at']))) : '' ?>.
       <?php if ($igBlocksManual): ?>
-        Protection will not be applied to it — not by an automatic pass, and not from this page.
+        Protection will not be applied to it — not by an automatic pass, and not from this page. Locks that appear on it from elsewhere are removed by the hourly sweep and listed in Activity.
       <?php else: ?>
         Automatic passes skip it; you can still apply protection here deliberately.
       <?php endif; ?>

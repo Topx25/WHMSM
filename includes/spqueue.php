@@ -543,6 +543,36 @@ function smpro_spq_relock_due() {
 }
 
 /** Keep the worker scheduled, the same way every other background job here is kept scheduled. */
+/**
+ * Keep an EXCLUDED account free, unattended. An entry on the ignore list with scope 'all' is the operator saying
+ * "this account is never protected". A lock that appears there afterwards - another product's lockdown, a stale
+ * flag on a folder - contradicts that decision and shows up as "permission denied" on the account's own file. The
+ * worker sweeps such accounts once an hour (a few per minute, so the tick stays light) and removes what it finds,
+ * writing the account's PHP Harden log so the operator can see what was removed and when. Accounts not on the
+ * list are never touched here: another product may be protecting them on purpose.
+ */
+function smpro_spq_keep_free_path() { return SMPRO_VARLIB . '/php_harden/keep_free.json'; }
+function smpro_spq_keep_free($perTick = 3, $everySeconds = 3600) {
+    if (!function_exists('smpro_ph_ign_all') || !function_exists('smpro_ph_sweep_attrs')) return 0;
+    $st = json_decode((string)@file_get_contents(smpro_spq_keep_free_path()), true); $st = is_array($st) ? $st : [];
+    $now = time(); $done = 0; $removed = 0;
+    foreach (smpro_ph_ign_all() as $u => $row) {
+        if (($row['scope'] ?? 'all') !== 'all') continue;
+        if ((int)($st[$u] ?? 0) > $now - $everySeconds) continue;
+        if ($done++ >= $perTick) break;
+        $st[$u] = $now;
+        $sw = smpro_ph_sweep_attrs($u, 4, 15);
+        if ($sw['cleared']) {
+            $removed += count($sw['cleared']);
+            $msg = 'Kept free — ' . count($sw['cleared']) . ' lock(s) set outside this product removed from an excluded account (' . implode(', ', array_map('basename', array_slice($sw['cleared'], 0, 3))) . (count($sw['cleared']) > 3 ? ', ...' : '') . ')' . ($sw['failed'] ? ' · ' . count($sw['failed']) . ' could NOT be cleared' : '') . (!$sw['complete'] ? ' · the sweep did not finish (deep tree)' : '');
+            if (function_exists('smpro_ph_audit_log')) smpro_ph_audit_log($u, 'php_harden_kept_free', $msg, ['cleared' => array_slice($sw['cleared'], 0, 50), 'failed' => array_slice(array_keys($sw['failed']), 0, 20)]);
+            elseif (defined('SMPRO_VARLIB')) { @is_dir(SMPRO_VARLIB . '/php_harden') || @mkdir(SMPRO_VARLIB . '/php_harden', 0700, true); @file_put_contents(SMPRO_VARLIB . '/php_harden/audit.log', json_encode(['time' => date('c'), 'user' => $u, 'action' => 'php_harden_kept_free', 'message' => $msg, 'extra' => ['cleared' => array_slice($sw['cleared'], 0, 50)]], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX); }
+            if (function_exists('smpro_audit')) smpro_audit('php_harden_kept_free', ['user' => $u, 'cleared' => count($sw['cleared']), 'failed' => count($sw['failed'])]);
+        }
+    }
+    if ($done) { @is_dir(dirname(smpro_spq_keep_free_path())) || @mkdir(dirname(smpro_spq_keep_free_path()), 0700, true); @file_put_contents(smpro_spq_keep_free_path(), json_encode($st), LOCK_EX); }
+    return $removed;
+}
 function smpro_spq_cron_sync() {
     // A test must never install a live cron. The shared writer refuses too, but a test that loads only
     // this file has no shared writer to refuse - function_exists() is false and the fallback writes
