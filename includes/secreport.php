@@ -32,6 +32,12 @@ function smpro_sr_cfg_save(array $c): void { smpro_sr_dir(); $t = SMPRO_SR_CFG .
 
 /* ---------------- small readers (each says when it could not look) ---------------- */
 function smpro_sr_nc(string $why): array { return ['checked' => false, 'why' => $why]; }
+/** The engines the report reads; the panel loads most of them, the cron tick and a CLI load none, so each is asked for by name. */
+function smpro_sr_need(): void {
+    foreach (['mmdb', 'netkind', 'geologin', 'loginfeed', 'breakin', 'intrusion', 'learn', 'lvelimits', 'sysupd', 'geoset', 'geowall', 'geohulk', 'trustfeed', 'botguard', 'crawlers', 'integrity', 'notify', 'digest'] as $m) {
+        $f = __DIR__ . '/' . $m . '.php'; if (is_file($f)) require_once $f;
+    }
+}
 function smpro_sr_userdomains(): array {
     static $m = null; if ($m !== null) return $m;
     $m = [];
@@ -73,7 +79,7 @@ function smpro_sr_collect_alerts(int $from, int $to): array {
     return ['sent' => ['checked' => true, 'rows' => $sent, 'by_channel' => $chan], 'held' => ['checked' => true, 'rows' => $held]];
 }
 function smpro_sr_collect_access(int $from, int $to, array $allowedCc): array {
-    $o = ['checked' => false];
+    $o = [];
     if (!function_exists('smpro_lf_success')) { $lf = __DIR__ . '/loginfeed.php'; if (is_file($lf)) require_once $lf; }
     if (!function_exists('smpro_lf_success')) return smpro_sr_nc('login feed not available');
     $feed = smpro_lf_success($from, 60000, ['password', 'operator', 'api', 'unknown', 'other']);
@@ -261,6 +267,7 @@ function smpro_sr_domain_of_path(string $path): string {
 
 /* ---------------- build / store / render ---------------- */
 function smpro_sr_build(int $dayStart = 0): array {
+    smpro_sr_need();
     $dayStart = $dayStart ?: strtotime('yesterday 00:00:00'); $from = $dayStart; $to = $dayStart + 86399;
     $allowed = function_exists('smpro_gl_cfg') ? array_map('strtoupper', (array)(smpro_gl_cfg()['countries'] ?? [])) : [];
     $r = ['id' => date('Ymd', $from), 'day' => date('Y-m-d', $from), 'from' => $from, 'to' => $to, 'generated' => time(), 'host' => (string)gethostname(), 'version' => defined('SMPRO_VERSION') ? SMPRO_VERSION : '', 'allowed_cc' => $allowed];
