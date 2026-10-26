@@ -117,7 +117,7 @@ function smpro_sr_collect_attacks(int $from, int $to): array {
     // read one row at a time: a busy day holds a hundred thousand rows, and all of them at once is more than a CGI's memory
     try { $st = $db->prepare('SELECT ts, ip, domain, kind, code, rule, uri FROM attacks WHERE ts >= ? AND ts <= ? ORDER BY ts'); $st->execute([$from, $to]); }
     catch (\Throwable $e) { return smpro_sr_nc('the attack index could not be read: ' . $e->getMessage()); }
-    $total = 0; $served = []; $byDom = []; $kinds = []; $hours = array_fill(0, 24, 0); $ips = [];
+    $total = 0; $served = []; $byDom = []; $kinds = []; $hours = array_fill(0, 24, 0); $ips = []; $sens = []; $svcHits = 0;
     while (($r = $st->fetch(PDO::FETCH_ASSOC)) !== false) {
         if (function_exists('smpro_im_is_noise_ip') && smpro_im_is_noise_ip((string)($r['ip'] ?? ''))) continue;   // CF-edge / local rows, as the page hides them
         $total++;
@@ -127,7 +127,10 @@ function smpro_sr_collect_attacks(int $from, int $to): array {
         $kinds[$kind] = ($kinds[$kind] ?? 0) + 1; $ips[(string)$r['ip']] = ($ips[(string)$r['ip']] ?? 0) + 1;
         if (count($ips) > 20000) { arsort($ips); $ips = array_slice($ips, 0, 5000, true); }   // keep the heavy hitters, not every address
         $hours[(int)date('G', (int)$r['ts'])]++;
-        if ($code !== '' && $code[0] === '2') { $byDom[$dom]['served']++; if (count($byDom[$dom]['served_rows']) < 5) $byDom[$dom]['served_rows'][] = ['ts' => (int)$r['ts'], 'ip' => (string)$r['ip'], 'uri' => (string)($r['uri'] ?? ''), 'rule' => (string)($r['rule'] ?? '')]; $served[] = $dom; }
+        $answered = $code !== '' && ($code[0] === '2' || $code[0] === '3');
+        if ($answered && function_exists('smpro_im_service_host') && smpro_im_service_host($dom)) { $svcHits++; continue; }   // a fixed proxy reply, not the file asked for
+        if ($answered && $kind === 'Sensitive File Access') { $k = $dom . '|' . smpro_sr_path_of((string)($r['uri'] ?? '')); if (!isset($sens[$k])) $sens[$k] = ['domain' => $dom, 'path' => smpro_sr_path_of((string)($r['uri'] ?? '')), 'ts' => (int)$r['ts'], 'ip' => (string)$r['ip'], 'n' => 0]; $sens[$k]['n']++; continue; }
+        if ($answered && (!function_exists('smpro_im_served') ? true : smpro_im_served(['code' => $code, 'kind' => $kind, 'domain' => $dom]))) { $byDom[$dom]['served']++; if (count($byDom[$dom]['served_rows']) < 5) $byDom[$dom]['served_rows'][] = ['ts' => (int)$r['ts'], 'ip' => (string)$r['ip'], 'uri' => (string)($r['uri'] ?? ''), 'rule' => (string)($r['rule'] ?? '')]; $served[] = $dom; }
     }
     arsort($ips); $topIps = array_slice($ips, 0, 8, true); $topNets = [];
     foreach ($topIps as $ip => $n) { $in = function_exists('smpro_ip_intel') ? smpro_ip_intel($ip, false) : []; $k = (string)(($in['asn'] ?? '') ?: ($in['provider'] ?? 'unknown')) . ' (' . strtoupper((string)($in['country'] ?? '?')) . ')'; $topNets[$k] = ($topNets[$k] ?? 0) + $n; }
@@ -135,8 +138,33 @@ function smpro_sr_collect_attacks(int $from, int $to): array {
     foreach ($byDom as $d => &$g) { $g['uniq_ips'] = count($g['ips']); unset($g['ips']); arsort($g['kinds']); } unset($g);
     uasort($byDom, fn($a, $b) => ($b['served'] <=> $a['served']) ?: ($b['total'] <=> $a['total']));
     $blocked = 0; if (function_exists('smpro_in_state')) { $st = smpro_in_state(); foreach ((array)($st['autoblocked'] ?? []) as $ip => $v) { $t = is_array($v) ? (int)($v['ts'] ?? $v['at'] ?? 0) : (int)$v; if ($t >= $from && $t <= $to) $blocked++; } }
+    // sensitive-file requests the site answered: ask the site ourselves - did it hand over the file, or just a page?
+    $exposed = []; $pages = 0; $checked = 0;
+    foreach ($sens as $x) {
+        if ($checked >= 40) break; $checked++;
+        $v = smpro_sr_verify_exposure($x['domain'], $x['path']);
+        if ($v['exposed']) { $exposed[] = $x + ['why' => $v['why']]; $byDom[$x['domain']]['served']++; if (count($byDom[$x['domain']]['served_rows']) < 5) $byDom[$x['domain']]['served_rows'][] = ['ts' => $x['ts'], 'ip' => $x['ip'], 'uri' => $x['path'], 'rule' => 'file readable: ' . $v['why']]; $served[] = $x['domain']; }
+        else $pages++;
+    }
     $served = array_values(array_unique($served)); arsort($kinds);
-    return ['checked' => true, 'total' => $total, 'served' => array_sum(array_column($byDom, 'served')), 'served_domains' => $served, 'domains' => count($byDom), 'by_domain' => $byDom, 'kinds' => $kinds, 'hours' => $hours, 'top_nets' => array_slice($topNets, 0, 5, true), 'autoblocked' => $blocked];
+    return ['checked' => true, 'total' => $total, 'served' => array_sum(array_column($byDom, 'served')), 'served_domains' => $served, 'domains' => count($byDom), 'by_domain' => $byDom, 'kinds' => $kinds, 'hours' => $hours, 'top_nets' => array_slice($topNets, 0, 5, true), 'autoblocked' => $blocked, 'service_hits' => $svcHits, 'sensitive_checked' => $checked, 'sensitive_pages' => $pages, 'exposed' => $exposed];
+}
+function smpro_sr_path_of(string $uri): string { $p = (string)parse_url($uri, PHP_URL_PATH); return $p !== '' ? $p : $uri; }
+/**
+ * Re-ask the site for a sensitive path the WAF saw answered 2xx. Exposed = a 200 whose body is not an HTML page
+ * (a real .env / .git file is plain text or binary); anything else means the site answered with a page or an error.
+ */
+function smpro_sr_verify_exposure(string $domain, string $path): array {
+    if (!preg_match('/^[a-z0-9.-]+$/i', $domain) || $path === '' || $path[0] !== '/' || strpos($path, '..') !== false) return ['exposed' => false, 'why' => 'not checked'];
+    if (!function_exists('smpro_http')) return ['exposed' => false, 'why' => 'not checked'];
+    $r = smpro_http('https://' . $domain . $path, ['timeout' => 8, 'headers' => ['User-Agent: Mozilla/5.0 (compatible; Safety Monitor Pro exposure check)'], 'want_headers' => true, 'maxbytes' => 65536]);
+    $code = (int)($r['code'] ?? 0); $body = (string)($r['body'] ?? ''); $hdr = strtolower((string)($r['hdr'] ?? ''));
+    if ($code !== 200) return ['exposed' => false, 'why' => 'answered ' . ($code ?: 'nothing')];
+    $isHtml = strpos($hdr, 'content-type: text/html') !== false || preg_match('/^\s*<(!doctype|html|\?xml)/i', $body);
+    if ($isHtml) return ['exposed' => false, 'why' => 'answered with a page'];
+    if (preg_match('#(^|/)\.env#', $path) && !preg_match('/^[A-Z_]+=.*$/m', $body)) return ['exposed' => false, 'why' => 'answered, not a .env'];
+    if (preg_match('#/\.git/#', $path) && !preg_match('/^(ref: |\[core\]|\x00)/', $body) && strpos($body, 'DIRC') !== 0) return ['exposed' => false, 'why' => 'answered, not a git file'];
+    return ['exposed' => true, 'why' => strlen($body) . ' bytes of ' . (preg_match('#\.env#', $path) ? 'environment variables' : 'the file')];
 }
 function smpro_sr_collect_malware(int $from, int $to): array {
     $o = ['checked' => true];
@@ -236,6 +264,7 @@ function smpro_sr_score(array $r): array {
 function smpro_sr_recommend(array $r): array {
     $out = [];
     $at = $r['attacks']; $ac = $r['access']; $mw = $r['malware']; $up = $r['updates']; $rs = $r['resources']; $cr = $r['crawlers']; $al = $r['alerts'];
+    if (!empty($at['exposed'])) { $x = $at['exposed'][0]; $out[] = ['p' => 'high', 'title' => 'A secret file is readable from the web: ' . $x['domain'] . $x['path'], 'why' => 'The report asked the site itself and got ' . $x['why'] . '; database passwords and keys in it must be treated as stolen.', 'how' => 'Deny the file in .htaccess (or move it above the web root), then rotate every secret it holds.']; }
     if (!empty($at['checked'])) foreach ($at['by_domain'] as $d => $g) if ($g['served'] > 0) { $x = $g['served_rows'][0] ?? null; $out[] = ['p' => 'high', 'title' => 'Review the ' . $g['served'] . ' exploit request(s) served 2xx on ' . $d, 'why' => 'A served exploit is the one event that can mean a foothold' . ($x ? ' (first at ' . date('H:i', $x['ts']) . ' from ' . $x['ip'] . ')' : '') . '.', 'how' => 'Open Forensics / Audit for ' . $d . ' at that minute, compare the changed files with the last clean copy, quarantine what changed.']; break; }
     if (!empty($mw['imunify']['checked']) && $mw['imunify']['active'] > 0) $out[] = ['p' => 'high', 'title' => 'Clean the ' . $mw['imunify']['active'] . ' active malicious file(s)', 'why' => 'Imunify360 still lists them on disk.', 'how' => 'Imunify360 Reports > Clean / Delete, or let the product hand them to Imunify cleanup.'];
     if (!empty($mw['learn']['checked']) && $mw['learn']['hidden_procs'] > 0) $out[] = ['p' => 'high', 'title' => 'Stop the ' . $mw['learn']['hidden_procs'] . ' hidden process(es)', 'why' => 'A program running from memory or under a false name is what a file scan cannot see.', 'how' => 'Learned Defense > Processes > Stop; what it was is kept as evidence.'];
@@ -300,7 +329,7 @@ function smpro_sr_build(int $dayStart = 0): array {
 function smpro_sr_summary(array $r): string {
     $at = $r['attacks']; $ac = $r['access']; $mw = $r['malware']; $al = $r['alerts']; $up = $r['updates'];
     $p = [];
-    if (!empty($at['checked'])) { $p[] = 'The server saw ' . number_format($at['total']) . ' attack request' . ($at['total'] === 1 ? '' : 's') . ' across ' . $at['domains'] . ' domain' . ($at['domains'] === 1 ? '' : 's') . ($at['served'] ? '; ' . $at['served'] . ' of them were SERVED a 2xx on ' . implode(', ', array_slice($at['served_domains'], 0, 3)) . ' and are the first thing to look at' : '; none was served, the WAF refused them all') . '.'; } else $p[] = 'The attack index could not be read (' . $at['why'] . ').';
+    if (!empty($at['checked'])) { $p[] = 'The server saw ' . number_format($at['total']) . ' attack request' . ($at['total'] === 1 ? '' : 's') . ' across ' . $at['domains'] . ' domain' . ($at['domains'] === 1 ? '' : 's') . ($at['served'] ? '; ' . $at['served'] . ' of them were SERVED a 2xx on ' . implode(', ', array_slice($at['served_domains'], 0, 3)) . ' and are the first thing to look at' : '; none was served, the WAF refused them all') . '.' . (!empty($at['sensitive_checked']) ? ' ' . (int)$at['sensitive_checked'] . ' request(s) for secret files (.env, .git, backups) got a 200: the report asked the sites itself - ' . (count($at['exposed']) ? count($at['exposed']) . ' REALLY handed the file over' : 'every one answered with a page, nothing was handed over') . '.' : '') . (!empty($at['service_hits']) ? ' ' . number_format($at['service_hits']) . ' probe(s) hit the panel\'s mail-setup hosts and got its fixed XML, which is not a served exploit.' : ''); } else $p[] = 'The attack index could not be read (' . $at['why'] . ').';
     if (!empty($ac['checked'])) { $n = count($ac['foreign']); $p[] = number_format($ac['ok']) . ' successful sign-ins; ' . ($n ? $n . ' from outside the allowed countries (' . implode(', ', array_unique(array_map(fn($f) => $f['user'] . ' from ' . $f['cc'], $ac['foreign']))) . ')' : 'all from allowed countries') . '.' . ($ac['failed'] !== null ? ' ' . number_format($ac['failed']) . ' failed attempts from ' . (int)($ac['bruteforce']['addresses'] ?? 0) . ' addresses.' : ''); } else $p[] = 'Sign-ins could not be read (' . $ac['why'] . ').';
     if (!empty($mw['imunify']['checked'])) $p[] = ($mw['imunify']['active'] ? $mw['imunify']['active'] . ' malicious file(s) are still active' : 'No active malware') . ($mw['learn']['checked'] ?? false ? '; Learned Defense holds ' . $mw['learn']['store_held'] . ' file(s) in the store (' . $mw['learn']['store_malicious'] . ' judged malicious) and has ' . $mw['learn']['findings'] . ' finding(s) awaiting a decision' : '') . '.';
     if (!empty($al['sent']['checked'])) { $hn = count($al['held']['rows'] ?? []); $p[] = count($al['sent']['rows']) . ' alert(s) went out (' . (implode(', ', array_map(fn($k, $v) => "$k $v", array_keys($al['sent']['by_channel']), $al['sent']['by_channel'])) ?: 'no channel') . ')' . ($hn ? '; ' . $hn . ' were evaluated and not sent - the reasons are in section 3' : '') . '.'; }
@@ -356,7 +385,10 @@ function smpro_sr_render_html(array $r, bool $full = true, bool $embed = false):
     $o .= '</div></div><div class="sec"><h2>5 · Web attacks and WAF</h2><div class="body">';
     if (empty($at['checked'])) $o .= '<div class="nc">not checked: ' . $h($at['why']) . '</div>';
     else { $mx = max(1, max($at['hours'])); $o .= '<div class="spark">'; for ($i = 0; $i < 24; $i += 2) { $v = $at['hours'][$i] + $at['hours'][$i + 1]; $o .= '<i style="height:' . max(3, round($v / max(1, $mx * 2) * 100)) . '%" title="' . $i . ':00 ' . $v . '"></i>'; } $o .= '</div><div class="small" style="margin:4px 0 10px">attack requests per 2-hour slot</div>';
-        $o .= '<table><tbody><tr><td>Attack requests</td><td class="num">' . number_format($at['total']) . '</td></tr><tr><td>Served 2xx (possible success)</td><td class="num">' . ($at['served'] ? '<span class="pill dang">' . $at['served'] . '</span> ' . $h(implode(', ', array_slice($at['served_domains'], 0, 3))) : '0') . '</td></tr><tr><td>Domains touched</td><td class="num">' . (int)$at['domains'] . '</td></tr><tr><td>Top attacking networks</td><td class="num small">' . $h(implode(' · ', array_map(fn($k, $v) => "$k $v", array_keys($at['top_nets']), $at['top_nets']))) . '</td></tr><tr><td>Kinds</td><td class="num small">' . $h(implode(' · ', array_map(fn($k, $v) => "$k $v", array_keys(array_slice($at['kinds'], 0, 5, true)), array_slice($at['kinds'], 0, 5, true)))) . '</td></tr><tr><td>Attacker addresses auto-blocked today</td><td class="num">' . (int)$at['autoblocked'] . '</td></tr></tbody></table>'; }
+        $o .= '<table><tbody><tr><td>Attack requests</td><td class="num">' . number_format($at['total']) . '</td></tr><tr><td>Served 2xx (possible success)</td><td class="num">' . ($at['served'] ? '<span class="pill dang">' . $at['served'] . '</span> ' . $h(implode(', ', array_slice($at['served_domains'], 0, 3))) : '0') . '</td></tr><tr><td>Domains touched</td><td class="num">' . (int)$at['domains'] . '</td></tr><tr><td>Top attacking networks</td><td class="num small">' . $h(implode(' · ', array_map(fn($k, $v) => "$k $v", array_keys($at['top_nets']), $at['top_nets']))) . '</td></tr><tr><td>Kinds</td><td class="num small">' . $h(implode(' · ', array_map(fn($k, $v) => "$k $v", array_keys(array_slice($at['kinds'], 0, 5, true)), array_slice($at['kinds'], 0, 5, true)))) . '</td></tr><tr><td>Attacker addresses auto-blocked today</td><td class="num">' . (int)$at['autoblocked'] . '</td></tr>'
+            . '<tr><td>Secret-file requests answered 200, re-checked by the report</td><td class="num">' . (int)($at['sensitive_checked'] ?? 0) . ' · ' . (count($at['exposed'] ?? []) ? '<span class="pill dang">' . count($at['exposed']) . ' really exposed</span>' : '<span class="pill good">none handed the file over</span>') . '</td></tr>'
+            . '<tr><td>Probes answered by the panel\'s mail-setup hosts (fixed XML, not an exploit)</td><td class="num">' . number_format((int)($at['service_hits'] ?? 0)) . '</td></tr></tbody></table>';
+        if (!empty($at['exposed'])) { $o .= '<table style="margin-top:10px"><thead><tr><th>Domain</th><th>File</th><th>What came back</th><th>First asked</th></tr></thead><tbody>'; foreach ($at['exposed'] as $x) $o .= '<tr><td class="mono">' . $h($x['domain']) . '</td><td class="mono">' . $h($x['path']) . '</td><td><span class="pill dang">' . $h($x['why']) . '</span></td><td class="mono">' . $ago($x['ts']) . ' from ' . $h($x['ip']) . '</td></tr>'; $o .= '</tbody></table>'; } }
     $o .= '</div></div></div>';
     // 6 + 7
     $o .= '<div class="two"><div class="sec"><h2>6 · Malware, integrity, Learned Defense</h2><div class="body"><table><tbody>';

@@ -812,6 +812,22 @@ function smpro_im_proxy_real_ip(string $connIp, string $xffName, string $xff): s
 
 
 /** Categories that, when the server answered 200, suggest a possible SUCCESSFUL exploit. */
+/**
+ * A panel service host: cPanel answers autodiscover./autoconfig. (mail client set-up) and the proxy subdomains with a
+ * fixed reply for ANY path - a 200 there handed the attacker a mail-config XML, not the file they asked for.
+ */
+function smpro_im_service_host($domain) {
+    return (bool)preg_match('/^(autodiscover|autoconfig|cpanel|whm|webmail|webdisk|cpcalendars|cpcontacts)\./i', (string)$domain);
+}
+/** Public files every WordPress/CMS ships; a 200 on them tells the scanner what runs there and nothing more. */
+function smpro_im_recon_path($uri) {
+    return (bool)preg_match('#(?:^|/)(?:wp-includes/wlwmanifest\.xml|readme\.html|license\.txt|wp-links-opml\.php|feed/?|robots\.txt|sitemap[^/]*\.xml|wp-json/?|xmlrpc\.php)(?:\?|$)#i', smpro_im_path_of($uri));
+}
+/** "Served" means dangerous: the app answered 2xx/3xx to an exploit-class request on a real site, not a service host's fixed reply. */
+function smpro_im_served($e) {
+    $code = (int)($e['code'] ?? 0);
+    return $code >= 200 && $code < 400 && smpro_im_exploit_kind($e['kind'] ?? '') && !smpro_im_service_host($e['domain'] ?? '');
+}
 function smpro_im_exploit_kind($kind) {
     return in_array($kind, ['SQL Injection','Command Injection / RCE','Remote File Inclusion','Path Traversal / LFI','PHP Injection','Malicious Upload'], true);
 }
@@ -855,7 +871,7 @@ function smpro_im_parse_modsec($bytes, $cap, $fromTs = 0, bool $withMonitor = fa
                 if ($viaProxy !== '' && smpro_ip_is_external($viaProxy)) { $cur['ip'] = $viaProxy; $cur['via_proxy'] = 1; }
             }
             // Drop noise: an unresolved Cloudflare edge IP or any private/local/loopback IP is not a real attacker.
-            if (!smpro_im_is_noise_ip($cur['ip'])) { $cur['kind'] = smpro_im_classify($cur['msg'] . ' ' . $cur['tag']); $cur['monitor'] = smpro_im_is_monitor($cur) ? 1 : 0; $events[] = $cur; }
+            if (!smpro_im_is_noise_ip($cur['ip'])) { $cur['kind'] = smpro_im_classify($cur['msg'] . ' ' . $cur['tag']); if ($cur['kind'] === 'WAF Block (other)' && smpro_im_recon_path($cur['uri'])) $cur['kind'] = 'Scanner / Recon'; $cur['monitor'] = smpro_im_is_monitor($cur) ? 1 : 0; $events[] = $cur; }
         }
         $cur = null;
     };
@@ -1566,8 +1582,7 @@ function smpro_im_breaches($events, $changedWithinMin = 60, $maxDomains = 25) {
     $suspect = [];
     foreach ($events as $e) {
         if ($e['domain'] === '' || !smpro_im_exploit_kind($e['kind'])) continue;
-        $code = (int)$e['code'];
-        if ($code >= 200 && $code < 400) {
+        if (smpro_im_served($e)) {
             $suspect[$e['domain']]['kind'][$e['kind']] = 1;
             $suspect[$e['domain']]['ips'][$e['ip']] = 1;
             $suspect[$e['domain']]['last'] = max($suspect[$e['domain']]['last'] ?? 0, (int)$e['ts']);
@@ -2261,7 +2276,7 @@ function smpro_im_alert_scan() {
     // SERVED exploit attempts - the genuinely dangerous ones: an exploit-class attack the app
     // answered with 2xx/3xx (NOT blocked). Blocked probes (403) are routine WAF noise and do
     // NOT raise a critical alert - that is what made the old "223 CRITICAL" alert meaningless.
-    $served = array_filter($recent, fn($e) => smpro_im_exploit_kind($e['kind']) && (int)$e['code'] >= 200 && (int)$e['code'] < 400);
+    $served = array_filter($recent, fn($e) => smpro_im_served($e));
     if ($served) {
         $sd = array_values(array_unique(array_filter(array_map(fn($e) => $e['domain'], $served))));
         $alerts['critical'] = ['sig'=>'served:' . (count($sd) <= 1 ? 1 : (count($sd) <= 5 ? 5 : 99)), 'subject'=>count($served) . ' exploit attempt(s) SERVED 2xx (possible success) in last ' . $win . 'm',

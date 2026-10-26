@@ -71,3 +71,17 @@ has($sr, "\$st = \$db->prepare('SELECT ts, ip, domain, kind, code, rule, uri FRO
 has($sr, "while ((\$r = \$st->fetch(PDO::FETCH_ASSOC)) !== false) {", 'D2: ...fetched one row at a time');
 hasnt($sr, "smpro_in_history(\$from, 100000)", 'D3: the whole-day array is gone');
 has($sr, "@ini_set('memory_limit', '512M')", 'D4: headroom for the rest of the build');
+
+// E. beta386: "served" is the same rule for the alert and the report, service hosts are not sites, secret-file hits are re-asked
+$in = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/intrusion.php'));
+has($in, "function smpro_im_service_host(\$domain) {", 'E1: the panel service hosts are known');
+has($in, "    \$served = array_filter(\$recent, fn(\$e) => smpro_im_served(\$e));", 'E2: the critical alert uses the shared rule');
+has($in, "if (\$cur['kind'] === 'WAF Block (other)' && smpro_im_recon_path(\$cur['uri'])) \$cur['kind'] = 'Scanner / Recon';", 'E3: a public CMS file is recon, not an exploit');
+has($sr, "if (\$answered && function_exists('smpro_im_service_host') && smpro_im_service_host(\$dom)) { \$svcHits++; continue; }", 'E4: the report skips the fixed proxy replies');
+has($sr, "\$v = smpro_sr_verify_exposure(\$x['domain'], \$x['path']);", 'E5: ...and asks the site itself about a secret file that got a 200');
+require_once SMPRO_BASE . '/includes/intrusion.php';
+ok(smpro_im_service_host('autodiscover.example.com') && smpro_im_service_host('cpanel.example.com') && !smpro_im_service_host('shop.example.com') && !smpro_im_service_host('autodiscoverx.example.com'), 'E6: service host detection');
+ok(smpro_im_recon_path('/plusmedia/wp-includes/wlwmanifest.xml') && smpro_im_recon_path('/readme.html?x=1') && !smpro_im_recon_path('/wp-admin/admin-ajax.php'), 'E7: recon paths');
+ok(smpro_im_served(['code' => 200, 'kind' => 'SQL Injection', 'domain' => 'shop.example.com']) && !smpro_im_served(['code' => 200, 'kind' => 'SQL Injection', 'domain' => 'autoconfig.example.com']) && !smpro_im_served(['code' => 403, 'kind' => 'SQL Injection', 'domain' => 'shop.example.com']) && !smpro_im_served(['code' => 200, 'kind' => 'Scanner / Recon', 'domain' => 'shop.example.com']), 'E8: served = exploit kind + answered + real site');
+is_eq(smpro_sr_verify_exposure('bad host!', '/.env')['exposed'], false, 'E9: a malformed domain is never fetched');
+is_eq(smpro_sr_verify_exposure('example.com', '/../x')['exposed'], false, 'E10: nor a traversal path');
