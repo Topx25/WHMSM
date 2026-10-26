@@ -114,6 +114,45 @@ function smpro_ph_locked_map(array $paths) {
 }
 
 /* ---------------- web roots ---------------- */
+/**
+ * Every immutable (i) or append-only (a) flag under the account's home and web roots, WHOEVER set it - this
+ * product's own locks, another product's lockdown, or a hand-run chattr. A directory with +i or +a is the usual
+ * reason an account "cannot delete its own file" while every lock this product knows of is already clear: the file
+ * is free, the folder it lives in is not. Bounded: a depth, a time limit, and the account's own tree only.
+ */
+function smpro_ph_sweep_attrs($u, $maxDepth = 4, $seconds = 20) {
+    $out = ['found' => [], 'cleared' => [], 'failed' => [], 'root_owned' => 0, 'root_owned_sample' => [], 'complete' => true];
+    if (!smpro_ph_has('lsattr') || !smpro_ph_has('chattr') || !smpro_ph_has('find')) { $out['complete'] = false; return $out; }
+    $home = smpro_ph_home($u); if ($home === '' || !is_dir($home)) { $out['complete'] = false; return $out; }
+    $tops = [$home]; foreach (smpro_ph_roots($u) as $r) $tops[] = (string)$r['root'];
+    $tops = array_values(array_unique(array_filter($tops, fn($t) => $t !== '' && is_dir($t) && !is_link($t) && smpro_ph_inside($u, $t))));
+    $deadline = microtime(true) + max(3, (int)$seconds);
+    foreach ($tops as $top) {
+        $left = (int)ceil($deadline - microtime(true)); if ($left <= 0) { $out['complete'] = false; break; }
+        // the top itself at depth 0 (lsattr -d), then its tree; -xdev keeps it on one filesystem, no symlink is followed
+        [$rc, $txt] = smpro_ph_run('timeout ' . $left . ' find ' . escapeshellarg($top) . ' -xdev -maxdepth ' . (int)$maxDepth . ' \( -type f -o -type d \) -print0 2>/dev/null | timeout ' . $left . ' xargs -0 -r lsattr -d -- 2>/dev/null');
+        if ($rc === 124) $out['complete'] = false;
+        foreach (explode("\n", $txt) as $line) {
+            if (!preg_match('/^(\S+)\s+(\/.*)$/', $line, $m)) continue;
+            $flags = $m[1]; $path = $m[2];
+            if (strpos($flags, 'i') === false && strpos($flags, 'a') === false) continue;
+            if (is_link($path) || !smpro_ph_inside($u, $path)) continue;
+            $out['found'][] = $path;
+        }
+        // files the account does not own inside its own web tree: it can see them but not change them
+        $left = (int)ceil($deadline - microtime(true)); if ($left <= 0) { $out['complete'] = false; break; }
+        [$rc2, $txt2] = smpro_ph_run('timeout ' . $left . ' find ' . escapeshellarg($top) . ' -xdev -maxdepth ' . (int)$maxDepth . ' -user root \( -type f -o -type d \) -print 2>/dev/null | head -n 2000');
+        foreach (array_filter(explode("\n", $txt2)) as $path) { if ($path === $home) continue; $out['root_owned']++; if (count($out['root_owned_sample']) < 10) $out['root_owned_sample'][] = $path; }
+    }
+    $out['found'] = array_values(array_unique($out['found']));
+    foreach (array_chunk($out['found'], 100) as $chunk) smpro_ph_run('chattr -i -a -- ' . implode(' ', array_map('escapeshellarg', $chunk)));
+    foreach ($out['found'] as $path) {
+        [$rc, $txt] = smpro_ph_run('lsattr -d -- ' . escapeshellarg($path));
+        $flags = preg_match('/^(\S+)\s/', $txt, $m) ? $m[1] : '';
+        if ($rc === 0 && strpos($flags, 'i') === false && strpos($flags, 'a') === false) $out['cleared'][] = $path; else $out['failed'][$path] = $txt !== '' ? $txt : 'still flagged';
+    }
+    return $out;
+}
 function smpro_ph_roots($u) {
     $roots = [];
     $main = smpro_ph_home($u) . '/public_html';

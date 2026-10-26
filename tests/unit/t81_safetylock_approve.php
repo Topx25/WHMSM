@@ -98,3 +98,14 @@ $ph16 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/module
 has($ph16, "\$unlocked = count(\$r['changed']); \$already = count(\$r['already']);", 'U16: locks removed and already-clear paths are counted apart');
 has($ph16, "'nothing was locked'", 'U16: an account with nothing locked says so');
 hasnt($ph16, "\$cleared = (int)\$r['done'];", 'U16: the old count (changed + already clear) is gone');
+
+// beta390: Force unprotect sweeps locks this product did not set, and says what it found
+$pl = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
+$ph = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+has($pl, "function smpro_ph_sweep_attrs(\$u, \$maxDepth = 4, \$seconds = 20) {", 'X1: the sweep exists');
+has($pl, "if (strpos(\$flags, 'i') === false && strpos(\$flags, 'a') === false) continue;", 'X2: immutable and append-only flags, nothing else');
+has($pl, "if (is_link(\$path) || !smpro_ph_inside(\$u, \$path)) continue;", 'X3: never a symlink, never outside the account');
+has($ph, "\$sw = function_exists('smpro_ph_sweep_attrs') ? smpro_ph_sweep_attrs(\$u) :", 'X4: Force unprotect runs it after its own list');
+has($ph, "' lock(s) set outside this product removed ('", 'X5: ...and the summary names them');
+has($ph, "' · the sweep for other locks did not finish (deep tree); run again'", 'X6: an unfinished sweep is said, never silent');
+has($ph, "' root-owned item(s) inside the web root (the account cannot edit them; e.g. '", 'X7: root-owned files are reported');

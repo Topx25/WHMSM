@@ -355,7 +355,11 @@ function smpro_ph_force_unprotect($u, array $profile, $reason, $by, $scope = 'al
         $left = is_file($ht) ? (string)@file_get_contents($ht) : '';
         if ($left !== '' && strpos($left, 'SMPRO_PH_DENY_EXEC_START') !== false) $stuck[] = $ht; elseif ($had) $guards++;
     }
-    $cleared = $unlocked + $guards;
+    // Then everything this product did NOT set: another product's lockdown, a hand-run chattr, a folder left
+    // immutable. "Force" means the account comes back able to manage its own files, whoever locked them.
+    $sw = function_exists('smpro_ph_sweep_attrs') ? smpro_ph_sweep_attrs($u) : ['found' => [], 'cleared' => [], 'failed' => [], 'root_owned' => 0, 'root_owned_sample' => [], 'complete' => false];
+    $others = count($sw['cleared']); foreach (array_keys($sw['failed']) as $sp) $stuck[] = $sp;
+    $cleared = $unlocked + $guards + $others;
 
     $m = $m ?: ['version' => 'smpro.ph1', 'user' => $u, 'created_at' => date('c')];
     $m['status'] = 'unlocked';
@@ -367,12 +371,12 @@ function smpro_ph_force_unprotect($u, array $profile, $reason, $by, $scope = 'al
     $listed = smpro_ph_ign_add($u, $reason, $by, $scope);
 
     smpro_ph_audit_log($u, 'php_harden_force_unprotect',
-        'Force unprotect — ' . ($cleared ? ($unlocked . ' lock(s) removed' . ($guards ? ', ' . $guards . ' PHP guard(s) removed' : '')) : 'nothing was locked') . ($already ? ' · ' . $already . ' path(s) were already clear' : '') . ($stuck ? ', ' . count($stuck) . ' could NOT be cleared' : '')
+        'Force unprotect — ' . ($cleared ? ($unlocked . ' lock(s) removed' . ($guards ? ', ' . $guards . ' PHP guard(s) removed' : '') . ($others ? ', ' . $others . ' lock(s) set outside this product removed (' . implode(', ', array_map('basename', array_slice($sw['cleared'], 0, 3))) . (count($sw['cleared']) > 3 ? ', ...' : '') . ')' : '')) : 'nothing was locked') . ($already ? ' · ' . $already . ' path(s) were already clear' : '') . (!$sw['complete'] ? ' · the sweep for other locks did not finish (deep tree); run again' : '') . ($sw['root_owned'] ? ' · ' . $sw['root_owned'] . ' root-owned item(s) inside the web root (the account cannot edit them; e.g. ' . basename((string)$sw['root_owned_sample'][0]) . ')' : '') . ($stuck ? ', ' . count($stuck) . ' could NOT be cleared' : '')
         . ($listed ? ' · added to the ignore list' : ' · COULD NOT be added to the ignore list'),
-        ['reason' => $reason, 'by' => $by, 'scope' => $scope, 'stuck' => array_slice($stuck, 0, 20)]);
+        ['reason' => $reason, 'by' => $by, 'scope' => $scope, 'stuck' => array_slice($stuck, 0, 20), 'other_locks' => array_slice($sw['cleared'], 0, 50), 'root_owned' => $sw['root_owned'], 'root_owned_sample' => $sw['root_owned_sample']]);
     smpro_audit('php_harden_force_unprotect', ['user' => $u, 'cleared' => $cleared, 'already_clear' => $already, 'stuck' => count($stuck), 'listed' => $listed ? 1 : 0]);
 
-    return ['ok' => empty($stuck) && $listed, 'cleared' => $cleared, 'already' => $already, 'stuck' => $stuck, 'listed' => $listed];
+    return ['ok' => empty($stuck) && $listed, 'cleared' => $cleared, 'already' => $already, 'stuck' => $stuck, 'listed' => $listed, 'other_locks' => $sw['cleared'], 'root_owned' => $sw['root_owned']];
 }
 
 /**
