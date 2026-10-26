@@ -727,6 +727,22 @@ function smpro_im_userdomains() {
         if (preg_match('/^([^:]+):\s*(\S+)/', $l, $m)) $map[strtolower(trim($m[1]))] = trim($m[2]);
     return $map;
 }
+/**
+ * Is this Host header a site that exists on this server? A wildcard DNS record (*.example.com at the DNS provider)
+ * makes ANY invented name land on the parent's site; the attack feed then shows names that are nowhere in the panel.
+ * Known = listed in userdomains, exactly or as www. of one. The parent it lands on is what account_for() returns.
+ */
+function smpro_im_host_known($domain) {
+    $map = smpro_im_userdomains(); $d = strtolower(trim((string)$domain));
+    return $d !== '' && (isset($map[$d]) || (strpos($d, 'www.') === 0 && isset($map[substr($d, 4)])));
+}
+/** The name as a person should read it: the host, then "(not a site here; wildcard DNS lands it on <parent>)". */
+function smpro_im_host_label($domain) {
+    if ($domain === '' || smpro_im_host_known($domain)) return (string)$domain;
+    $parts = explode('.', strtolower($domain)); $map = smpro_im_userdomains(); $parent = '';
+    while (count($parts) > 2) { array_shift($parts); $cand = implode('.', $parts); if (isset($map[$cand])) { $parent = $cand; break; } }
+    return $domain . ' (not a site here' . ($parent !== '' ? '; wildcard DNS lands it on ' . $parent : '') . ')';
+}
 function smpro_im_account_for($domain) {
     $map = smpro_im_userdomains();
     $d = strtolower(trim((string)$domain));
@@ -2288,7 +2304,7 @@ function smpro_im_alert_scan() {
     }
     // domain spikes (blocked + served attempts) - high baseline on a busy shared server, so the threshold is high
     $by = smpro_im_by_domain($recent); $thr = (int)$cfg['thr_domain_attacks']; $spiked = [];
-    foreach ($by as $g) if ($g['total'] >= $thr) $spiked[] = $g['domain'] . ' (' . $g['total'] . ')';
+    foreach ($by as $g) if ($g['total'] >= $thr) $spiked[] = smpro_im_host_label($g['domain']) . ' (' . $g['total'] . ')';
     // The signature is how WIDE the attack is (a band of the number of domains), never the counts and not the
     // names either: a count changes with every 15-minute window, and a scanner walking one server's vhosts
     // changes the NAMES every window too, so either made the signature new on every run and the same alert went

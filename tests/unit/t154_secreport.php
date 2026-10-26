@@ -85,3 +85,9 @@ ok(smpro_im_recon_path('/plusmedia/wp-includes/wlwmanifest.xml') && smpro_im_rec
 ok(smpro_im_served(['code' => 200, 'kind' => 'SQL Injection', 'domain' => 'shop.example.com']) && !smpro_im_served(['code' => 200, 'kind' => 'SQL Injection', 'domain' => 'autoconfig.example.com']) && !smpro_im_served(['code' => 403, 'kind' => 'SQL Injection', 'domain' => 'shop.example.com']) && !smpro_im_served(['code' => 200, 'kind' => 'Scanner / Recon', 'domain' => 'shop.example.com']) && !smpro_im_served(['code' => 301, 'kind' => 'SQL Injection', 'domain' => 'shop.example.com']), 'E8: served = exploit kind + a 2xx answer + real site; a redirect is not an answer');
 is_eq(smpro_sr_verify_exposure('bad host!', '/.env')['exposed'], false, 'E9: a malformed domain is never fetched');
 is_eq(smpro_sr_verify_exposure('example.com', '/../x')['exposed'], false, 'E10: nor a traversal path');
+
+// F. beta388: a Host header that is not a site on this server is labelled so (wildcard DNS), in the alert and the report
+has($in, "function smpro_im_host_known(\$domain) {", 'F1: known-host check');
+has($in, "    foreach (\$by as \$g) if (\$g['total'] >= \$thr) \$spiked[] = smpro_im_host_label(\$g['domain']) . ' (' . \$g['total'] . ')';", 'F2: the spike alert labels unknown hosts');
+has($sr, "if (function_exists('smpro_im_host_known') && !smpro_im_host_known(\$dom)) \$d[\$k]['note'] =", 'F3: the per-domain row carries the note');
+has($sr, "if (!empty(\$d[\$dom]['note'])) continue; \$root = smpro_sr_docroot_of(\$dom);", 'F4: ...and is not scanned for vulnerabilities (no docroot of its own)');
