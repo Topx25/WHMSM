@@ -823,10 +823,14 @@ function smpro_im_service_host($domain) {
 function smpro_im_recon_path($uri) {
     return (bool)preg_match('#(?:^|/)(?:wp-includes/wlwmanifest\.xml|readme\.html|license\.txt|wp-links-opml\.php|feed/?|robots\.txt|sitemap[^/]*\.xml|wp-json/?|xmlrpc\.php)(?:\?|$)#i', smpro_im_path_of($uri));
 }
-/** "Served" means dangerous: the app answered 2xx/3xx to an exploit-class request on a real site, not a service host's fixed reply. */
+/**
+ * "Served" means dangerous: the app answered 2xx to an exploit-class request on a real site. A 3xx is a redirect
+ * (http to https, to www, to the 404 page) - the request never reached the application, and the replay over https
+ * is logged on its own; counting it made a day of plain redirects read as thirteen successful exploits.
+ */
 function smpro_im_served($e) {
     $code = (int)($e['code'] ?? 0);
-    return $code >= 200 && $code < 400 && smpro_im_exploit_kind($e['kind'] ?? '') && !smpro_im_service_host($e['domain'] ?? '');
+    return $code >= 200 && $code < 300 && smpro_im_exploit_kind($e['kind'] ?? '') && !smpro_im_service_host($e['domain'] ?? '');
 }
 function smpro_im_exploit_kind($kind) {
     return in_array($kind, ['SQL Injection','Command Injection / RCE','Remote File Inclusion','Path Traversal / LFI','PHP Injection','Malicious Upload'], true);

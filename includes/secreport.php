@@ -127,7 +127,7 @@ function smpro_sr_collect_attacks(int $from, int $to): array {
         $kinds[$kind] = ($kinds[$kind] ?? 0) + 1; $ips[(string)$r['ip']] = ($ips[(string)$r['ip']] ?? 0) + 1;
         if (count($ips) > 20000) { arsort($ips); $ips = array_slice($ips, 0, 5000, true); }   // keep the heavy hitters, not every address
         $hours[(int)date('G', (int)$r['ts'])]++;
-        $answered = $code !== '' && ($code[0] === '2' || $code[0] === '3');
+        $answered = $code !== '' && $code[0] === '2';   // a 3xx is a redirect: the application never saw the request
         if ($answered && function_exists('smpro_im_service_host') && smpro_im_service_host($dom)) { $svcHits++; continue; }   // a fixed proxy reply, not the file asked for
         if ($answered && $kind === 'Sensitive File Access') { $k = $dom . '|' . smpro_sr_path_of((string)($r['uri'] ?? '')); if (!isset($sens[$k])) $sens[$k] = ['domain' => $dom, 'path' => smpro_sr_path_of((string)($r['uri'] ?? '')), 'ts' => (int)$r['ts'], 'ip' => (string)$r['ip'], 'n' => 0]; $sens[$k]['n']++; continue; }
         if ($answered && (!function_exists('smpro_im_served') ? true : smpro_im_served(['code' => $code, 'kind' => $kind, 'domain' => $dom]))) { $byDom[$dom]['served']++; if (count($byDom[$dom]['served_rows']) < 5) $byDom[$dom]['served_rows'][] = ['ts' => (int)$r['ts'], 'ip' => (string)$r['ip'], 'uri' => (string)($r['uri'] ?? ''), 'rule' => (string)($r['rule'] ?? '')]; $served[] = $dom; }
