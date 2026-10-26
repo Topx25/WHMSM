@@ -23,11 +23,15 @@ function smpro_sr_dir(): string { @is_dir(SMPRO_SR_DIR) || @mkdir(SMPRO_SR_DIR, 
 function smpro_sr_cfg(): array {
     $d = @is_file(SMPRO_SR_CFG) ? json_decode((string)@file_get_contents(SMPRO_SR_CFG), true) : null;
     $d = is_array($d) ? $d : [];
-    $d += ['enabled' => false, 'hour' => 6, 'last_run' => 0, 'last_id' => ''];
+    $d += ['enabled' => false, 'hour' => 6, 'minute' => 0, 'tz' => '', 'last_run' => 0, 'last_id' => '', 'last_day' => ''];
+    $d['minute'] = max(0, min(59, (int)$d['minute'])); $d['tz'] = in_array((string)$d['tz'], DateTimeZone::listIdentifiers(), true) ? (string)$d['tz'] : '';
     $d['channels'] = ($d['channels'] ?? []) + ['panel' => true, 'email' => false, 'telegram' => false, 'whatsapp' => false];
     $d['hour'] = max(0, min(23, (int)$d['hour']));
     return $d;
 }
+/** The clock the schedule and the report's day follow: the chosen zone, or the server's when none is chosen. */
+function smpro_sr_tz(): string { $t = smpro_sr_cfg()['tz']; return $t !== '' ? $t : date_default_timezone_get(); }
+function smpro_sr_now(): DateTime { return new DateTime('now', new DateTimeZone(smpro_sr_tz())); }
 function smpro_sr_cfg_save(array $c): void { smpro_sr_dir(); $t = SMPRO_SR_CFG . '.tmp'; @file_put_contents($t, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX); @chmod($t, 0600); @rename($t, SMPRO_SR_CFG); }
 
 /* ---------------- small readers (each says when it could not look) ---------------- */
@@ -268,6 +272,7 @@ function smpro_sr_domain_of_path(string $path): string {
 /* ---------------- build / store / render ---------------- */
 function smpro_sr_build(int $dayStart = 0): array {
     smpro_sr_need();
+    if (smpro_sr_cfg()['tz'] !== '') @date_default_timezone_set(smpro_sr_tz());   // the day's edges and every printed time follow the chosen clock
     $dayStart = $dayStart ?: strtotime('yesterday 00:00:00'); $from = $dayStart; $to = $dayStart + 86399;
     $allowed = function_exists('smpro_gl_cfg') ? array_map('strtoupper', (array)(smpro_gl_cfg()['countries'] ?? [])) : [];
     $r = ['id' => date('Ymd', $from), 'day' => date('Y-m-d', $from), 'from' => $from, 'to' => $to, 'generated' => time(), 'host' => (string)gethostname(), 'version' => defined('SMPRO_VERSION') ? SMPRO_VERSION : '', 'allowed_cc' => $allowed];
@@ -425,11 +430,12 @@ function smpro_sr_deliver(array $r, array $channels): array {
 }
 function smpro_sr_run(bool $force = false, int $dayStart = 0): array {
     $cfg = smpro_sr_cfg();
-    if (!$force && (!$cfg['enabled'] || (int)date('G') < $cfg['hour'] || date('Ymd', $cfg['last_run']) === date('Ymd'))) return ['ok' => false, 'skipped' => 'not due'];
+    $now = smpro_sr_now(); $today = $now->format('Ymd'); $mins = (int)$now->format('G') * 60 + (int)$now->format('i');
+    if (!$force && (!$cfg['enabled'] || $mins < $cfg['hour'] * 60 + $cfg['minute'] || $cfg['last_day'] === $today)) return ['ok' => false, 'skipped' => 'not due'];
     @set_time_limit(600);
     $r = smpro_sr_build($dayStart); smpro_sr_save($r);
     $d = $force ? [] : smpro_sr_deliver($r, $cfg['channels']);
-    if (!$force) { $cfg['last_run'] = time(); $cfg['last_id'] = $r['id']; smpro_sr_cfg_save($cfg); }
+    if (!$force) { $cfg['last_run'] = time(); $cfg['last_day'] = $today; $cfg['last_id'] = $r['id']; smpro_sr_cfg_save($cfg); }
     if (function_exists('smpro_audit')) smpro_audit('daily_security_report', ['id' => $r['id'], 'score' => (int)$r['score']['score'], 'delivered' => array_keys(array_filter($d, fn($x) => !empty($x['ok'])))]);
     return ['ok' => true, 'id' => $r['id'], 'score' => (int)$r['score']['score'], 'delivered' => $d];
 }
@@ -441,7 +447,8 @@ function smpro_sr_cron_sync(): bool {
     $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : (is_executable('/usr/local/cpanel/3rdparty/bin/php') ? '/usr/local/cpanel/3rdparty/bin/php' : 'php');
     $lockDir = defined('SMPRO_LOCKS') ? SMPRO_LOCKS : (SMPRO_VARLIB . '/locks'); @is_dir($lockDir) || @mkdir($lockDir, 0700, true);
     $flock = is_executable('/usr/bin/flock') ? '/usr/bin/flock' : 'flock';
-    $desired = "# Safety Monitor Pro - Daily Security Report: built for the previous day and delivered, once a day after the chosen hour\n"
-             . '7 ' . (int)$cfg['hour'] . ' * * * root ' . $flock . ' -n ' . $lockDir . '/secreport.lock timeout 900 nice -n 10 ' . $php . ' ' . $bin . ' >/dev/null 2>&1' . "\n";
+    // every ten minutes: the tick itself decides when the chosen time in the chosen zone has passed, so the hour holds across daylight-saving changes
+    $desired = "# Safety Monitor Pro - Daily Security Report: built for the previous day and delivered once a day, at the chosen time in the chosen time zone\n"
+             . '*/10 * * * * root ' . $flock . ' -n ' . $lockDir . '/secreport.lock timeout 900 nice -n 10 ' . $php . ' ' . $bin . ' >/dev/null 2>&1' . "\n";
     return function_exists('smpro_cron_install') ? smpro_cron_install($f, $desired) : (@file_put_contents($f, $desired) !== false && @chmod($f, 0644));
 }

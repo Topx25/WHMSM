@@ -57,7 +57,10 @@ has(smpro_sr_render_text($rep), 'score ' . $rep['score']['score'], 'B13: the cha
 // C. wiring
 has($ix, "require __DIR__ . '/includes/secreport.php';", 'C1: loaded by the plugin');
 has($cs, "'daily security report' => 'smpro_sr_cron_sync',", 'C2: cron sync keeps the tick');
-has($sr, "'7 ' . (int)\$cfg['hour'] . ' * * * root '", 'C3: once a day after the chosen hour');
+has($sr, "'*/10 * * * * root ' . \$flock", 'C3: the tick runs every ten minutes and decides by the chosen clock');
+has($sr, "if (!\$force && (!\$cfg['enabled'] || \$mins < \$cfg['hour'] * 60 + \$cfg['minute'] || \$cfg['last_day'] === \$today)) return ['ok' => false, 'skipped' => 'not due'];", 'C3b: due = past HH:MM in the chosen zone and not yet built for that day in that zone');
+has($sr, "if (smpro_sr_cfg()['tz'] !== '') @date_default_timezone_set(smpro_sr_tz());", 'C3c: the day edges and printed times follow the chosen zone');
+has($rc, "\$c['tz'] = in_array((string)(\$_POST['tz'] ?? ''), DateTimeZone::listIdentifiers(), true) ? (string)\$_POST['tz'] : '';", 'C3d: only a real zone name is accepted');
 has($rc, "if (\$srWhat === 'html' || \$srWhat === 'print') {", 'C4: download and print endpoints');
 has($rc, "header('Location: index.cgi?page=reports-center&sr=print&id=' . \$rep['id']); exit;   // no renderer here: the print view saves as PDF from the browser", 'C5: PDF without a renderer falls back honestly to the print view');
 has($rc, "smpro_require_valid_csrf('secreport');", 'C6: writes need CSRF');
