@@ -83,3 +83,10 @@ has($sv, "if (stripos(\$log, 'already listen') !== false || stripos(\$log, 'Addr
 has($sv, "@copy('/etc/csf/csf.conf', '/etc/csf/csf.conf.smpro-' . date('Ymd-His'));", 'R6: csf.conf is copied before TESTING is cleared');
 has($sv, "@smpro_notify('service_repaired', 'Service repaired: ' . \$svc['label']", 'R7: the monitor says what it fixed and why');
 has($sv, "if (!\$down) \$down = \$svc['units'];", 'R8: only the dead PHP versions are started');
+
+// beta393: in use = the unit is enabled; a server with no FPM shows it as not in use, not as INACTIVE; a saved
+// watch list gets it once
+$sv = str_replace(chr(13), '', (string)$r('includes/svcmon.php'));
+has($sv, "if (preg_match('/^(ea-php\\d+-php-fpm)\\.service\\s+enabled\\b/', trim(\$ln), \$m)) \$u[] = \$m[1];", 'R9: enabled units are the ones that must run');
+has($sv, "if (!empty(\$s['all_units']) && !\$units) return ['installed' => false,", 'R10: no unit in use = not in use, never a red INACTIVE');
+has($sv, "if (empty(\$state['_php_fpm_added']) && !isset(\$ignored['php_fpm']) && !in_array('php_fpm', \$cfg['monitor'], true)", 'R11: added to an older watch list once, never over a mute');

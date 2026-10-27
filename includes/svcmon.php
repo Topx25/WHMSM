@@ -42,13 +42,16 @@ function smpro_svc_fix_action($row, $reg = null) {
 }
 
 /* ============================ catalog + status (shared) ============================ */
-/** The ea-php versions that have at least one FPM pool: those are the units that must run. A version without pools
- *  is installed but serves nothing, and its unit failing with "No pool defined" is not a fault. */
+/** The PHP-FPM units that must run: the ea-php versions whose unit is ENABLED (the panel enables it when a domain
+ *  is put on FPM). Every install ships a php-fpm.d with sample files, so pool files say nothing; a version whose
+ *  unit is disabled serves nothing, and its "No pool defined" is not a fault. Empty = FPM is not in use here. */
 function smpro_svc_fpm_units() {
     static $u = null; if ($u !== null) return $u; $u = [];
-    foreach (glob('/opt/cpanel/ea-php[0-9][0-9]/root/etc/php-fpm.d/*.conf') ?: [] as $f) {
-        if (!preg_match('#/opt/cpanel/(ea-php\d+)/#', $f, $m)) continue;
-        $unit = $m[1] . '-php-fpm'; if (!in_array($unit, $u, true)) $u[] = $unit;
+    // the catalog is also loaded bare (no helpers) by the security tests; without the runner there is nothing to ask
+    if (!function_exists('smpro_run')) return $u;
+    $txt = (string)smpro_svc_run("systemctl list-unit-files 'ea-php*-php-fpm.service' --no-legend 2>/dev/null", 10);
+    foreach (explode("\n", $txt) as $ln) {
+        if (preg_match('/^(ea-php\d+-php-fpm)\.service\s+enabled\b/', trim($ln), $m)) $u[] = $m[1];
     }
     sort($u); return $u;
 }
@@ -101,6 +104,9 @@ function smpro_svc_chkservd_disabled(): array {
 
 function smpro_svc_status($s) {
     $units = $s['units'] ?? []; $cmds = $s['commands'] ?? [];
+    // Made of per-version units and none is in use: not a stopped service, a feature this server does not run.
+    // The restart script exists on every cPanel box, which made it read as "installed but INACTIVE" in red.
+    if (!empty($s['all_units']) && !$units) return ['installed' => false, 'active' => false, 'enabled' => 'n/a', 'unit' => '—', 'state' => 'absent', 'off_reason' => ''];
     $matched = ''; $active = false; $enabled = 'n/a'; $state = '';
     foreach ($units as $u) {
         $st = trim(smpro_svc_run('systemctl is-active ' . escapeshellarg($u), 8));
@@ -513,7 +519,15 @@ function smpro_svcmon_run() {
     if (!$cfg['enabled'] || !$cfg['monitor']) return;
     $reg = smpro_svc_registry(); $state = smpro_svcmon_state_load(); $now = time(); $acted = 0;
     $ignored = smpro_svc_ignored();
+    // A watch list saved before PHP-FPM existed in the catalog cannot contain it, and a critical service that is in
+    // use on this server must not stay unwatched because the list is older than the service. Added once, recorded
+    // in the state so an operator who then unticks it is not overruled every three minutes.
+    if (empty($state['_php_fpm_added']) && !isset($ignored['php_fpm']) && !in_array('php_fpm', $cfg['monitor'], true) && in_array('php_fpm', smpro_svc_monitorable(), true)) {
+        $cfg['monitor'][] = 'php_fpm'; smpro_svcmon_cfg_save($cfg); $state['_php_fpm_added'] = $now; smpro_svcmon_state_save($state);
+        if (function_exists('smpro_audit')) @smpro_audit('svcmon_cfg', ['added' => 'php_fpm', 'why' => 'critical service in use, missing from a watch list saved before it existed']);
+    }
     foreach ($cfg['monitor'] as $key) {
+        if ($key === '' || $key[0] === '_') continue;
         if (isset($ignored[$key])) { unset($state[$key]); continue; }   // admin muted this service -> no auto-restart, no alert
         $svc = $reg[$key] ?? null; if (!$svc || !smpro_svc_is_runtime($svc) || empty($svc['units'])) continue;
         $row = $rows[$key] ?? null; if (!$row || !$row['installed']) { unset($state[$key]); continue; }
