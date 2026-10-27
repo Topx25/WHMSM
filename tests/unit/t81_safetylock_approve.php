@@ -118,3 +118,12 @@ has($sq, "        if ((\$row['scope'] ?? 'all') !== 'all') continue;", 'Y2: only
 has($sq, "        \$sw = smpro_ph_sweep_attrs(\$u, 4, 15);", 'Y3: ...are swept with the bounded sweep');
 has($sq, "smpro_ph_audit_log(\$u, 'php_harden_kept_free', \$msg,", 'Y4: ...and what was removed is written to the account log');
 has($sqb, "\$kept = function_exists('smpro_spq_keep_free') ? smpro_spq_keep_free() : 0;", 'Y5: the worker runs it every minute (a few accounts per tick)');
+
+// beta392: several accounts at once, protected here or not
+$ph2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+has($ph2, "if (\$act === 'force_unprotect_bulk') {", 'Z1: the bulk action exists');
+has($ph2, "if (\$t !== '' && smpro_ph_valid_user(\$t) && !in_array(\$t, \$targets, true)) \$targets[] = \$t;", 'Z2: every target is a real account, once');
+has($ph2, "\$r = smpro_ph_force_unprotect(\$t, smpro_ph_profile(\$t), \$reason, \$by, \$scope);", 'Z3: ...released with the same Force unprotect (sweeps foreign locks too)');
+has($ph2, "@set_time_limit(0); @ignore_user_abort(true);   // a started action finishes even if the page closes", 'Z4: finishes when the page closes');
+has($ph2, "f.set('ph_action','force_unprotect_bulk');f.set('smpro_csrf',CSRF);", 'Z5: the page posts it with the CSRF token');
+has($ph2, "if(!reason){alert('Give a reason first", 'Z6: a reason is required');

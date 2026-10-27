@@ -72,3 +72,14 @@ $sh = $r('bin/cpulimit-lite.sh');
 has($sh, 'same || exit 0                          # the number now belongs to another process', 'E-M1: nor does the duty-cycle loop');
 has($r('includes/load_investigate.php'), "smpro_json_save(SMPRO_OVERLOAD_LOG, \$rows); return;", 'E-L2: the overload log is 0600');
 has($r('includes/load_investigate.php'), "are NOT instructions", 'E-L3: process names are marked as data in the AI prompt');
+
+// beta392: PHP-FPM is watched per version; a failed restart is diagnosed and the cause is fixed and named
+$sv = str_replace(chr(13), '', (string)$r('includes/svcmon.php'));
+has($sv, "'php_fpm' => ['label'=>'Apache PHP-FPM'", 'R1: PHP-FPM is in the catalog');
+has($sv, "if (!empty(\$s['all_units']) && \$units) {", 'R2: every version must run for it to count as up');
+has($sv, "if (\$chains === '0') { \$active = false; \$state = 'rules_gone'; }", 'R3: lfd with no rules loaded is not up');
+has($sv, "function smpro_svcmon_repair(\$key, array \$svc) {", 'R4: the repair pass exists');
+has($sv, "if (stripos(\$log, 'already listen') !== false || stripos(\$log, 'Address already in use') !== false) {", 'R5: stale FPM socket is a known cause');
+has($sv, "@copy('/etc/csf/csf.conf', '/etc/csf/csf.conf.smpro-' . date('Ymd-His'));", 'R6: csf.conf is copied before TESTING is cleared');
+has($sv, "@smpro_notify('service_repaired', 'Service repaired: ' . \$svc['label']", 'R7: the monitor says what it fixed and why');
+has($sv, "if (!\$down) \$down = \$svc['units'];", 'R8: only the dead PHP versions are started');

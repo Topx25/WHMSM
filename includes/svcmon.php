@@ -42,6 +42,16 @@ function smpro_svc_fix_action($row, $reg = null) {
 }
 
 /* ============================ catalog + status (shared) ============================ */
+/** The ea-php versions that have at least one FPM pool: those are the units that must run. A version without pools
+ *  is installed but serves nothing, and its unit failing with "No pool defined" is not a fault. */
+function smpro_svc_fpm_units() {
+    static $u = null; if ($u !== null) return $u; $u = [];
+    foreach (glob('/opt/cpanel/ea-php[0-9][0-9]/root/etc/php-fpm.d/*.conf') ?: [] as $f) {
+        if (!preg_match('#/opt/cpanel/(ea-php\d+)/#', $f, $m)) continue;
+        $unit = $m[1] . '-php-fpm'; if (!in_array($unit, $u, true)) $u[] = $unit;
+    }
+    sort($u); return $u;
+}
 function smpro_svc_run($cmd, $t = null) { return smpro_run((string)$cmd, (int)($t ?: SMPRO_TIMEOUT_QUICK)); }
 function smpro_svc_restartsrv($s) { foreach ($s['restart_scripts'] ?? [] as $p) if (is_executable($p)) return $p; return ''; }
 
@@ -49,6 +59,7 @@ function smpro_svc_registry() {
     return [
         'cpsrvd' => ['label'=>'cPanel / WHM','category'=>'cPanel Core','description'=>'WHM/cPanel web service. Restarting may briefly refresh your WHM session.','units'=>['cpanel','cpsrvd'],'commands'=>['cpsrvd','whostmgrd'],'restart_scripts'=>['/usr/local/cpanel/scripts/restartsrv_cpsrvd','/scripts/restartsrv_cpsrvd'],'critical'=>true,'install'=>'Repair cPanel RPMs'],
         'apache' => ['label'=>'Apache / HTTPD','category'=>'Web Stack','description'=>'Primary cPanel web server layer.','units'=>['httpd','apache2'],'commands'=>['httpd','apachectl'],'restart_scripts'=>['/usr/local/cpanel/scripts/restartsrv_httpd','/scripts/restartsrv_httpd'],'critical'=>true,'install'=>'Install ea-apache24'],
+        'php_fpm' => ['label'=>'Apache PHP-FPM','category'=>'Web Stack','description'=>'Per-version PHP-FPM pools behind Apache. Down = a PHP version that has pools is not running; only that version is started, never all of them.','units'=>smpro_svc_fpm_units(),'commands'=>[],'restart_scripts'=>['/usr/local/cpanel/scripts/restartsrv_apache_php_fpm','/scripts/restartsrv_apache_php_fpm'],'critical'=>true,'all_units'=>true,'install'=>'Enable PHP-FPM in MultiPHP Manager'],
         'nginx' => ['label'=>'Nginx / ea-nginx','category'=>'Web Stack','description'=>'Optional cPanel reverse proxy / static cache layer.','units'=>['nginx'],'commands'=>['nginx'],'restart_scripts'=>['/usr/local/cpanel/scripts/restartsrv_nginx','/scripts/restartsrv_nginx'],'critical'=>false,'install'=>'Install ea-nginx'],
         'mysql' => ['label'=>'MariaDB / MySQL','category'=>'Database','description'=>'Database service used by hosted accounts and cPanel features.','units'=>['mariadb','mysql','mysqld'],'commands'=>['mysql','mariadb'],'restart_scripts'=>['/usr/local/cpanel/scripts/restartsrv_mysql','/scripts/restartsrv_mysql'],'critical'=>true,'install'=>'Repair cPanel RPMs'],
         'exim' => ['label'=>'Exim Mail Server','category'=>'Mail','description'=>'SMTP mail transfer service.','units'=>['exim'],'commands'=>['exim'],'restart_scripts'=>['/usr/local/cpanel/scripts/restartsrv_exim','/scripts/restartsrv_exim'],'critical'=>true,'install'=>'Repair cPanel RPMs'],
@@ -98,6 +109,13 @@ function smpro_svc_status($s) {
         if ($st === 'active' || in_array($st, ['activating', 'reloading', 'deactivating'], true)) { $active = true; $matched = $u; $enabled = trim(smpro_svc_run('systemctl is-enabled ' . escapeshellarg($u), 8)); $state = $st; break; }
         if ($matched === '' && in_array($st, ['inactive', 'failed'], true)) { $matched = $u; $state = $st; $enabled = trim(smpro_svc_run('systemctl is-enabled ' . escapeshellarg($u), 8)); }
     }
+    // A service made of several units (one FPM master per PHP version) is up only when every one of them is: the
+    // loop above stops at the first active unit, which would hide one dead version behind three live ones.
+    if (!empty($s['all_units']) && $units) {
+        $bad = [];
+        foreach ($units as $u2) { $st2 = trim(smpro_svc_run('systemctl is-active ' . escapeshellarg($u2), 8)); if ($st2 !== 'active' && !in_array($st2, ['activating', 'reloading', 'deactivating'], true)) $bad[] = $u2; }
+        if ($bad) { $active = false; $matched = $bad[0]; $state = count($bad) === count($units) ? 'inactive' : 'partial'; $enabled = trim(smpro_svc_run('systemctl is-enabled ' . escapeshellarg($bad[0]), 8)); }
+    }
     $cmdPresent = false; foreach ($cmds as $c) if (smpro_svc_cmd_exists($c)) { $cmdPresent = true; break; }
     if (!empty($s['modsec'])) { $cmdPresent = trim(smpro_svc_run("grep -rliE 'modsec' /etc/apache2 /usr/local/apache/conf /etc/httpd 2>/dev/null | head -1")) !== ''; $active = $cmdPresent; }
     $rs = smpro_svc_restartsrv($s);
@@ -126,12 +144,20 @@ function smpro_svc_status($s) {
     if (in_array('lfd', $units, true) && @is_file('/etc/csf/csf.disable')) {
         $offReason = 'CSF is disabled (/etc/csf/csf.disable exists). Re-enable it with `csf -e`; until then lfd cannot start.';
     }
+    // lfd alive with no rules in the kernel is a firewall that is OFF: a flush (an ipset error, a failed reload, a
+    // hand-run iptables -F) leaves the daemon running and the server open, and "is-active" says everything is fine.
+    if ($active && in_array('lfd', $units, true) && $offReason === '' && smpro_svc_cmd_exists('csf') && @is_file('/etc/csf/csf.conf')) {
+        $chains = trim(smpro_svc_run("iptables -S INPUT 2>/dev/null | grep -c -- '-j LOCALINPUT'", 10));
+        if ($chains === '0') { $active = false; $state = 'rules_gone'; }
+    }
     return ['installed' => $installed, 'active' => $active, 'enabled' => $enabled === '' ? 'n/a' : $enabled, 'unit' => $matched ?: ($units[0] ?? '—'), 'state' => $state ?: ($active ? 'active' : 'inactive'), 'off_reason' => $offReason];
 }
 
 /** State label + visual level + recommendation. */
 function smpro_svc_assess($s, $st) {
     $crit = !empty($s['critical']);
+    if (($st['state'] ?? '') === 'rules_gone') return ['NO RULES', 'bad', 'bad', 'lfd is running but no firewall rules are loaded (no CSF chains in iptables): the server is open. Fix reloads them (csf -r).'];
+    if (($st['state'] ?? '') === 'partial')    return ['PARTIAL', 'bad', 'bad', ($st['unit'] ?? 'one PHP version') . ' is not running while the other PHP versions are; every site on that version is down. Fix starts that version only.'];
     if ($st['active']) return ['ACTIVE', 'good', 'good', 'Running normally.' . ($crit ? ' Keep this core service enabled.' : '')];
     // Turned off through its own tooling, not broken: a restart cannot succeed, so say what to do instead.
     if (!empty($st['off_reason'])) return ['DISABLED', 'warn', 'warning', $st['off_reason']];
@@ -234,12 +260,104 @@ function smpro_svcmon_control($key, $action) {
     elseif ($action === 'restart' && $rs !== '') $cmd = escapeshellarg($rs);
     elseif ($unit !== '')                        $cmd = 'systemctl ' . $action . ' ' . escapeshellarg($unit);
     else                                         $cmd = '';
+    // Several units: only the ones that are down. The shared restart script bounces every PHP version and every
+    // site on them to fix one; starting the dead unit alone touches nothing that works.
+    if (in_array($action, ['start', 'restart'], true) && !empty($svc['all_units']) && !empty($svc['units'])) {
+        $down = [];
+        foreach ($svc['units'] as $u2) { $st2 = trim(smpro_svc_run('systemctl is-active ' . escapeshellarg($u2), 8)); if ($st2 !== 'active' && !in_array($st2, ['activating', 'reloading', 'deactivating'], true)) $down[] = $u2; }
+        if (!$down) $down = $svc['units'];
+        $cmd = implode('; ', array_map(fn($x) => 'systemctl reset-failed ' . escapeshellarg($x) . ' 2>/dev/null; systemctl ' . ($action === 'restart' ? 'restart' : 'start') . ' ' . escapeshellarg($x) . ' 2>&1', $down));
+    }
     if ($cmd === '') return ['ok'=>false,'msg'=>'no control method'];
     $out = smpro_svc_run($cmd, 45); sleep(1);
     $st = smpro_svc_status($svc);
     $ok = $action === 'stop' ? !$st['active'] : $st['active'];
+    // Not back after a plain restart: find out why and fix THAT, once. The cause travels in the answer so the page
+    // and the notification say what was wrong, not only that something was.
+    $rep = null;
+    if (!$ok && $action !== 'stop' && function_exists('smpro_svcmon_repair')) {
+        $rep = smpro_svcmon_repair($key, $svc);
+        if (!empty($rep['tried'])) { sleep(1); $st = smpro_svc_status($svc); $ok = $st['active']; }
+    }
     $a = smpro_svc_assess($svc, $st);
-    return ['ok'=>$ok, 'active'=>$st['active'], 'state_label'=>$a[0], 'cls'=>$a[1], 'msg'=>trim(mb_substr($out, 0, 200))];
+    $msg = trim(mb_substr($out, 0, 200));
+    if ($rep && ($rep['cause'] !== '' || $rep['did'] !== '')) $msg = (!empty($rep['tried']) ? ($ok ? 'Repaired. Cause: ' : 'Still down after the repair. Cause: ') : 'Not repaired. Cause: ') . $rep['cause'] . ($rep['did'] !== '' ? ' · Done: ' . $rep['did'] : '') . ($msg !== '' ? ' · ' . $msg : '');
+    return ['ok'=>$ok, 'active'=>$st['active'], 'state_label'=>$a[0], 'cls'=>$a[1], 'msg'=>$msg, 'repair'=>$rep];
+}
+
+/**
+ * Why a restart did not bring a service back, and the fix for the causes a plain restart cannot clear. One pass, one
+ * cause, every step named in the answer. The only configuration it edits is CSF's TESTING flag, which is a firewall
+ * switched off by its own cron, and that file is copied first. Returns ['tried'=>bool, 'cause'=>string, 'did'=>string];
+ * tried=false with a cause means "known, but not something to fix from here".
+ */
+function smpro_svcmon_repair($key, array $svc) {
+    $r = ['tried' => false, 'cause' => '', 'did' => ''];
+    $units = (array)($svc['units'] ?? []);
+    $journal = function ($unit) { return smpro_svc_run('journalctl -u ' . escapeshellarg($unit) . ' -n 40 --no-pager -o cat 2>/dev/null', 15); };
+    $alive = function ($pid) { return $pid > 1 && (function_exists('posix_kill') ? @posix_kill($pid, 0) : trim(smpro_svc_run('kill -0 ' . (int)$pid . ' 2>&1', 5)) === ''); };
+    $kill  = function ($pid, $sig) { if ($pid <= 1) return; if (function_exists('posix_kill')) @posix_kill($pid, $sig); else smpro_svc_run('kill -' . (int)$sig . ' ' . (int)$pid . ' 2>&1', 5); };
+    $squash = fn($t) => trim(mb_substr(preg_replace('/\s+/', ' ', (string)$t), 0, 160));
+    if ($key === 'php_fpm') {
+        foreach ($units as $unit) {
+            $st = trim(smpro_svc_run('systemctl is-active ' . escapeshellarg($unit), 8));
+            if ($st === 'active' || in_array($st, ['activating', 'reloading', 'deactivating'], true)) continue;
+            if (!preg_match('/^(ea-php\d+)-php-fpm$/', $unit, $m)) continue;
+            $ver = $m[1]; $root = '/opt/cpanel/' . $ver . '/root'; $bin = $root . '/usr/sbin/php-fpm';
+            $log = $journal($unit); $test = is_executable($bin) ? smpro_svc_run(escapeshellarg($bin) . ' -t 2>&1', 20) : '';
+            $start = 'systemctl reset-failed ' . escapeshellarg($unit) . ' 2>/dev/null; systemctl start ' . escapeshellarg($unit) . ' 2>&1';
+            if (stripos($log, 'already listen') !== false || stripos($log, 'Address already in use') !== false) {
+                // a master that died outside systemd (or did not die) still owns the socket, so systemd's new master cannot bind
+                $pids = array_values(array_filter(array_map('intval', explode("\n", trim(smpro_svc_run('pgrep -f ' . escapeshellarg('^php-fpm: master process \\(' . $root . '/'), 8))))));
+                $did = [];
+                foreach ($pids as $pid) { $kill($pid, 15); $did[] = 'stopped the orphan master (pid ' . $pid . ')'; }
+                if ($pids) { sleep(2); foreach ($pids as $pid) if ($alive($pid)) $kill($pid, 9); }
+                $socks = glob($root . '/usr/var/run/php-fpm/*.sock') ?: [];
+                foreach ($socks as $sk) @unlink($sk);
+                if ($socks) $did[] = 'removed ' . count($socks) . ' stale socket file(s)';
+                smpro_svc_run($start, 30); $did[] = 'started ' . $unit;
+                $r = ['tried' => true, 'cause' => $ver . ': a socket left by a master that died outside systemd kept the new one from binding', 'did' => implode(', ', $did)];
+                continue;
+            }
+            if (stripos($test, 'No pool defined') !== false) { $r = ['tried' => false, 'cause' => $ver . ' has no pools, nothing runs on it; not a fault', 'did' => '']; continue; }
+            if ($test !== '' && stripos($test, 'ERROR') !== false) {
+                smpro_svc_run('/usr/local/cpanel/scripts/php_fpm_config --rebuild 2>&1', 120); smpro_svc_run($start, 30);
+                $r = ['tried' => true, 'cause' => $ver . ': the pool configuration failed its syntax test (' . $squash($test) . ')', 'did' => 'rebuilt the pool files from the panel data (php_fpm_config --rebuild), started ' . $unit];
+                continue;
+            }
+            $errs = array_values(array_filter(explode("\n", $log), fn($l) => stripos($l, 'error') !== false));
+            smpro_svc_run($start, 30);
+            $r = ['tried' => true, 'cause' => $ver . ': ' . ($errs ? $squash(end($errs)) : 'no cause in its log'), 'did' => 'started ' . $unit . ' again'];
+        }
+        return $r;
+    }
+    if ($key === 'lfd') {
+        if (@is_file('/etc/csf/csf.disable')) return ['tried' => false, 'cause' => 'CSF is disabled (csf.disable exists); not touched', 'did' => ''];
+        if (!smpro_svc_cmd_exists('csf') || !@is_file('/etc/csf/csf.conf')) return $r;
+        $did = []; $cause = '';
+        $conf = (string)@file_get_contents('/etc/csf/csf.conf');
+        if (preg_match('/^\s*TESTING\s*=\s*"1"/m', $conf)) {
+            @copy('/etc/csf/csf.conf', '/etc/csf/csf.conf.smpro-' . date('Ymd-His'));
+            @file_put_contents('/etc/csf/csf.conf', preg_replace('/^(\s*TESTING\s*=\s*)"1"/m', '${1}"0"', $conf, 1), LOCK_EX);
+            $did[] = 'took CSF out of TESTING mode (csf.conf copied first)'; $cause = 'CSF was in TESTING mode: its own cron flushes the rules every few minutes';
+        }
+        $pidf = '/var/run/lfd.pid'; $pid = (int)@file_get_contents($pidf);
+        if ($pid > 0 && !$alive($pid)) { @unlink($pidf); $did[] = 'removed a stale lfd.pid'; if ($cause === '') $cause = 'a stale pid file pointed at a dead lfd'; }
+        $chains = trim(smpro_svc_run("iptables -S INPUT 2>/dev/null | grep -c -- '-j LOCALINPUT'", 10));
+        if ($chains === '0' && $cause === '') $cause = 'the firewall rules were flushed (no CSF chains in iptables) while lfd kept running';
+        smpro_svc_run('csf -r 2>&1', 90); $did[] = 'reloaded the rules (csf -r)';
+        if (trim(smpro_svc_run('systemctl is-active lfd', 8)) !== 'active') {
+            smpro_svc_run('systemctl reset-failed lfd 2>/dev/null; systemctl start lfd 2>&1', 30); $did[] = 'started lfd';
+            if ($cause === '') { $errs = array_values(array_filter(explode("\n", $journal('lfd')), fn($l) => preg_match('/error|fail|cannot|denied/i', $l))); $cause = 'lfd had exited' . ($errs ? ' (' . $squash(end($errs)) . ')' : ''); }
+        }
+        return ['tried' => true, 'cause' => $cause !== '' ? $cause : 'the rules were not loaded', 'did' => implode(', ', $did)];
+    }
+    // every other service: say why, from its own log, so the alert carries the cause and not only the fact
+    $unit = $units[0] ?? ''; if ($unit === '') return $r;
+    $disk = trim(smpro_svc_run("df -P / /var 2>/dev/null | awk 'NR>1 && \$5+0>=99 {print \$6\" \"\$5}' | head -2", 8));
+    if ($disk !== '') return ['tried' => false, 'cause' => 'the disk is full (' . $squash($disk) . '); a restart cannot help until space is freed', 'did' => ''];
+    $errs = array_values(array_filter(explode("\n", $journal($unit)), fn($l) => preg_match('/error|fail|denied|no space|cannot|refused/i', $l)));
+    return ['tried' => false, 'cause' => $errs ? $squash(end($errs)) : 'no cause in its log', 'did' => ''];
 }
 
 /* ============================ uninstall an installed add-on (the plugin DOES it) ============================
@@ -423,11 +541,13 @@ function smpro_svcmon_run() {
                 $s['restarts'][] = $now; $acted++;
                 if (function_exists('smpro_audit')) @smpro_audit('svcmon_autorestart', ['svc'=>$key, 'ok'=>!empty($r['ok'])]);
                 if (!empty($r['ok'])) {                                        // recovered by us
-                    if (!empty($s['notified']) && $cfg['recovery'] && $cfg['notify'] && function_exists('smpro_notify'))
+                    if (!empty($r['repair']['tried']) && $cfg['notify'] && function_exists('smpro_notify'))   // a plain restart was not enough: say what was wrong
+                        @smpro_notify('service_repaired', 'Service repaired: ' . $svc['label'], $svc['label'] . ' was down and a restart alone did not bring it back. Cause: ' . $r['repair']['cause'] . '. Done: ' . $r['repair']['did'] . '. It is running again.', ['severity'=>'warning']);
+                    elseif (!empty($s['notified']) && $cfg['recovery'] && $cfg['notify'] && function_exists('smpro_notify'))
                         @smpro_notify('service_up', 'Service recovered: ' . $svc['label'], $svc['label'] . ' was down and SM Pro restarted it successfully.', ['severity'=>'info']);
                     unset($state[$key]); continue;
                 }
-                $restartMsg = ' Auto-restart was attempted but the service did not come back.';
+                $restartMsg = ' Auto-restart was attempted but the service did not come back.' . (!empty($r['repair']['cause']) ? ' Cause: ' . $r['repair']['cause'] . (!empty($r['repair']['did']) ? ' · tried: ' . $r['repair']['did'] : '') . '.' : '');
             } else {
                 $s['paused'] = true;
                 $restartMsg = ' Auto-restart is PAUSED for this service (it failed to stay up after 4 attempts in the last hour) — manual attention needed.';

@@ -538,7 +538,7 @@ $u = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_POST['phuser'] ?? $_GET['p
 
 /* ---- POST: apply / unlock (AJAX JSON) ---- */
 
-if ($reqMethod === 'POST' && in_array(($_POST['ph_action'] ?? ''), ['apply_fast', 'apply_custom', 'unlock', 'ww_fix', 'force_unprotect', 'ign_remove', 'ask_decide', 'rules_save'], true)) {
+if ($reqMethod === 'POST' && in_array(($_POST['ph_action'] ?? ''), ['apply_fast', 'apply_custom', 'unlock', 'ww_fix', 'force_unprotect', 'force_unprotect_bulk', 'ign_remove', 'ask_decide', 'rules_save'], true)) {
     smpro_require_valid_csrf('ph_act'); smpro_require_root();
     header('Content-Type: application/json');
     $act = $_POST['ph_action'];
@@ -554,6 +554,23 @@ if ($reqMethod === 'POST' && in_array(($_POST['ph_action'] ?? ''), ['apply_fast'
         echo json_encode(['ok' => $gone, 'msg' => $gone
             ? ($target . ' removed from the ignore list. Automatic hardening applies to it again.')
             : 'That account was not on the ignore list — nothing was changed.'], JSON_UNESCAPED_SLASHES); exit;
+    }
+    // Several accounts at once, ticked on the page: Force unprotect for each, whether or not this product ever
+    // protected it (the sweep inside clears locks set elsewhere too). One reason and one scope for all of them.
+    if ($act === 'force_unprotect_bulk') {
+        $reason = trim((string)($_POST['reason'] ?? '')); $scope = ((string)($_POST['scope'] ?? 'all') === 'auto') ? 'auto' : 'all';
+        if ($reason === '') { echo json_encode(['ok' => false, 'msg' => 'Give a reason first; it is recorded on every account.']); exit; }
+        $targets = []; foreach ((array)($_POST['targets'] ?? []) as $t) { $t = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)$t); if ($t !== '' && smpro_ph_valid_user($t) && !in_array($t, $targets, true)) $targets[] = $t; }
+        if (!$targets) { echo json_encode(['ok' => false, 'msg' => 'No valid account was selected.']); exit; }
+        @set_time_limit(0); @ignore_user_abort(true);   // a started action finishes even if the page closes
+        $by = smpro_ph_actor(); $lines = []; $okN = 0; $t0 = microtime(true);
+        foreach ($targets as $t) {
+            $r = smpro_ph_force_unprotect($t, smpro_ph_profile($t), $reason, $by, $scope);
+            if ($r['ok']) $okN++;
+            $lines[] = $t . ': ' . ($r['cleared'] ? $r['cleared'] . ' lock(s) removed' : 'nothing was locked') . (!empty($r['other_locks']) ? ' (' . count($r['other_locks']) . ' set outside this product)' : '') . ($r['stuck'] ? ' · ' . count($r['stuck']) . ' could NOT be cleared' : '') . (!$r['listed'] ? ' · NOT added to the ignore list' : '');
+        }
+        smpro_audit('php_harden_force_unprotect_bulk', ['accounts' => count($targets), 'ok' => $okN, 'scope' => $scope, 'by' => $by, 'seconds' => (int)(microtime(true) - $t0)]);
+        echo json_encode(['ok' => $okN === count($targets), 'msg' => $okN . ' of ' . count($targets) . ' account(s) released and added to the ignore list (' . ($scope === 'auto' ? 'automatic passes only' : 'all protection') . ").\n\n" . implode("\n", $lines)], JSON_UNESCAPED_SLASHES); exit;
     }
     // Server-wide actions that name no account: the approval rules, and deciding a release request. They sat below
     // the account check for a while and were refused with "Invalid cPanel user" - which meant no request from an
@@ -719,7 +736,7 @@ smpro_layout_header('PHP Harden');
   <?php endforeach; ?>
 </div>
 <?php endif; ?>
-<?php $phOvNav = [['phFast', '&#9889; Preview'], ['phCustom', '&#129513; Browser'], ['phExtsCard', 'Extensions'], ['phWwCard', 'World-writable'], ['phForceCard', '&#128683; Force unprotect'], ['ph-activity', '&#128203; Activity'], ['ph-rules', '&#9881; Auto-approve rules'], ['ph-asks', '&#9993; Release requests'], ['phIgnList', 'Ignore list']]; ?>
+<?php $phOvNav = [['phFast', '&#9889; Preview'], ['phCustom', '&#129513; Browser'], ['phExtsCard', 'Extensions'], ['phWwCard', 'World-writable'], ['phForceCard', '&#128683; Force unprotect'], ['phBulk', '&#128683; Several accounts'], ['ph-activity', '&#128203; Activity'], ['ph-rules', '&#9881; Auto-approve rules'], ['ph-asks', '&#9993; Release requests'], ['phIgnList', 'Ignore list']]; ?>
 <nav class="fw-nav" id="phNav"><?php foreach ($phOvNav as [$id, $lbl]): ?><a href="#<?= $id ?>" data-go="<?= $id ?>"><?= $lbl ?></a><?php endforeach; ?><span class="sp"></span><button type="button" class="fw-navx" id="phOpenAll">expand all</button><button type="button" class="fw-navx" id="phCloseAll">collapse all</button></nav>
 
 <?php if ($u !== '' && !$valid): ?>
@@ -1094,6 +1111,35 @@ if ($igNow): ?>
   <div class="meta" style="font-size:11.5px;padding:10px 16px">Removing an entry does not re-protect the account by itself &mdash; it only makes it eligible again. Open the account above and apply protection when you want it back.</div>
   <?php endif; ?>
 </div>
+<?php
+// Every account on the server with what this product knows about it, for releasing several at once. The state pill
+// comes from the manifest (one small file each); the live chattr state is what Force unprotect reads when it runs.
+$bulkRows = []; foreach (function_exists('smpro_cpanel_users') ? smpro_cpanel_users() : [] as $bu) { $bm = smpro_ph_load($bu); $bulkRows[] = ['u' => $bu, 'st' => (string)($bm['status'] ?? 'none'), 'ign' => (bool)smpro_ph_ign_get($bu)]; }
+$bulkSt = ['locked' => ['protected', 'red'], 'unlocked' => ['unlocked', 'gray'], 'temporary_unlock' => ['temp unlock', 'gray'], 'none' => ['not applied', 'gray']];
+?>
+<div class="card" id="phBulk" style="padding:0;overflow:hidden;margin-top:14px;border-left:3px solid var(--dang)">
+  <div class="ph-card-h"><b>&#128683; Force unprotect several accounts</b>
+    <span class="meta">tick the accounts, give one reason, release them all &mdash; locks set outside this product go too, so an account never protected here can still be freed</span>
+    <span style="flex:1"></span><span class="b gray" id="phBulkCount">0 selected</span></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)">
+    <input class="tp-in" id="phBulkFilter" placeholder="filter accounts&hellip;" style="max-width:220px">
+    <button class="tp-btn" type="button" id="phBulkAll">Select visible</button>
+    <button class="tp-btn" type="button" id="phBulkProt">Select protected</button>
+    <button class="tp-btn" type="button" id="phBulkNone">Clear</button>
+  </div>
+  <div class="ph-tablewrap" style="max-height:360px">
+    <table class="smpro-table"><thead><tr><th style="width:30px"><input type="checkbox" id="phBulkChkAll"></th><th>Account</th><th>Status here</th><th>Ignore list</th></tr></thead><tbody id="phBulkBody">
+    <?php foreach ($bulkRows as $br): $bp = $bulkSt[$br['st']] ?? $bulkSt['none']; ?>
+      <tr data-u="<?= smpro_h($br['u']) ?>" data-st="<?= smpro_h($br['st']) ?>"><td><input type="checkbox" class="ph-bulk" value="<?= smpro_h($br['u']) ?>"></td><td class="mono"><b><?= smpro_h($br['u']) ?></b></td><td><span class="b <?= $bp[1] ?>"><?= $bp[0] ?></span></td><td><?= $br['ign'] ? '<span class="b gray">excluded</span>' : '<span class="meta">&mdash;</span>' ?></td></tr>
+    <?php endforeach; if (!$bulkRows): ?><tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted)">No cPanel accounts were found on this server.</td></tr><?php endif; ?>
+    </tbody></table>
+  </div>
+  <div class="ph-cust-actions">
+    <input class="tp-in" id="phBulkReason" placeholder="reason (recorded on every account)" style="flex:1;min-width:220px">
+    <select class="tp-sel" id="phBulkScope"><option value="all">Exclude from all protection</option><option value="auto">Exclude from automatic passes only</option></select>
+    <button class="tp-btn danger" type="button" id="phBulkGo">&#128683; Force unprotect selected</button>
+  </div>
+</div>
 
 
 <style>
@@ -1299,6 +1345,32 @@ if ($igNow): ?>
       .catch(function(){rs.disabled=false;rs.innerHTML=o;alert('Request failed — nothing was saved.');});
   });
 
+  // several accounts at once
+  var bb=document.getElementById('phBulkBody');
+  if(bb){
+    var vis=function(){return Array.prototype.slice.call(bb.querySelectorAll('tr[data-u]')).filter(function(r){return r.style.display!=='none';});};
+    var boxes=function(){return Array.prototype.slice.call(bb.querySelectorAll('.ph-bulk'));};
+    var cnt=function(){var n=boxes().filter(function(c){return c.checked;}).length;document.getElementById('phBulkCount').textContent=n+' selected';};
+    document.getElementById('phBulkFilter').addEventListener('input',function(){var q=this.value.trim().toLowerCase();bb.querySelectorAll('tr[data-u]').forEach(function(r){r.style.display=(!q||r.getAttribute('data-u').toLowerCase().indexOf(q)!==-1)?'':'none';});});
+    document.getElementById('phBulkAll').addEventListener('click',function(){vis().forEach(function(r){r.querySelector('.ph-bulk').checked=true;});cnt();});
+    document.getElementById('phBulkProt').addEventListener('click',function(){vis().forEach(function(r){r.querySelector('.ph-bulk').checked=(r.getAttribute('data-st')==='locked');});cnt();});
+    document.getElementById('phBulkNone').addEventListener('click',function(){boxes().forEach(function(c){c.checked=false;});cnt();});
+    document.getElementById('phBulkChkAll').addEventListener('change',function(){var on=this.checked;vis().forEach(function(r){r.querySelector('.ph-bulk').checked=on;});cnt();});
+    bb.addEventListener('change',cnt);
+    document.getElementById('phBulkGo').addEventListener('click',function(){
+      var sel=boxes().filter(function(c){return c.checked;}).map(function(c){return c.value;}),
+          reason=(document.getElementById('phBulkReason').value||'').trim(),scope=document.getElementById('phBulkScope').value,b=this;
+      if(!sel.length){alert('Tick at least one account.');return;}
+      if(!reason){alert('Give a reason first \u2014 it is recorded on every account.');document.getElementById('phBulkReason').focus();return;}
+      if(!confirm('Force unprotect '+sel.length+' account(s)?\n\n'+sel.slice(0,12).join(', ')+(sel.length>12?', \u2026':'')+'\n\nEvery lock on each account is removed \u2014 this product\'s and anyone else\'s \u2014 and each is added to the ignore list ('+(scope==='auto'?'automatic passes only':'all protection')+'). This can take a while; the work finishes even if you close the page.'))return;
+      var old=b.innerHTML;b.disabled=true;b.innerHTML='\u23f3 Releasing '+sel.length+' account(s)\u2026';
+      var f=new URLSearchParams();f.set('ph_action','force_unprotect_bulk');f.set('smpro_csrf',CSRF);f.set('reason',reason);f.set('scope',scope);sel.forEach(function(u){f.append('targets[]',u);});
+      fetch('index.cgi?page=php-harden',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:f.toString(),cache:'no-store'})
+        .then(function(r){return r.json();})
+        .then(function(j){alert((j&&j.ok?'\u2713 ':'\u26a0 ')+((j&&j.msg)||''));location.reload();})
+        .catch(function(){b.disabled=false;b.innerHTML=old;alert('Request failed \u2014 check Activity: accounts processed before the failure are already released.');});
+    });
+  }
   document.addEventListener('click',function(ev){
     var d=ev.target.closest?ev.target.closest('.ph-askdec'):null;
     if(d){
