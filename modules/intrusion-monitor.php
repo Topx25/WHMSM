@@ -237,6 +237,7 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'save_settings') {
         'login_guard_net_ips'   => max(2, min(500,   (int)($_POST['login_guard_net_ips']   ?? ($cur['login_guard_net_ips']   ?? 2)))),
         'login_guard_net_fails' => max(2, min(100000,(int)($_POST['login_guard_net_fails'] ?? ($cur['login_guard_net_fails'] ?? 10)))),
         'protect_arab'      => !empty($_POST['protect_arab']),
+        'home_shield'       => array_key_exists('home_shield_present', $_POST) ? !empty($_POST['home_shield']) : (array_key_exists('home_shield', $cur) ? !empty($cur['home_shield']) : true),
         // Only overwrite when actually submitted (a stale cached page without these fields must not wipe them).
         'protect_regions'   => array_key_exists('protect_regions', $_POST) ? smpro_im_parse_ccs((string)$_POST['protect_regions']) : (array)($cur['protect_regions'] ?? []),
         'caution_regions'   => array_key_exists('caution_regions', $_POST) ? smpro_im_parse_ccs((string)$_POST['caution_regions']) : (array)($cur['caution_regions'] ?? []),
@@ -771,6 +772,7 @@ foreach ($imTabOf as $imId => $imT) if ($imT === $tab) $imNav[] = [$imId, $imLbl
       <div class="im-row" style="align-items:flex-start"><label data-i18n>Home regions — residential IPs here are <b>never</b> auto-blocked (routed to manual review). ISO 3166-1 alpha-2 codes, comma-separated.</label>
         <input type="text" id="cfgHomeRegions" class="tp-in" placeholder="e.g. EG, SA" value="<?= smpro_h(implode(', ', array_map('strtoupper', array_filter((array)($c['protect_regions'] ?? []))))) ?>" style="max-width:360px" autocomplete="off" spellcheck="false">
         <span class="meta" data-i18n>Set these to your own customers' country/countries. Empty = no country is auto-protected.</span></div>
+      <label class="lm-chkl"><input type="checkbox" id="cfgHomeShield" <?= (array_key_exists('home_shield', $c) ? !empty($c['home_shield']) : true) ? 'checked' : '' ?>> <span data-i18n>Home-region shield &mdash; when <b>another tool</b> (a WAF plugin, lfd, a temporary deny) blocks a residential address in a home region, lift the block within a minute and report who set it. Never touched: a block written by hand, one whose reason contains the word <code>keep</code>, a whole network, a datacenter address.</span></label>
       <div class="im-row" style="align-items:flex-start"><label>Caution regions — residential IPs here need 3× the attack count before auto-block. Empty disables this tier. <a href="#" id="cautionArabPreset" style="white-space:nowrap">Use Arab countries</a></label>
         <input type="text" id="cfgCaution" class="tp-in" placeholder="e.g. AE, KW, QA" value="<?= smpro_h(implode(', ', array_map('strtoupper', array_filter((array)($c['caution_regions'] ?? []))))) ?>" style="max-width:360px" autocomplete="off" spellcheck="false"></div>
       <div class="im-row"><label data-i18n>Allowlist (never block — IPs/CIDRs, one per line)</label><textarea id="cfgAllow" class="tp-in" rows="3"><?= smpro_h(implode("\n", (array)$c['allowlist'])) ?></textarea></div>
@@ -991,6 +993,7 @@ document.addEventListener('click',function(e){var b=e.target.closest('.la-act.al
   if(document.getElementById('cfgLgNetFails'))fd.set('login_guard_net_fails',document.getElementById('cfgLgNetFails').value);
   if(document.getElementById('cfgProtArab')&&document.getElementById('cfgProtArab').checked)fd.set('protect_arab','1');
   if(document.getElementById('cfgHomeRegions'))fd.set('protect_regions',document.getElementById('cfgHomeRegions').value);
+  if(document.getElementById('cfgHomeShield')){fd.set('home_shield_present','1');if(document.getElementById('cfgHomeShield').checked)fd.set('home_shield','1');}
   if(document.getElementById('cfgCaution'))fd.set('caution_regions',document.getElementById('cfgCaution').value);
   fd.set('allowlist',document.getElementById('cfgAllow').value);fd.set('alert_window_min',document.getElementById('cfgWin').value);
   if(document.getElementById('cfgBreach'))fd.set('breach_exclude',document.getElementById('cfgBreach').value);

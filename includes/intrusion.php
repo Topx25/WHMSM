@@ -56,6 +56,7 @@ function smpro_in_cfg($reset = false) {
         'use_cloudflare' => true, 'use_csf' => true,
         'allowlist' => [],                                     // never block these IPs/CIDRs
         'caution_regions' => [],                               // tier-2: residential IPs here need 3x the attack count before auto-block. Ships EMPTY (no market assumption); admin sets it (UI has an Arab-countries preset).
+        'home_shield' => true,                                 // lift AUTOMATIC blocks set by other tools (WAF plugins, lfd, temporary denies) on residential IPs in the home regions; hand-written blocks and reasons containing 'keep' are never touched
         'protect_regions' => [],                               // home regions: RESIDENTIAL IPs here are never auto-blocked. Ships EMPTY - this is a resale product and must not assume a market; the operator sets it (the plugin suggests the server's own country).
         'protect_arab_threshold' => 1,                         // other Arab-country residential IPs: auto-block only when attack is clear & repeated (1=on)
         'breach_exclude' => ['imunify-security', '/wp-content/cache/', '/wp-content/upgrade/', '/wp-content/uploads/cache/', 'wordfence-waf', '/mu-plugins/'],  // breach scan: ignore these (legit, auto-updating). Ships to every server, so keep it to widely-distributed names only - never a single-site one. Built-in security-plugin seeds are ALSO always applied - see smpro_im_breach_exclude_seed(). Files with a WP "Plugin Name:" header are never auto-quarantined.
@@ -694,20 +695,86 @@ function smpro_login_guard_run($dryrun = false) {
     return ['ok' => true, 'blocked' => $blocked, 'scanned' => count($fails)];
 }
 
+/**
+ * Home-region shield. A home region means "residential addresses here are your customers", and this product never
+ * auto-blocks them. Other tools on the same server do not know that: a WAF plugin's auto-block, lfd's own triggers,
+ * a temporary deny. The IP report then shows a customer BLOCKED next to a chip saying it never should be, and nothing
+ * lifts it. This pass reads every CSF deny (permanent and temporary) and lifts the AUTOMATIC ones that hit a
+ * residential address in a home region, naming who set them. Never lifted: a block a person wrote by hand (CSF's
+ * "Manually denied", this product's own Block button whose reason reads "smpro ..."), a reason containing "keep"
+ * (the operator's pin), a whole network (a CIDR line is policy, not one customer), a datacenter address (abusers rent
+ * VMs inside the home region too). Each lift is audited, appended to the ledger the IP report reads, and reported
+ * once per run. Returns ['checked'=>bool, 'lifted'=>[ip=>by], 'kept'=>n, 'why'=>string].
+ */
+function smpro_im_home_shield_ledger() { return SMPRO_VARLIB . '/intrusion/home_shield.jsonl'; }
+function smpro_im_home_shield_run($cap = 50) {
+    $c = smpro_in_cfg(); $home = array_filter(array_map('trim', (array)($c['protect_regions'] ?? [])));
+    if (empty($c['home_shield']) || !$home) return ['checked' => false, 'lifted' => [], 'kept' => 0, 'why' => 'off or no home region'];
+    $csf = function_exists('smpro_csf_bin') ? smpro_csf_bin() : ''; if ($csf === '') return ['checked' => false, 'lifted' => [], 'kept' => 0, 'why' => 'csf not installed'];
+    $deny = [];   // ip => ['kind' => perm|temp, 'by' => comment]
+    foreach (@file('/etc/csf/csf.deny', FILE_IGNORE_NEW_LINES) ?: [] as $l) {
+        $l = trim($l); if ($l === '' || $l[0] === '#') continue;
+        if (preg_match('/^[0-9a-fA-F:.]+\/\d+/', $l)) continue;                                   // a network is policy, left alone
+        if (preg_match('/^([0-9a-fA-F:.]+)\s*(?:#\s*(.*))?$/', $l, $m) && filter_var($m[1], FILTER_VALIDATE_IP)) $deny[$m[1]] = ['kind' => 'perm', 'by' => trim((string)($m[2] ?? ''))];
+    }
+    foreach (explode("\n", (string)@shell_exec('timeout 10 ' . escapeshellarg($csf) . ' -t 2>/dev/null')) as $l) {
+        if (!preg_match('/^DENY\s+(\S+)\s+\S+\s+\S+\s+((?:\d+[dhms]\s*)+)(.*)$/', trim($l), $m)) continue;
+        if (filter_var($m[1], FILTER_VALIDATE_IP) && !isset($deny[$m[1]])) $deny[$m[1]] = ['kind' => 'temp', 'by' => trim($m[3])];
+    }
+    $out = ['checked' => true, 'lifted' => [], 'kept' => 0, 'why' => '']; $n = 0;
+    foreach ($deny as $ip => $d) {
+        $by = $d['by'];
+        if (preg_match('/manual|by hand|\bkeep\b|^smpro\b/i', $by)) { $out['kept']++; continue; }          // a person decided, or pinned
+        if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) continue;
+        if (smpro_im_region_status($ip) !== 'core_protected') continue;                                 // not home, or a datacenter
+        if ($n++ >= (int)$cap) break;
+        if ($d['kind'] === 'temp') @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -tr ' . escapeshellarg($ip) . ' 2>&1');
+        if ($d['kind'] === 'perm' || (function_exists('smpro_csf_denied') && smpro_csf_denied($ip))) { if (function_exists('smpro_csf_do')) smpro_csf_do('unblock', $ip); }
+        clearstatcache();
+        $still = function_exists('smpro_csf_denied') ? smpro_csf_denied($ip) : false;
+        $in = function_exists('smpro_ip_intel') ? smpro_ip_intel($ip, false) : [];
+        $row = ['ts' => time(), 'ip' => $ip, 'kind' => $d['kind'], 'by' => $by !== '' ? $by : 'no reason recorded', 'cc' => (string)($in['country'] ?? ''), 'isp' => (string)($in['isp'] ?? ($in['org'] ?? '')), 'ok' => !$still];
+        $f = smpro_im_home_shield_ledger(); @is_dir(dirname($f)) || @mkdir(dirname($f), 0700, true);
+        @file_put_contents($f, json_encode($row, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+        if (function_exists('smpro_audit')) smpro_audit('home_shield_lift', $row);
+        if (!$still) $out['lifted'][$ip] = $row; else $out['why'] = 'could not remove ' . $ip;
+    }
+    if ($out['lifted'] && function_exists('smpro_notify')) {
+        $lines = []; foreach ($out['lifted'] as $ip => $r) $lines[] = $ip . ' (' . trim($r['cc'] . ' ' . $r['isp']) . ') - blocked by: ' . $r['by'];
+        $who = array_values(array_unique(array_map(fn($r) => preg_replace('/[\s:(-].*$/', '', $r['by']) ?: 'another tool', $out['lifted'])));
+        @smpro_notify('home_shield_lift', 'Lifted ' . count($out['lifted']) . ' block(s) on home-region customers',
+            implode("\n", array_slice($lines, 0, 15)) . (count($lines) > 15 ? "\n... and " . (count($lines) - 15) . ' more' : '')
+            . "\n\nWhat this means: " . implode(', ', $who) . ' blocked residential address(es) in your home region (' . implode(', ', array_map('strtoupper', $home)) . '). Those are where your customers are, so SM Pro removed the block within a minute. The traffic that triggered it is still in the Intrusion Monitor feed.'
+            . "\nWhat to do: nothing, unless one of these really is an attacker - then block it from Intrusion Monitor and put the word keep in the reason; the shield never touches a block with keep, a hand-written block, or a whole network.",
+            ['severity' => 'info']);
+    }
+    // a ledger older than 5,000 lines is trimmed to the last 2,000 so the file never grows without end
+    $f = smpro_im_home_shield_ledger();
+    if (is_file($f) && filesize($f) > 1500000) { $ls = file($f, FILE_IGNORE_NEW_LINES) ?: []; if (count($ls) > 5000) @file_put_contents($f, implode("\n", array_slice($ls, -2000)) . "\n", LOCK_EX); }
+    return $out;
+}
+/** Lifts recorded for one address (newest first), for the IP report. */
+function smpro_im_home_shield_lifts($ip, $limit = 5) {
+    $f = smpro_im_home_shield_ledger(); if (!is_file($f)) return [];
+    $out = []; foreach (array_reverse(file($f, FILE_IGNORE_NEW_LINES) ?: []) as $l) { $j = json_decode($l, true); if (is_array($j) && ($j['ip'] ?? '') === $ip) { $out[] = $j; if (count($out) >= $limit) break; } }
+    return $out;
+}
+
 /** Install/refresh (or remove) the per-minute login-guard cron. Idempotent + cheap (writes only on change). */
 /** cron_sync entry. */
 function smpro_lg_cron_sync(): bool { if (defined('SMPRO_TEST_SRC')) return true; smpro_login_guard_install_cron(); return true; }
 function smpro_login_guard_install_cron() {
     $f = '/etc/cron.d/smpro-login-guard';
     $cfg = smpro_in_cfg();
-    if (empty($cfg['login_guard'])) { if (is_file($f)) @unlink($f); return; }
+    $shield = !empty($cfg['home_shield']) && array_filter((array)($cfg['protect_regions'] ?? []));   // the same minute worker runs the home-region shield
+    if (empty($cfg['login_guard']) && !$shield) { if (is_file($f)) @unlink($f); return; }
     $bin = (defined('SMPRO_BASE') ? SMPRO_BASE : __DIR__ . '/..') . '/bin/login_guard.php';
     if (!is_file($bin)) return;
     $php  = smpro_php_cli_bin();   // canonical: cron's PATH may not resolve a bare `php`
     $lock = (defined('SMPRO_VARLIB') ? SMPRO_VARLIB : '/var/lib/smpro') . '/locks/login_guard.lock';
     @is_dir(dirname($lock)) || @mkdir(dirname($lock), 0700, true);
     $flock = is_executable('/usr/bin/flock') ? '/usr/bin/flock' : 'flock';
-    $want = "# Safety Monitor Pro — foreign login brute-force guard (every minute; flock = no overlap)\n"
+    $want = "# Safety Monitor Pro — foreign login brute-force guard + home-region shield (every minute; flock = no overlap)\n"
           . "* * * * * root $flock -n $lock timeout 120 $php $bin >/dev/null 2>&1\n";
     if (is_file($f) && (string)@file_get_contents($f) === $want) return;   // already current
     smpro_cron_install($f, $want);   // verified write: 0644 + trailing newline, or it reports failure

@@ -16,3 +16,15 @@ has($src, "if (\$u = smpro_im_upload_cluster_alert(\$recentAll))", 'U4: ...and f
 has($src, "function smpro_in_sweep_monitor_rows(): void {", 'U5: the index is swept once of the rows the old parser stored');
 $ub = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/forensics-upload-breach.php'));
 has($ub, "smpro_im_parse_modsec(4 * 1024 * 1024, 800, (int)\$sinceTs, true)", 'U6: the upload-breach forensics keep the accepted-upload records');
+
+// beta394: the home-region shield lifts automatic blocks set by other tools on residential home-region addresses
+has($src, "function smpro_im_home_shield_run(\$cap = 50) {", 'H1: the shield exists');
+has($src, "if (preg_match('/^[0-9a-fA-F:.]+\\/\\d+/', \$l)) continue;                                   // a network is policy, left alone", 'H2: a CIDR line is never lifted');
+has($src, "if (preg_match('/manual|by hand|\\bkeep\\b|^smpro\\b/i', \$by)) { \$out['kept']++; continue; }", 'H3: a hand-written, pinned, or own block is kept');
+has($src, "if (smpro_im_region_status(\$ip) !== 'core_protected') continue;", 'H4: only residential addresses in a home region');
+has($src, "if (\$d['kind'] === 'temp') @shell_exec('timeout 25 ' . escapeshellarg(\$csf) . ' -tr ' . escapeshellarg(\$ip) . ' 2>&1');", 'H5: temporary denies are lifted too');
+has($src, "if (function_exists('smpro_audit')) smpro_audit('home_shield_lift', \$row);", 'H6: every lift is audited');
+has($src, "if (empty(\$cfg['login_guard']) && !\$shield) { if (is_file(\$f)) @unlink(\$f); return; }", 'H7: the minute cron stays while the shield is wanted');
+$lg = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/login_guard.php'));
+has($lg, "if (function_exists('smpro_im_home_shield_run')) { try { smpro_im_home_shield_run(); }", 'H8: the minute worker runs it');
+$c0 = smpro_in_cfg(); ok(array_key_exists('home_shield', $c0) && $c0['home_shield'] === true, 'H9: ships ON (it only acts once a home region is set)');

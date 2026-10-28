@@ -499,9 +499,13 @@ function smpro_rc_block_reason($ip) {
         $rep['verdict'] = 'Could not confirm firewall status — the IP is not in csf.deny or csf.allow, but the live CSF lookup returned nothing (csf may be unavailable). Check the Firewall page.';
     } else {
         $reason = $rep['comment'] ?: ($rep['lfd'] ? 'LFD trigger — see history below' : 'manual or temporary block');
+        if (function_exists('smpro_im_home_shield_lifts') && ($hl = smpro_im_home_shield_lifts($ip, 1))) $reason .= ' (the Home-region shield lifted an earlier block on this address at ' . date('Y-m-d H:i', (int)$hl[0]['ts']) . ', set by: ' . $hl[0]['by'] . ')';
         $rep['verdict'] = 'BLOCKED. Reason: ' . $reason . '.';
         if ($arab && !$rep['datacenter']) {
             $rep['verdict'] .= ' This is a RESIDENTIAL ' . ($rep['country'] ?: 'home-region') . ' IP that should normally be allow-listed (your customers are here).';
+            $imc = function_exists('smpro_in_cfg') ? smpro_in_cfg() : [];
+            if (array_key_exists('home_shield', $imc) ? !empty($imc['home_shield']) : true) $rep['verdict'] .= preg_match('/manual|by hand|\bkeep\b|^smpro\b/i', (string)$rep['comment']) ? ' The Home-region shield leaves this one alone: the block was written by hand or its reason says keep.' : ' The Home-region shield lifts automatic blocks like this within a minute and reports who set it.';
+            else $rep['verdict'] .= ' The Home-region shield is OFF in Intrusion Monitor settings; turned on, it would lift this block within a minute.';
             if (!$rep['cc_covers']) {
                 $rep['verdict'] .= ' CC_ALLOW does NOT include ' . ($rep['country'] ?: 'this country') . ' — that is exactly why a legitimate ' . ($rep['country'] ?: 'local') . ' IP got firewall-blocked.';
                 $rep['fix'][] = 'Add ' . ($rep['country'] ?: 'the country') . ' to Firewall → Country Block-Prevention (CC_ALLOW) so it is never blocked again.';

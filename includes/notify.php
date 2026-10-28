@@ -36,6 +36,7 @@ function smpro_ntf_types() {
         'load_high'        => ['Server load high', 'Load average crossed the threshold.', 'medium'],
         'service_down'     => ['Service down', 'The Service Monitor found a watched service (Apache, MySQL, Exim, LFD, …) stopped. Includes whether auto-restart was attempted.', 'high'],
         'service_up'       => ['Service recovered', 'A watched service that was down is running again (recovered on its own or restarted by SM Pro).', 'info'],
+        'home_shield_lift' => ['Home-region block lifted', 'Another tool (a WAF plugin, lfd, a temporary deny) blocked a residential address in one of your home regions; SM Pro removed the block and names who set it.', 'info'],
         'service_repaired' => ['Service repaired', 'A watched service was down for a reason a plain restart cannot clear (a stale PHP-FPM socket, flushed firewall rules, a broken pool file). SM Pro found the cause, fixed it, and names it.', 'high'],
         'harden_drift'     => ['PHP Harden drift', 'A file that PHP Harden locked is no longer immutable (possible tamper).', 'high'],
         'spam_outbreak'    => ['Outbound spam spike', 'An account sent an unusually high volume of outbound mail (over the per-hour or per-12h threshold).', 'high'],
