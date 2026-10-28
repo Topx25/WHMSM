@@ -359,6 +359,14 @@ function smpro_ph_force_unprotect($u, array $profile, $reason, $by, $scope = 'al
     // immutable. "Force" means the account comes back able to manage its own files, whoever locked them.
     $sw = function_exists('smpro_ph_sweep_attrs') ? smpro_ph_sweep_attrs($u) : ['found' => [], 'cleared' => [], 'failed' => [], 'root_owned' => 0, 'root_owned_sample' => [], 'complete' => false];
     $others = count($sw['cleared']); foreach (array_keys($sw['failed']) as $sp) $stuck[] = $sp;
+    // Paths another HostGuard product listed as its own: cleared (Force means freed), and that product is asked in
+    // writing to release and not re-lock while the account stays excluded.
+    if (function_exists('smpro_hg_lock_owner') && $sw['cleared']) {
+        $owners = []; foreach ($sw['cleared'] as $cp) { $ow = smpro_hg_lock_owner($u, $cp); if ($ow !== '') $owners[$ow] = 1; }
+        if ($owners) { smpro_hg_release_request($u, 'Force unprotect by ' . $by . ': ' . $reason, array_keys($owners)); smpro_hg_event_emit('lock_released', ['account' => $u, 'products' => array_keys($owners), 'paths' => array_slice($sw['cleared'], 0, 20)]); }
+    }
+    if (function_exists('smpro_hg_event_emit')) smpro_hg_event_emit('account_excluded', ['account' => $u, 'scope' => $scope, 'reason' => mb_substr((string)$reason, 0, 160)]);
+    if (function_exists('smpro_hg_locks_write')) smpro_hg_locks_write($u, []);
     $cleared = $unlocked + $guards + $others;
 
     $m = $m ?: ['version' => 'smpro.ph1', 'user' => $u, 'created_at' => date('c')];

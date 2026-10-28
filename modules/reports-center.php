@@ -499,6 +499,8 @@ function smpro_rc_block_reason($ip) {
         $rep['verdict'] = 'Could not confirm firewall status — the IP is not in csf.deny or csf.allow, but the live CSF lookup returned nothing (csf may be unavailable). Check the Firewall page.';
     } else {
         $reason = $rep['comment'] ?: ($rep['lfd'] ? 'LFD trigger — see history below' : 'manual or temporary block');
+        if (function_exists('smpro_hg_blocks_read') && ($hb = smpro_hg_blocks_read($ip, 1))) $reason .= ' · HostGuard bridge: ' . $hb[0]['product'] . ' recorded a ' . $hb[0]['action'] . ($hb[0]['rule'] !== '' ? ' (' . $hb[0]['rule'] . ')' : '') . ($hb[0]['site'] !== '' ? ' on ' . $hb[0]['site'] : '') . ' at ' . date('Y-m-d H:i', (int)$hb[0]['ts']);
+        if (function_exists('smpro_hg_events_for_ip') && ($he = smpro_hg_events_for_ip($ip, 1))) $reason .= ' · reported by ' . $he[0]['from'] . ': ' . ($he[0]['rule'] ?: $he[0]['type']) . ($he[0]['site'] !== '' ? ' on ' . $he[0]['site'] : '') . ' (wanted: ' . $he[0]['wanted'] . ', decision: ' . $he[0]['decision'] . ')';
         if (function_exists('smpro_im_home_shield_lifts') && ($hl = smpro_im_home_shield_lifts($ip, 1))) $reason .= ' (the Home-region shield lifted an earlier block on this address at ' . date('Y-m-d H:i', (int)$hl[0]['ts']) . ', set by: ' . $hl[0]['by'] . ')';
         $rep['verdict'] = 'BLOCKED. Reason: ' . $reason . '.';
         if ($arab && !$rep['datacenter']) {

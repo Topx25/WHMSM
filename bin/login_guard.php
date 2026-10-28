@@ -6,11 +6,12 @@
  */
 define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);
-foreach (['defines', 'mmdb', 'helpers', 'secret', 'license', 'intrusion', 'notify', 'cooler', 'tgbot'] as $m) {
+foreach (['defines', 'mmdb', 'helpers', 'secret', 'license', 'intrusion', 'notify', 'cooler', 'tgbot', 'fwallow', 'phlock', 'hgbridge'] as $m) {
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require $f;
 }
 if (function_exists('smpro_lic_heartbeat')) { @smpro_lic_heartbeat(); }                 // keep the license fresh (so renewal wakes the plugin)
 if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) exit;                 // disabled / license-dormant -> do nothing
+if (function_exists('smpro_hg_tick')) { try { smpro_hg_tick(); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }   // HostGuard bridge: policy out, the others' events in
 if (function_exists('smpro_im_home_shield_run')) { try { smpro_im_home_shield_run(); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }   // customers blocked by another tool are freed first
 if (function_exists('smpro_login_guard_run')) { try { smpro_login_guard_run(false); } catch (\Throwable $e) { if (function_exists('smpro_worker_fatal')) smpro_worker_fatal(__FILE__, $e); else @error_log('smpro worker fatal in ' . basename(__FILE__) . ': ' . $e->getMessage()); } }

@@ -88,7 +88,8 @@ require __DIR__ . '/includes/ccfix.php';       // Compromise Check fixes + sched
 require __DIR__ . '/includes/trustfeed.php';      // trusted-bots list from the licence server (verified official ranges)
 require __DIR__ . '/includes/fwallow.php';
 require __DIR__ . '/includes/crawlers.php';       // Crawler Control: per-family traffic and the server-wide refuse switch
-require __DIR__ . '/includes/secreport.php';      // Daily Security Report: the day as one page, downloadable, printable, deliverable        // Firewall recommended allow-lists + live fetch + auto-update (uses smpro_csf_allowlisted)
+require __DIR__ . '/includes/secreport.php';
+require __DIR__ . '/includes/hgbridge.php';       // HostGuard bridge: the shared contract with the other products on this server      // Daily Security Report: the day as one page, downloadable, printable, deliverable        // Firewall recommended allow-lists + live fetch + auto-update (uses smpro_csf_allowlisted)
 require __DIR__ . '/includes/svcmon.php';         // Service catalog + controls + background service monitor (auto-restart + notify; uses smpro_notify)
 require __DIR__ . '/includes/migrate.php';
 require __DIR__ . '/includes/migrate_da.php';

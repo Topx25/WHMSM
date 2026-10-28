@@ -737,6 +737,7 @@ function smpro_im_home_shield_run($cap = 50) {
         $f = smpro_im_home_shield_ledger(); @is_dir(dirname($f)) || @mkdir(dirname($f), 0700, true);
         @file_put_contents($f, json_encode($row, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
         if (function_exists('smpro_audit')) smpro_audit('home_shield_lift', $row);
+        if (!$still && function_exists('smpro_hg_block_record')) { smpro_hg_block_record($ip, 'lift', 'home-region shield', '', 'blocked by: ' . $row['by']); smpro_hg_event_emit('block_lifted', ['ip' => $ip, 'why' => 'residential address in a home region (a customer)', 'original' => $row['by'], 'kind' => $d['kind']]); }
         if (!$still) $out['lifted'][$ip] = $row; else $out['why'] = 'could not remove ' . $ip;
     }
     if ($out['lifted'] && function_exists('smpro_notify')) {
@@ -766,8 +767,9 @@ function smpro_lg_cron_sync(): bool { if (defined('SMPRO_TEST_SRC')) return true
 function smpro_login_guard_install_cron() {
     $f = '/etc/cron.d/smpro-login-guard';
     $cfg = smpro_in_cfg();
-    $shield = !empty($cfg['home_shield']) && array_filter((array)($cfg['protect_regions'] ?? []));   // the same minute worker runs the home-region shield
-    if (empty($cfg['login_guard']) && !$shield) { if (is_file($f)) @unlink($f); return; }
+    // The same minute worker runs the home-region shield and the HostGuard bridge (policy out, other products'
+    // events in), so the cron stays installed whatever the login guard setting; each part checks its own switch.
+    $shield = !empty($cfg['home_shield']) && array_filter((array)($cfg['protect_regions'] ?? []));
     $bin = (defined('SMPRO_BASE') ? SMPRO_BASE : __DIR__ . '/..') . '/bin/login_guard.php';
     if (!is_file($bin)) return;
     $php  = smpro_php_cli_bin();   // canonical: cron's PATH may not resolve a bare `php`
@@ -1245,6 +1247,12 @@ function smpro_im_csf_block($ip) {
     // Route through the firewall that is ACTUALLY enforcing. On a box where CSF is installed but disabled and
     // Imunify360 owns the rules, writing to csf.deny "succeeded" while blocking nothing - the admin saw the
     // attacker keep hitting the site after pressing Block.
+    if (function_exists('smpro_hg_block_record') && function_exists('smpro_hg_blocked_by_others') && ($o = smpro_hg_blocked_by_others($ip))) {
+        // another product already holds this address: no second deny, only our record with our rule
+        smpro_hg_block_record($ip, 'block', 'Intrusion Monitor (already held by ' . ($o['product'] ?? 'another product') . ')');
+        return ['ok' => true, 'testing' => false, 'recorded' => true, 'engine' => 'bridge', 'msg' => $ip . ' is already blocked by ' . ($o['product'] ?? 'another product') . ' (' . ($o['rule'] ?? '') . '); recorded, no second deny written.'];
+    }
+    if (function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'block', 'Intrusion Monitor');
     if (function_exists('smpro_fw_block_ip')) {
         $r = smpro_fw_block_ip($ip, 'smpro Intrusion Monitor');
         return ['ok'=>!empty($r['ok']), 'testing'=>!empty($r['testing']), 'recorded'=>!empty($r['recorded']),
