@@ -182,3 +182,13 @@ is_eq(smpro_gw_zones_missing(['zz']), true, 'U12: and that is reported as missin
 // null, never false, when the question could not be asked: "we could not check" must not pass for "it is down".
 $reach = smpro_gw_source_reachable();
 ok($reach === true || $reach === false || $reach === null, 'U12: reachability answers true, false or "could not ask"');
+
+// beta396: FTP's passive data-port range is read from the daemon config and opened with port 21
+$gw = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/geowall.php'));
+has($gw, "function smpro_gw_ftp_passive_range(): string {", 'FP1: the passive-range reader exists');
+has($gw, "if (preg_match('/^\\s*PassivePorts\\s+(\\d{2,5})\\s+(\\d{2,5})/mi', \$txt, \$m)) { \$lo = (int)\$m[1];", 'FP2: it reads ProFTPD PassivePorts (no hardcoded number)');
+has($gw, "\$passive = (in_array(21, \$ports, true)) ? smpro_gw_ftp_passive_range() : '';", 'FP3: fetch adds it only when FTP (21) is a door');
+has($gw, "if (!in_array(\$passive, \$have, true)) {", 'FP4: ...and ensures it is in TCP_IN, once');
+has($gw, "\$new = \$set(\$new, 'CC_ALLOW_PORTS_TCP', implode(',', \$portList));", 'FP5: the range is declared to CC_ALLOW_PORTS_TCP with the login ports');
+// the reader returns a clean range or '' — never a bad value
+if (function_exists('smpro_gw_ftp_passive_range')) { $pr = smpro_gw_ftp_passive_range(); ok($pr === '' || preg_match('/^\d{3,5}:\d{3,5}$/', $pr), 'FP6: the reader returns LOW:HIGH or empty, never junk'); }

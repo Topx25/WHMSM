@@ -218,6 +218,8 @@ if ($reqMethod === 'POST' && in_array((string)($_POST['fw_action'] ?? ''), ['gw_
             } elseif ($act === 'gw_fetch') {
                 $cfg = smpro_gw_cfg();
                 $r = smpro_gw_fetch((array)$cfg['countries'], smpro_gw_ports($cfg));
+                if (!empty($r['ok']) && in_array(21, smpro_gw_ports($cfg), true) && function_exists('smpro_gw_ftp_passive_range') && ($pr = smpro_gw_ftp_passive_range()) !== '')
+                    $r['msg'] = rtrim((string)$r['msg'], '. ') . '. FTP uploads from allowed countries also need the passive data ports — range ' . smpro_h($pr) . ' was opened with port 21.';
                 $out = $r;
             } elseif ($act === 'gw_preview') {
                 $cfg = smpro_gw_cfg();

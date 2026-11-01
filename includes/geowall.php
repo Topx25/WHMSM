@@ -123,6 +123,26 @@ function smpro_gw_save(array $cfg): bool {
     return $ok;
 }
 
+/**
+ * The FTP PASSIVE data-port range, read from the server's own FTP daemon config (never a baked-in number).
+ * FTP uses a second connection for every transfer and listing, on a high port the daemon picks from this range.
+ * The country rule opens port 21 (the command channel) but that range is where the data goes - so with FTP as a
+ * door and this range closed, a customer in an allowed country logs in and then every upload and listing hangs.
+ * Returns 'LOW:HIGH' (CSF's port-range syntax) or '' when no range is declared (the daemon then uses defaults
+ * that are not ours to guess, so nothing is opened rather than opening the wrong thing).
+ */
+function smpro_gw_ftp_passive_range(): string {
+    foreach (['/etc/proftpd.conf', '/etc/pure-ftpd.conf'] as $f) {
+        $txt = @is_readable($f) ? (string)@file_get_contents($f) : '';
+        if ($txt === '') continue;
+        // ProFTPD: "PassivePorts 49152 65534"
+        if (preg_match('/^\s*PassivePorts\s+(\d{2,5})\s+(\d{2,5})/mi', $txt, $m)) { $lo = (int)$m[1]; $hi = (int)$m[2]; if ($lo > 1023 && $hi >= $lo && $hi <= 65535) return $lo . ':' . $hi; }
+        // Pure-FTPd: "PassivePortRange 30000 50000"
+        if (preg_match('/^\s*PassivePortRange\s+(\d{2,5})\s+(\d{2,5})/mi', $txt, $m)) { $lo = (int)$m[1]; $hi = (int)$m[2]; if ($lo > 1023 && $hi >= $lo && $hi <= 65535) return $lo . ':' . $hi; }
+    }
+    return '';
+}
+
 /** The ports this configuration covers. 80/443 are removed unconditionally, whatever the stored doors say. */
 function smpro_gw_ports(array $cfg): array {
     $all = smpro_gw_doors(); $p = [];
@@ -707,13 +727,30 @@ function smpro_gw_fetch(array $ccs, array $ports): array {
         }
         return rtrim($s) . "\n" . $line . "\n";
     };
+    // FTP needs its passive data-port range open too, or a customer in an allowed country logs in and every
+    // transfer then hangs. The range is read from the FTP daemon's own config; it is declared for the allowed
+    // countries AND ensured present in TCP_IN, because CC_ALLOW_PORTS only early-accepts a port that TCP_IN
+    // already lets through - a range missing from TCP_IN is dropped before the country rule is ever consulted.
+    $portList = $ports; $tcpInNote = '';
+    $passive = (in_array(21, $ports, true)) ? smpro_gw_ftp_passive_range() : '';
+    if ($passive !== '') {
+        $portList[] = $passive;
+        if (preg_match('/^TCP_IN\s*=\s*"([^"]*)"/m', $src, $tm)) {
+            $have = array_map('trim', explode(',', $tm[1]));
+            if (!in_array($passive, $have, true)) {
+                $have[] = $passive;
+                $new0 = preg_replace('/^TCP_IN\s*=\s*"[^"]*"/m', 'TCP_IN = "' . implode(',', array_filter($have)) . '"', $src, 1);
+                if ($new0 !== null) { $src = $new0; $tcpInNote = ' (added the passive range to TCP_IN)'; }
+            }
+        }
+    }
     $new = $set($src, 'CC_ALLOW_PORTS', implode(',', $ccs));
-    $new = $set($new, 'CC_ALLOW_PORTS_TCP', implode(',', $ports));
+    $new = $set($new, 'CC_ALLOW_PORTS_TCP', implode(',', $portList));
 
     if ($new !== $src && @file_put_contents($conf, $new, LOCK_EX) === false) {
         $r['msg'] = 'csf.conf could not be written.'; return $r;
     }
-    smpro_gw_record('fetch', 'declared ' . implode(',', $ccs) . ' on ports ' . implode(',', $ports) . ' to csf; backup at ' . $bk);
+    smpro_gw_record('fetch', 'declared ' . implode(',', $ccs) . ' on ports ' . implode(',', $portList) . ' to csf' . $tcpInNote . '; backup at ' . $bk);
 
     // Reload the rules so the new CC_ALLOW_PORTS takes effect.
     @shell_exec('timeout 240 csf -r >/dev/null 2>&1');
