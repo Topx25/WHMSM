@@ -11,7 +11,7 @@ has($im, "if (is_link(\$file) || !is_file(\$file)) return null;", 'U2: quarantin
 has($im, "(\$ls['mode'] & 0170000) !== 0100000", 'U2: quarantine insists on a regular file by lstat');
 hasnt($im, "@file_put_contents(\$file, \"<?php /* quarantined by smpro Intrusion Monitor */", 'U2: the stub is not written into the path by name');
 $sq = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/spqueue.php'));
-has($sq, "\$tmp = \$p . '.' . bin2hex(random_bytes(4)) . '.tmp'; \$fh = @fopen(\$tmp, 'xb');", 'U3: the answer is written O_EXCL then renamed');
+has($sq, "\$tmp = \$p . '.' . bin2hex(random_bytes(4)) . '.tmp'; \$um = umask(0022); \$fh = @fopen(\$tmp, 'xb'); umask(\$um);", 'U3: the answer is written O_EXCL then renamed');
 hasnt($sq, "if (is_link(\$p)) { @unlink(\$p); }", 'U3: the unlink-then-write race is gone');
 $fa = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/forensics-audit.php'));
 has($fa, "smpro_path_safe(\$fxFile, [smpro_user_home(\$fxUser)])", 'U4: fx_file goes through smpro_path_safe');

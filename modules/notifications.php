@@ -134,9 +134,9 @@ if ($reqMethod === 'POST' && ($_POST['ntf_action'] ?? '') !== '') {
             $lock = SMPRO_VARLIB . '/locks/notify.lock';
             @is_dir(dirname($lock)) || @mkdir(dirname($lock), 0700, true);
             $flock = is_executable('/usr/bin/flock') ? '/usr/bin/flock' : 'flock';
-            $line = "*/15 * * * * root " . $flock . " -n " . $lock . " timeout 600 " . $php . " " . $bin . " >/dev/null 2>&1\n";
-            @file_put_contents(SMPRO_NTF_CRON, "# Safety Monitor Pro — notification checker (every 15 min; flock = no overlap)\n" . $line);
-            @chmod(SMPRO_NTF_CRON, 0644);
+            // One writer for this cron. The page used to write a 15-minute line and cron_sync rewrote it to 5 minutes,
+            // so the schedule flipped back and forth.
+            smpro_ntf_cron_install();
         } else {
             // The checker is the detection engine and stays scheduled while the plugin is enabled (see
             // smpro_ntf_cron_wanted). Turning "off" here no longer removes it: disable the delivery channels to stop

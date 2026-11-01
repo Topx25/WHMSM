@@ -90,6 +90,7 @@ function smpro_ph_browser($u, $root, $dir, array $suggestFiles, array $suggestDi
     foreach ($rows as $p => &$r) {
         $chk = $r['type'] === 'dir' ? rtrim($p, '/') . '/.htaccess' : $p;
         $r['locked'] = $lockMap[$chk] ?? false;
+        $r['owner'] = (!empty($r['locked']) && function_exists('smpro_hg_lock_owner')) ? smpro_hg_lock_owner($u, $chk) : '';
     }
     unset($r);
     uasort($rows, function ($a, $b) { if ($a['type'] !== $b['type']) return $a['type'] === 'dir' ? -1 : 1; return strcasecmp($a['name'], $b['name']); });
@@ -110,7 +111,7 @@ function smpro_ph_browser_rows(array $rows) {
             . '<td>' . ($r['type'] === 'dir' ? '<span class="b gray">dir</span>' : '<span class="b gray">file</span>') . '</td>'
             . '<td class="num mono">' . ($r['type'] === 'dir' ? '—' : smpro_h(number_format(($r['size'] ?? 0) / 1024, 1)) . ' KB') . '</td>'
             . '<td class="mono" style="font-size:11px">' . smpro_h(date('Y-m-d H:i', $r['mtime'])) . '</td>'
-            . '<td>' . (!empty($r['locked']) ? '<span class="b red">&#128274; locked</span>' : '<span class="b green">writable</span>') . '</td>'
+            . '<td>' . (!empty($r['locked']) ? (!empty($r['owner']) ? '<span class="b gray" title="Locked by another product on this server. Unlock here asks it to release.">&#128274; held by ' . smpro_h(function_exists('smpro_hg_product_name') ? smpro_hg_product_name($r['owner']) : $r['owner']) . '</span>' : '<span class="b red">&#128274; locked</span>') : '<span class="b green">writable</span>') . '</td>'
             . '</tr>';
     }
     return $h;
@@ -281,13 +282,29 @@ function smpro_ph_unlock($u, array $postFiles, array $postDirs, $until = 0) {
     foreach ($postFiles as $f) { $f = (string)$f; if (smpro_ph_inside($u, $f) && is_file($f)) $files[] = realpath($f) ?: $f; }
     foreach ($postDirs as $d) { $d = (string)$d; if (smpro_ph_inside($u, $d) && is_dir($d)) $dirs[] = realpath($d) ?: $d; }
     $done = 0;
+    // Paths another product lists as its own (WP Guard's lockdown, say) are not cleared here. That product is asked in
+    // writing to release them; it does so within minutes and stays off while the request stands. Clearing them
+    // directly would leave the owner with a half-locked site it no longer understands.
+    $held = [];
+    if (function_exists('smpro_hg_lock_owner')) {
+        $mine = []; foreach (array_unique($files) as $f) { $ow = smpro_hg_lock_owner($u, $f); if ($ow !== '') $held[$ow][] = $f; else $mine[] = $f; }
+        $files = $mine;
+    }
     $done += (int)smpro_ph_chattr_many('-i', array_unique($files))['done'];
     // A locked folder is part of what "unlock" means. Leaving it set would keep new files impossible while the
     // page reported the account released - the same false statement force-unprotect exists to prevent.
     $mNow = smpro_ph_load($u) ?: [];
     $rootDirs = array_values(array_filter(array_map(fn($r) => is_array($r) ? (string)($r['dir'] ?? '') : (string)$r, (array)($mNow['locked_roots'] ?? []))));
+    if ($rootDirs && function_exists('smpro_hg_lock_owner')) {
+        $rd2 = []; foreach ($rootDirs as $rdp) { $ow = smpro_hg_lock_owner($u, $rdp); if ($ow !== '') $held[$ow][] = $rdp; else $rd2[] = $rdp; }
+        $rootDirs = $rd2;
+    }
     if ($rootDirs) { $done += (int)smpro_ph_chattr_many('-i', $rootDirs)['done']; }
     foreach (array_unique($dirs) as $dir) { smpro_ph_remove_htaccess($dir); $done++; }
+    if ($held && function_exists('smpro_hg_release_request')) {
+        smpro_hg_release_request($u, 'PHP Harden unlock by ' . smpro_ph_actor(), array_keys($held), (int)$until);
+        smpro_hg_event_emit('lock_released', ['account' => $u, 'products' => array_keys($held), 'paths' => array_slice(array_merge(...array_values($held)), 0, 20)] + ($until > 0 ? ['until' => (int)$until] : []));
+    }
     $m = smpro_ph_load($u) ?: ['version' => 'smpro.ph1', 'user' => $u, 'created_at' => date('c')];
     if ($until > 0) {
         $m['status'] = 'temporary_unlock'; $m['unlock_until'] = date('c', $until);
@@ -298,7 +315,7 @@ function smpro_ph_unlock($u, array $postFiles, array $postDirs, $until = 0) {
     smpro_ph_save($u, $m);
     smpro_ph_audit_log($u, 'php_harden_unlock', $until > 0 ? 'Temporary unlock until ' . date('Y-m-d H:i', $until) : 'Unlocked (permanent)', ['files' => count($files), 'dirs' => count($dirs)]);
     smpro_audit('php_harden_unlock', ['user' => $u, 'files' => count($files), 'dirs' => count($dirs), 'temporary' => $until > 0]);
-    return ['ok' => true, 'count' => $done, 'temporary' => $until > 0, 'until' => $until > 0 ? date('Y-m-d H:i', $until) : ''];
+    return ['ok' => true, 'count' => $done, 'temporary' => $until > 0, 'until' => $until > 0 ? date('Y-m-d H:i', $until) : '', 'held' => array_map('count', $held)];
 }
 
 /**
@@ -405,7 +422,7 @@ function smpro_ph_relock_due() {
         $u = (string)($m['user'] ?? basename($mf, '.json'));
         // Force-unprotected since the temporary unlock was granted. Re-locking now would quietly reverse a later,
         // more deliberate decision - so the pending re-lock is dropped and recorded instead of being carried out.
-        if (function_exists('smpro_ph_ign_has') && smpro_ph_ign_has($u, 'auto')) {
+        if ((function_exists('smpro_ph_ign_has') && smpro_ph_ign_has($u, 'auto')) || (function_exists('smpro_hg_released_for_me') && smpro_hg_released_for_me($u))) {
             $m['status'] = 'unlocked'; $m['unlock_until'] = ''; unset($m['pending_relock']);
             smpro_ph_save($u, $m);
             smpro_ph_audit_log($u, 'php_harden_relock_skipped',
@@ -444,8 +461,11 @@ function smpro_ph_protected_count($u, array $profile) {
     $paths = array_values(array_unique(array_filter($paths, 'file_exists')));
     if (!$paths) return ['locked' => 0, 'total' => 0];
     $map = smpro_ph_locked_map($paths);
-    $locked = 0; foreach ($map as $v) if ($v) $locked++;
-    return ['locked' => $locked, 'total' => count($paths)];
+    // A flag another product holds is not this product's protection: counted apart, so "Not applied" and "5 / 9
+    // locked" never appear side by side for locks this page did not set.
+    $locked = 0; $foreign = 0;
+    foreach ($map as $path => $v) { if (!$v) continue; if (function_exists('smpro_hg_lock_owner') && smpro_hg_lock_owner($u, $path) !== '') $foreign++; else $locked++; }
+    return ['locked' => $locked, 'total' => count($paths), 'foreign' => $foreign];
 }
 
 /* ---------------- world-writable web files: scan + safe fix ---------------- */
@@ -559,6 +579,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['ph_action'] ?? ''), ['apply_fast'
             $gone ? 'Removed from the force-unprotect ignore list — automatic protection applies again.'
                   : 'Removal requested but the account was not on the list.', ['by' => smpro_ph_actor()]);
         if ($gone) smpro_audit('php_harden_ignore_remove', ['user' => $target]);
+        if ($gone && function_exists('smpro_hg_release_withdraw')) smpro_hg_release_withdraw($target);
         echo json_encode(['ok' => $gone, 'msg' => $gone
             ? ($target . ' removed from the ignore list. Automatic hardening applies to it again.')
             : 'That account was not on the ignore list — nothing was changed.'], JSON_UNESCAPED_SLASHES); exit;
@@ -667,6 +688,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['ph_action'] ?? ''), ['apply_fast'
         if ($r['stuck']) $msg .= ' ' . count($r['stuck']) . ' item(s) could NOT be cleared: ' . implode(', ', array_map('basename', array_slice($r['stuck'], 0, 5))) . ' — these are still protected.';
         echo json_encode(['ok' => $r['ok'], 'msg' => $msg, 'errors' => $r['stuck']], JSON_UNESCAPED_SLASHES); exit;
     }
+    if (in_array($act, ['apply_fast', 'apply_custom'], true) && function_exists('smpro_hg_release_withdraw')) smpro_hg_release_withdraw($u);
     if ($act === 'apply_fast') {
         $r = smpro_ph_apply($u, 'fast', [], [], $exts, (array)($_POST['lock_roots'] ?? []));
         echo json_encode(['ok' => $r['ok'], 'msg' => 'Fast Protection applied: ' . $r['files'] . ' file(s) locked, ' . $r['dirs'] . ' folder(s) guarded' . ($r['errors'] ? ', ' . count($r['errors']) . ' warning(s)' : '') . '.', 'errors' => $r['errors']], JSON_UNESCAPED_SLASHES); exit;
@@ -687,7 +709,8 @@ if ($reqMethod === 'POST' && in_array(($_POST['ph_action'] ?? ''), ['apply_fast'
     $until = 0;
     if ($dur !== 'permanent') { $mins = ['1h' => 60, '6h' => 360, '24h' => 1440, '72h' => 4320]; $until = time() + (($mins[$dur] ?? 60) * 60); }
     $r = smpro_ph_unlock($u, (array)($_POST['files'] ?? []), (array)($_POST['dirs'] ?? []), $until);
-    echo json_encode(['ok' => true, 'msg' => $r['temporary'] ? ('Temporarily unlocked ' . $r['count'] . ' item(s) until ' . $r['until'] . ' — re-apply protection to re-lock.') : ('Unlocked ' . $r['count'] . ' item(s) permanently.')], JSON_UNESCAPED_SLASHES); exit;
+    $heldTxt = ''; foreach ((array)($r['held'] ?? []) as $prod => $cnt) $heldTxt .= ' ' . $cnt . ' item(s) are held by ' . (function_exists('smpro_hg_product_name') ? smpro_hg_product_name($prod) : $prod) . ' — release requested; it frees them within a few minutes' . ($r['temporary'] ? ' and locks them again after ' . $r['until'] : '') . '.';
+    echo json_encode(['ok' => true, 'msg' => ($r['temporary'] ? ('Temporarily unlocked ' . $r['count'] . ' item(s) until ' . $r['until'] . ' — re-apply protection to re-lock.') : ('Unlocked ' . $r['count'] . ' item(s) permanently.')) . $heldTxt], JSON_UNESCAPED_SLASHES); exit;
 }
 
 /* ---- AJAX: browse a subfolder (returns table rows HTML) ---- */
@@ -756,7 +779,7 @@ smpro_layout_header('PHP Harden');
   <div class="ph-hero-row">
     <div class="ph-stat"><div class="l">Detected Stack</div><div class="v"><?= smpro_h($det['label']) ?></div></div>
     <div class="ph-stat"><div class="l">Confidence</div><div class="v"><?= smpro_h($det['confidence']) ?></div></div>
-    <div class="ph-stat"><div class="l">Protected Items (live)</div><div class="v"><?= (int)$pcount['locked'] ?><span class="ph-of">/ <?= (int)$pcount['total'] ?></span></div></div>
+    <div class="ph-stat"><div class="l">Protected Items (live)</div><div class="v"><?= (int)$pcount['locked'] ?><span class="ph-of">/ <?= (int)$pcount['total'] ?></span></div><?php if (!empty($pcount['foreign'])): ?><div class="meta" style="font-size:11.5px">+<?= (int)$pcount['foreign'] ?> held by another product</div><?php endif; ?></div>
     <div class="ph-stat ph-status">
       <div class="l">Status</div>
       <div class="v"><?php

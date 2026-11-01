@@ -964,6 +964,8 @@ function smpro_csf_bin() {
  *  VERIFIED helpers (never trust csf stdout); unblock removes from csf.deny robustly. */
 function smpro_csf_do($action, $ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return ['ok' => false, 'msg' => 'invalid IP'];   // parity with the deny/allow helpers
+    // A block goes through the chokepoint (Cloudflare, mail providers, verified crawlers, allow-list) like every other.
+    if ($action === 'block' && function_exists('smpro_fw_block_ip')) { $r = smpro_fw_block_ip($ip, 'smpro'); if (!empty($r['ok']) && function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'block', 'manual block'); return ['ok'=>!empty($r['ok']), 'testing'=>!empty($r['testing']), 'recorded'=>!empty($r['recorded']), 'msg'=>(string)$r['msg']]; }
     if ($action === 'block' && function_exists('smpro_csf_deny_add')) { $r = smpro_csf_deny_add($ip, 'smpro'); return ['ok'=>!empty($r['ok']), 'testing'=>!empty($r['testing']), 'recorded'=>!empty($r['recorded']), 'msg'=>(string)$r['msg']]; }
     if ($action === 'allow' && function_exists('smpro_csf_allow_add')) { $r = smpro_csf_allow_add($ip, 'smpro'); return ['ok'=>!empty($r['ok']), 'msg'=>(string)$r['msg']]; }
     $csf = smpro_csf_bin();
@@ -978,7 +980,11 @@ function smpro_csf_do($action, $ip) {
             if (!smpro_csf_testing()) @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');
         }
         clearstatcache();
-        return ['ok' => !smpro_csf_denied($ip), 'msg' => smpro_csf_denied($ip) ? ('could not remove ' . $ip) : ($ip . ' unblocked')];
+        $gone = !smpro_csf_denied($ip);
+        // Every unblock writes its 'lift' to the bridge ledger, or the ledger keeps saying another product holds the
+        // address and nothing can block it again.
+        if ($gone && function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'lift', 'unblock');
+        return ['ok' => $gone, 'msg' => $gone ? ($ip . ' unblocked') : ('could not remove ' . $ip)];
     }
     $flag = $action === 'allow' ? '-a' : '-d';
     $out = (string)@shell_exec('timeout 25 ' . escapeshellarg($csf) . ' ' . $flag . ' ' . escapeshellarg($ip) . ' ' . escapeshellarg('smpro ' . date('Y-m-d H:i')) . ' 2>&1');
@@ -1839,6 +1845,12 @@ function smpro_fw_block_ip($ip, $reason = '', $force = false) {
     // the engines below already honour. A DNS failure reads as "not a crawler", so this can never stand between
     // an operator and an attacker.
     if (!$isCidr && !$force) {
+        // ALLOW-LIST. An address the operator listed as never-block is refused here, at the one point every block
+        // passes, instead of in each caller - three callers skipped it.
+        if (function_exists('smpro_im_allowlisted') && smpro_im_allowlisted($ip)) {
+            if (function_exists('smpro_audit')) smpro_audit('firewall_block_refused_allowlist', ['ip'=>$ip,'reason'=>(string)$reason]);
+            return ['ok'=>false,'engine'=>'','recorded'=>false,'msg'=>'refused: ' . $ip . ' is on the Intrusion Monitor allow-list. Remove it from the list first if it really has to be blocked.'];
+        }
         if (!function_exists('smpro_bg_crawler_shield')) { $bg = __DIR__ . '/botguard.php'; if (@is_file($bg)) require_once $bg; }
         if (function_exists('smpro_bg_crawler_shield')) {
             $cs = smpro_bg_crawler_shield($ip);

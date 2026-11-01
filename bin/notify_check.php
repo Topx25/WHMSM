@@ -7,6 +7,7 @@
 define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);
 require $base . '/includes/defines.php';
+require $base . '/includes/env.php';         // smpro_deps_ensure() - GeoIP tooling was never ensured from cron
 require $base . '/includes/mmdb.php';
 require $base . '/includes/helpers.php';
 require $base . '/includes/secret.php';

@@ -297,15 +297,22 @@ function smpro_spq_answer($home, $id, array $result) {
             if ($owner) { @chown($d, $owner['uid']); @chgrp($d, $owner['gid']); }
         }
     }
+    // The directories belong to the account, which can swap one for a link at any moment: write only when the real
+    // path of the results directory is still inside the real home.
+    $rd = realpath($dir); $rh = realpath($home);
+    if ($rd === false || $rh === false || strpos($rd . '/', rtrim($rh, '/') . '/') !== 0) return false;
+    $dir = $rd;
     $p = $dir . '/' . preg_replace('/[^a-f0-9]/', '', (string)$id) . '.json';
     $result['at'] = date('c');
     // The account owns this directory, so a link can appear at any moment: write to an O_EXCL temp (never follows
     // a link), set mode and owner on the temp, then rename over the answer path. No step touches $p by name
     // except the final rename, which replaces whatever is there without following it.
-    $tmp = $p . '.' . bin2hex(random_bytes(4)) . '.tmp'; $fh = @fopen($tmp, 'xb');
+    // Created by root with mode 0644 straight from the umask: nothing is ever changed BY NAME afterwards, because
+    // between the close and a chmod the account could replace the name with a link to any file on the server.
+    $tmp = $p . '.' . bin2hex(random_bytes(4)) . '.tmp'; $um = umask(0022); $fh = @fopen($tmp, 'xb'); umask($um);
     if ($fh === false) return false;
     $ok = @fwrite($fh, json_encode($result, JSON_UNESCAPED_SLASHES)) !== false; @fclose($fh);
-    if ($ok) { @chmod($tmp, 0644); @chown($tmp, 'root'); $ok = @rename($tmp, $p); }
+    if ($ok) $ok = @rename($tmp, $p);
     if (!$ok) @unlink($tmp);
     return (bool)$ok;
 }
@@ -345,6 +352,10 @@ function smpro_spq_run_one($user, array $req) {
     if (function_exists('smpro_ph_ign_has') && smpro_ph_ign_has($user, 'auto')) {
         return ['ok' => false, 'verb' => $verb, 'done' => 0,
                 'msg' => 'Your host has excluded this account from file protection. Nothing was changed.'];
+    }
+    if ($verb !== 'release' && function_exists('smpro_hg_released_for_me') && smpro_hg_released_for_me($user)) {
+        return ['ok' => false, 'verb' => $verb, 'done' => 0,
+                'msg' => 'Another security product on this server released this account and asked that it stay unlocked. Ask your host.'];
     }
 
     // A release is never performed straight from the account's request. It becomes a pending decision, and the
@@ -562,6 +573,11 @@ function smpro_spq_keep_free($perTick = 3, $everySeconds = 3600) {
         if ($done++ >= $perTick) break;
         $st[$u] = $now;
         $sw = smpro_ph_sweep_attrs($u, 4, 15);
+        // A flag another product listed as its own is not cleared silently: that product is asked in writing to stay off.
+        if ($sw['cleared'] && function_exists('smpro_hg_lock_owner')) {
+            $own = []; foreach ($sw['cleared'] as $cp) { $ow = smpro_hg_lock_owner($u, $cp); if ($ow !== '') $own[$ow] = 1; }
+            if ($own) { smpro_hg_release_request($u, 'account excluded from all protection (hourly keep-free sweep)', array_keys($own)); smpro_hg_event_emit('lock_released', ['account' => $u, 'products' => array_keys($own), 'paths' => array_slice($sw['cleared'], 0, 20)]); }
+        }
         if ($sw['cleared']) {
             $removed += count($sw['cleared']);
             $msg = 'Kept free — ' . count($sw['cleared']) . ' lock(s) set outside this product removed from an excluded account (' . implode(', ', array_map('basename', array_slice($sw['cleared'], 0, 3))) . (count($sw['cleared']) > 3 ? ', ...' : '') . ')' . ($sw['failed'] ? ' · ' . count($sw['failed']) . ' could NOT be cleared' : '') . (!$sw['complete'] ? ' · the sweep did not finish (deep tree)' : '');

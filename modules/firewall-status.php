@@ -600,6 +600,13 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'ipadd') {
         if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) {
             echo json_encode(['ok'=>false,'msg'=>'Refused: ' . $ip . ' is a Cloudflare edge IP — blocking it would cut ALL inbound traffic. Block the real client at Cloudflare, not CSF.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
         }
+        // The same refusals as a permanent block: mail providers and the allow-list (temporary is still a block).
+        if (function_exists('smpro_fw_never_block') && ($nb = smpro_fw_never_block($ip)) !== '') {
+            echo json_encode(['ok'=>false,'msg'=>'Refused: ' . $ip . ' belongs to ' . $nb . ' — blocking it would bounce your customers\' mail.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+        }
+        if (function_exists('smpro_im_allowlisted') && smpro_im_allowlisted($ip)) {
+            echo json_encode(['ok'=>false,'msg'=>'Refused: ' . $ip . ' is on the Intrusion Monitor allow-list. Remove it from the list first if it really has to be blocked.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+        }
         $ttl = (int)$ttlMap[$dur];
         $cmt = 'SM Pro temp block' . ($reason !== '' ? ': ' . $reason : '');
         smpro_fw_run(escapeshellarg($csf) . ' -td ' . escapeshellarg($ip) . ' ' . $ttl . ' -c ' . escapeshellarg($cmt), 30);
@@ -608,6 +615,7 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'ipadd') {
         $tlist    = (string)smpro_memo('fw_csf_t', 20, fn() => smpro_fw_run(escapeshellarg($csf) . ' -t', 15), true);   // fresh: refreshes the render memo too
         $recorded = strpos($tlist, $ip) !== false;
         $testing  = function_exists('smpro_csf_testing') && smpro_csf_testing();
+        if ($recorded && !$testing && function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'block', 'temporary block ' . $dur);
         $ok  = $recorded && !$testing;
         $msg = !$recorded ? ('CSF did not record the temporary block for ' . $ip . ' — check CSF and try a permanent block.')
              : ($testing ? ($ip . ' temp-blocked in csf.tempban, but CSF is in TESTING mode — NOT enforced. Set TESTING=0 (Server Tune-up).')

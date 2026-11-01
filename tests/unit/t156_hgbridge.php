@@ -29,7 +29,7 @@ $n2 = smpro_hg_events_ingest(); ok(($n2['seen'] ?? 0) === 0, 'B9: ...and not aga
 ok(is_file(smpro_hg_events_dir('wpguard') . '/1000000000-aaaaaaaa.json'), 'B10: the other product\'s file is never deleted by us');
 $ev = smpro_hg_events_for_ip('203.0.113.11'); ok(count($ev) === 1 && $ev[0]['decision'] === 'noted' && $ev[0]['from'] === 'wpguard', 'B11: the IP report can read what was reported');
 $src = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/hgbridge.php'));
-has($src, "if (\$rs === 'core_protected' || \$allowed || (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare(\$ip))) {", 'B12: a block request on a customer, allow-listed or infrastructure address is declined');
+has($src, "if (\$rs === 'core_protected' || \$allowed || \$mail !== '' || (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare(\$ip))) {", 'B12: a block request on a customer, allow-listed or infrastructure address is declined');
 has($src, "smpro_hg_event_emit('block_declined', ['ip' => \$ip, 'to' => \$e['product'], 'why' =>", 'B12: ...and the sender is told why');
 $lg = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/login_guard.php'));
 has($lg, "if (function_exists('smpro_hg_tick')) { try { smpro_hg_tick(); }", 'B13: the minute worker runs the bridge');
@@ -37,3 +37,25 @@ has($lg, "if (function_exists('smpro_hg_tick')) { try { smpro_hg_tick(); }", 'B1
 $doc = SMPRO_BASE . '/docs/HOSTGUARD-BRIDGE.md';
 ok(!is_dir(SMPRO_BASE . '/docs') || (is_file($doc) && strpos((string)file_get_contents($doc), 'hostguard-bridge/1') !== false), 'B14: the contract is documented for the other products');
 has($src, "The full format is in docs/HOSTGUARD-BRIDGE.md.", 'B14: ...and the engine points at it');
+
+// beta397: trust, account names, private policy, release until/withdraw, released-for-me
+ok(smpro_hg_locks_dir('..') === '' && smpro_hg_locks_dir('.') === '' && smpro_hg_locks_dir('a/b') === '', 'B15: dot and slash account names are refused');
+ok(smpro_hg_locks_dir('acct') !== '', 'B15: a normal account name is accepted');
+$pol2 = smpro_hg_policy_read(); ok(is_array($pol2) && !array_key_exists('allowlist', $pol2), 'B16: the world-readable policy carries no allow-list');
+ok(is_file(smpro_hg_dir() . '/policy.private.json'), 'B16: ...it is in the private file');
+if (function_exists('posix_geteuid') && posix_geteuid() === 0) ok((fileperms(smpro_hg_dir() . '/policy.private.json') & 0777) === 0600, 'B16: ...which is 0600');
+ok(smpro_hg_release_request('acct2', 'test', ['wpguard'], time() + 3600), 'B17: a release request can carry until');
+$rq = json_decode((string)file_get_contents(smpro_hg_locks_dir('acct2') . '/release-wpguard.json'), true); ok((int)($rq['until'] ?? 0) > time(), 'B17: ...and it is written');
+ok(smpro_hg_release_withdraw('acct2') === 1 && !is_file(smpro_hg_locks_dir('acct2') . '/release-wpguard.json'), 'B18: withdraw removes the request this product wrote');
+@mkdir(smpro_hg_locks_dir('acct3'), 0755, true);
+file_put_contents(smpro_hg_locks_dir('acct3') . '/release-smpro.json', json_encode(['from' => 'wpguard', 'to' => 'smpro', 'account' => 'acct3']));
+ok(smpro_hg_released_for_me('acct3'), 'B19: a release request addressed to this product is honoured');
+file_put_contents(smpro_hg_locks_dir('acct3') . '/release-smpro.json', json_encode(['from' => 'wpguard', 'to' => 'smpro', 'until' => time() - 10]));
+ok(!smpro_hg_released_for_me('acct3'), 'B19: ...until it expires');
+@chmod(smpro_hg_locks_dir('acct3') . '/release-smpro.json', 0666); clearstatcache();
+file_put_contents(smpro_hg_locks_dir('acct3') . '/release-smpro.json', json_encode(['from' => 'wpguard', 'to' => 'smpro']));
+ok(!smpro_hg_released_for_me('acct3'), 'B20: a world-writable bridge file is not believed');
+$src2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/hgbridge.php'));
+has($src2, "if ((int)\$st['uid'] !== 0) return false;", 'B21: only root-owned bridge files are trusted');
+has($src2, "if ((\$st['mode'] & 0170000) === 0120000) return false;     // a symlink", 'B21: ...and never a symlink');
+has($src2, "\$mail = function_exists('smpro_fw_never_block') ? smpro_fw_never_block(\$ip) : '';", 'B22: a block request on a mail provider is declined and answered');

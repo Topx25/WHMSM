@@ -245,7 +245,8 @@ function smpro_tg_handle(string $text): string {
             if ($arg === '' || !filter_var($arg, FILTER_VALIDATE_IP)) return "Usage: /$cmd &lt;ip&gt;";
             if ($cmd === 'block')   { $r = function_exists('smpro_im_block_ip') ? smpro_im_block_ip($arg, 'telegram') : ['ok' => false, 'msg' => 'n/a']; return ($r['ok'] ? "✅ Blocked " : "❌ ") . htmlspecialchars($arg) . " — " . htmlspecialchars($r['msg'] ?? ''); }
             if ($cmd === 'allow')   { $r = function_exists('smpro_im_allow_ip') ? smpro_im_allow_ip($arg) : ['ok' => false]; return (!empty($r['ok']) ? "✅ Allowlisted " : "❌ ") . htmlspecialchars($arg); }
-            $out = (string)@shell_exec('csf -dr ' . escapeshellarg($arg) . ' 2>&1'); return "✅ Unblock " . htmlspecialchars($arg) . "\n<code>" . htmlspecialchars(mb_substr(trim($out), 0, 200)) . "</code>";
+            if (function_exists('smpro_csf_do')) { $r = smpro_csf_do('unblock', $arg); if (function_exists('smpro_audit')) smpro_audit('telegram_unblock', ['ip' => $arg, 'ok' => !empty($r['ok'])]); return (!empty($r['ok']) ? "✅ Unblocked " : "❌ ") . htmlspecialchars($arg) . ' — ' . htmlspecialchars((string)($r['msg'] ?? '')); }
+            return "❌ The unblock helper is not loaded; nothing was changed.";
         case 'services': case 'svc':
             $lines = [];
             foreach (smpro_tg_services() as $name => $cands) {

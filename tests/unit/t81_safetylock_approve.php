@@ -127,3 +127,24 @@ has($ph2, "\$r = smpro_ph_force_unprotect(\$t, smpro_ph_profile(\$t), \$reason, 
 has($ph2, "@set_time_limit(0); @ignore_user_abort(true);   // a started action finishes even if the page closes", 'Z4: finishes when the page closes');
 has($ph2, "f.set('ph_action','force_unprotect_bulk');f.set('smpro_csrf',CSRF);", 'Z5: the page posts it with the CSRF token');
 has($ph2, "if(!reason){alert('Give a reason first", 'Z6: a reason is required');
+
+// beta397: the bridge agreement with WP Guard, and the answer writer that never touches a name twice
+$ph3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+$sq3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/spqueue.php'));
+$in3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/intrusion.php'));
+$hp3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/helpers.php'));
+has($ph3, "\$mine = []; foreach (array_unique(\$files) as \$f) { \$ow = smpro_hg_lock_owner(\$u, \$f); if (\$ow !== '') \$held[\$ow][] = \$f; else \$mine[] = \$f; }", 'W1: plain Unlock leaves another product\'s paths alone');
+has($ph3, "smpro_hg_release_request(\$u, 'PHP Harden unlock by ' . smpro_ph_actor(), array_keys(\$held), (int)\$until);", 'W2: ...asks it in writing, with until on a temporary unlock');
+has($ph3, "&#128274; held by ' . smpro_h(", 'W3: the file list says who holds an item');
+has($ph3, "if (!\$v) continue; if (function_exists('smpro_hg_lock_owner') && smpro_hg_lock_owner(\$u, \$path) !== '') \$foreign++; else \$locked++;", 'W4: the live counter counts only this product\'s locks');
+has($ph3, "if (in_array(\$act, ['apply_fast', 'apply_custom'], true) && function_exists('smpro_hg_release_withdraw')) smpro_hg_release_withdraw(\$u);", 'W5: protecting again withdraws our release request');
+has($ph3, "if (\$gone && function_exists('smpro_hg_release_withdraw')) smpro_hg_release_withdraw(\$target);", 'W5: ...and so does removing the account from the ignore list');
+hasnt($sq3, "@chown(\$tmp, 'root')", 'W6: the answer file is never chowned by name');
+hasnt($sq3, "@chmod(\$tmp, 0644)", 'W6: ...nor chmodded by name');
+has($sq3, "\$um = umask(0022); \$fh = @fopen(\$tmp, 'xb'); umask(\$um);", 'W6: its mode comes from the umask at creation');
+has($sq3, "if (\$rd === false || \$rh === false || strpos(\$rd . '/', rtrim(\$rh, '/') . '/') !== 0) return false;", 'W7: written only while the real path is inside the real home');
+has($sq3, "smpro_hg_release_request(\$u, 'account excluded from all protection (hourly keep-free sweep)', array_keys(\$own));", 'W8: the keep-free sweep asks the owner in writing');
+has($in3, "\$h = (!\$noHarden && !empty(\$cfg['emergency_harden'])) ? smpro_im_harden_site(\$acct, \$dryrun) : [];", 'W9: emergency cleaning still runs on an excluded account');
+has($in3, "&& function_exists('smpro_csf_denied') && smpro_csf_denied(\$ip)) {", 'W10: the ledger is believed only while the deny is real');
+has($hp3, "if (\$gone && function_exists('smpro_hg_block_record')) smpro_hg_block_record(\$ip, 'lift', 'unblock');", 'W11: every unblock writes its lift');
+has($hp3, "if (function_exists('smpro_im_allowlisted') && smpro_im_allowlisted(\$ip)) {", 'W12: the allow-list is checked at the chokepoint');

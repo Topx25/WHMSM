@@ -611,15 +611,16 @@ function smpro_hub_exec($action, array $args, array $granted) {
                 $r = smpro_fw_block_ip($ip, 'SM Hub block');
                 return [!empty($r['ok']), (string)($r['msg'] ?? ('block attempted for ' . $ip))];
             }
-            @shell_exec('csf -d ' . escapeshellarg($ip) . ' ' . escapeshellarg('SM Hub block') . ' 2>/dev/null');
-            return [true, "block requested for $ip"];
+            // No raw fallback: a deny written around the chokepoint skips every never-block guard, and success was
+            // reported without checking anything.
+            return [false, 'block engine not loaded on this member; nothing was blocked'];
         }
         case 'unblock_ip': {
             $ip = trim((string)($args['ip'] ?? ''));
             if (!filter_var($ip, FILTER_VALIDATE_IP)) return [false, 'invalid IP'];
             if ($dry) return [true, "[dry-run] would unblock $ip"];
-            @shell_exec('csf -dr ' . escapeshellarg($ip) . ' 2>/dev/null');
-            return [true, "unblock requested for $ip"];
+            if (function_exists('smpro_csf_do')) { $r = smpro_csf_do('unblock', $ip); return [!empty($r['ok']), (string)($r['msg'] ?? '')]; }
+            return [false, 'unblock helper not loaded on this member; nothing was changed'];
         }
         case 'apply_profile': {
             $p = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($args['profile'] ?? '')));

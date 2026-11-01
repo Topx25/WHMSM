@@ -1247,14 +1247,17 @@ function smpro_im_csf_block($ip) {
     // Route through the firewall that is ACTUALLY enforcing. On a box where CSF is installed but disabled and
     // Imunify360 owns the rules, writing to csf.deny "succeeded" while blocking nothing - the admin saw the
     // attacker keep hitting the site after pressing Block.
-    if (function_exists('smpro_hg_block_record') && function_exists('smpro_hg_blocked_by_others') && ($o = smpro_hg_blocked_by_others($ip))) {
+    // Believe "already held by another product" only while the deny really exists. An unblock elsewhere (by hand, a
+    // bot command, another product) may not have written its 'lift', and trusting the ledger alone would then make
+    // this address impossible to block again.
+    if (function_exists('smpro_hg_block_record') && function_exists('smpro_hg_blocked_by_others') && ($o = smpro_hg_blocked_by_others($ip)) && function_exists('smpro_csf_denied') && smpro_csf_denied($ip)) {
         // another product already holds this address: no second deny, only our record with our rule
         smpro_hg_block_record($ip, 'block', 'Intrusion Monitor (already held by ' . ($o['product'] ?? 'another product') . ')');
         return ['ok' => true, 'testing' => false, 'recorded' => true, 'engine' => 'bridge', 'msg' => $ip . ' is already blocked by ' . ($o['product'] ?? 'another product') . ' (' . ($o['rule'] ?? '') . '); recorded, no second deny written.'];
     }
-    if (function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'block', 'Intrusion Monitor');
     if (function_exists('smpro_fw_block_ip')) {
         $r = smpro_fw_block_ip($ip, 'smpro Intrusion Monitor');
+        if (!empty($r['ok']) && function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'block', 'Intrusion Monitor');   // recorded only once it is really in place
         return ['ok'=>!empty($r['ok']), 'testing'=>!empty($r['testing']), 'recorded'=>!empty($r['recorded']),
                 'engine'=>(string)($r['engine'] ?? ''), 'msg'=>(string)$r['msg']];
     }
@@ -2224,11 +2227,14 @@ function smpro_im_emergency_run($events, $dryrunOverride = null) {
         // Force-unprotected on purpose. Hardening this account would undo an operator's explicit decision, and
         // would do it unattended, at the moment the site is already under attack - the worst time to break it.
         // Cleaning still runs: removing a web shell is not the same promise as locking files the owner writes to.
-        if (smpro_im_ph_ignored($acct)) { $skippedHarden[] = $acct; continue; }
+        // Also skipped when another product asked this one, through the bridge, to keep its locks off the account.
+        if (!function_exists('smpro_hg_released_for_me')) { $hgf = __DIR__ . '/hgbridge.php'; if (is_file($hgf)) require_once $hgf; }
+        $noHarden = smpro_im_ph_ignored($acct) || (function_exists('smpro_hg_released_for_me') && smpro_hg_released_for_me($acct));
+        if ($noHarden) $skippedHarden[] = $acct;
         if (smpro_im_recent_changed($acct, 1440, 1) < 1) continue;                  // trigger: files actually changed
         $cool[$acct] = $now;
         $c = !empty($cfg['emergency_clean'])  ? smpro_im_clean_site($acct, 1440, $dryrun, 40, true) : [];   // unattended -> strict (≥2 indicator families)
-        $h = !empty($cfg['emergency_harden']) ? smpro_im_harden_site($acct, $dryrun)      : [];
+        $h = (!$noHarden && !empty($cfg['emergency_harden'])) ? smpro_im_harden_site($acct, $dryrun) : [];   // cleaning above still runs on an excluded account
         if ($c) $cleaned[]  = ['domain' => $dom, 'account' => $acct, 'files' => $c];
         if ($h) $hardened[] = ['domain' => $dom, 'account' => $acct, 'n' => count($h)];
         if (($c || $h) && !$dryrun) {

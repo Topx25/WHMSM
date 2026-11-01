@@ -14,6 +14,7 @@ $base = dirname(__DIR__);
 require $base . '/includes/defines.php';
 require $base . '/includes/env.php';
 require $base . '/includes/helpers.php';
+require $base . '/includes/migrate.php';      // smpro_mig_detect() lives here; without it every convert died at the first call
 require $base . '/includes/migrate_da.php';
 require $base . '/includes/migrate_da_convert.php';
 require $base . '/includes/migrate_da_home.php';
