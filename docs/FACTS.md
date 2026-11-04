@@ -240,3 +240,9 @@
 - **فحص Imunify للملفات الخبيثة واقف على dc1**: فحص كامل لـ /home عالق "running" من 28 يونيو (0 ملفات)، وفحوص قواعد البيانات فى الطابور من 26 يوليو ومااشتغلتش، وخدمة imunify360-scanner متوقفة. التواقيع نفسها بتتحدث (30 أكتوبر). ClamAV متركب كإضافة cPanel بس من غير تواقيع.
 - Compromise Check (يوميًا 04:00) والتقرير الأمنى اليومى (09:00) شغالين.
 - ناقص فى المنتج: SM Pro مابينبّهش لفحص Imunify عالق؛ يتضاف لـ Security Health.
+
+## 3–4 نوفمبر 2026 — dc2: 508 متكرر وLVE بايظ تانى بعد الريبوت
+- dc2 بقى على beta397. الكيرنل بيرفض LVE لحسابات: `cpu lim, rc -75, lvp(0) limit 0, reseller quota -22` (aitech 1191، epaitech 1590 بحدود عادية، drosat 1006) و`Can't setup lve ... error code -2` (1537 و1155). نسختين من الموديول متركّبين (kmod-lve 2.1-80 و2.1-63) على كيرنل 6.12.0-211.68.1. صفحة حالة CloudLinux مافيهاش حادثة عن ده. الحل: `dnf update 'kernel*' 'kmod-lve*' 'lve*' && reboot` فى نافذة صيانة، وإلا تذكرة لدعم CloudLinux.
+- الـ 508 فى نفس الوقت: trust-law1.com (هجوم xmlrpc.php من عناوين Azure/Google Cloud)، daralmhml.com (زاحف واحد)، tps.sa، mokhtar.aitech.net.au، developsn-sa.com. الإسعاف: حجب العناوين وقفل xmlrpc على trust-law1 (بعد نسخة من .htaccess)، مش رفع الحدود.
+- ثغرة CVE-2026-98432: dc2 محمى بـ livepatch من KernelCare.
+- ناقص فى المنتج: تحذير صفحة Resource Limit بيقول "ريبوت" لأى خطأ LVE؛ لازم يفرّق بين -2 و-75/-22.
