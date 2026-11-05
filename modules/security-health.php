@@ -265,6 +265,62 @@ function smpro_sh_mycnf_all(string $main): string {
 /* check: title,status,finding,risk,rec,evidence,fix(id|''),manual(cmd) */
 function smpro_sh_mk($title, $status, $finding, $risk, $rec, $evidence = '', $fix = '', $manual = '') { return ['title' => $title, 'status' => $status, 'finding' => $finding, 'risk' => $risk, 'rec' => $rec, 'evidence' => $evidence, 'fix' => $fix, 'manual' => $manual]; }
 
+/**
+ * Three failures that look like nothing at all from the panel. A malware scan that has said "running" for months
+ * (nothing is being scanned); one of the operator's own servers sitting in a ban list (its calls fail, and any reply it
+ * sends is dropped); and an SSH flood limit low enough that the operator's own tools trip it (a silent drop, no deny line).
+ */
+function smpro_sh_scan_own_checks() {
+    $out = [];
+    // a) Imunify on-demand scan stuck
+    if (trim(smpro_sh_run('command -v imunify360-agent', 5)) === '') {
+        $out[] = smpro_sh_mk('Malware scan progress (Imunify)', 'info', 'Imunify360 is not installed, so there is no on-demand scan to check.', 'n/a', 'No action needed.');
+    } else {
+        $j = json_decode(smpro_sh_run('imunify360-agent malware on-demand list --limit 5 --json', 40), true);
+        if (!is_array($j)) {
+            $out[] = smpro_sh_mk('Malware scan progress (Imunify)', 'info', 'Imunify did not answer the scan list, so its progress could not be checked.', 'A scan that never finishes looks exactly like a clean server.', 'Check Imunify360 > Malware Scanner by hand.');
+        } else {
+            $stuck = [];
+            foreach ((array)($j['items'] ?? []) as $it) {
+                $started = (int)($it['started'] ?? 0);
+                if (in_array((string)($it['scan_status'] ?? ''), ['running', 'queued'], true) && $started > 0 && $started < time() - 172800)
+                    $stuck[] = (string)($it['path'] ?? '?') . ' - ' . (string)$it['scan_status'] . ' since ' . date('Y-m-d', $started) . ', ' . (int)($it['total'] ?? 0) . ' file(s) scanned';
+            }
+            $out[] = smpro_sh_mk('Malware scan progress (Imunify)', $stuck ? 'critical' : 'ok',
+                $stuck ? count($stuck) . ' scan(s) have been running or queued for more than 2 days: ' . implode('; ', array_slice($stuck, 0, 3)) : 'No on-demand scan has been stuck for more than 2 days.',
+                'While a scan is stuck nothing new is scanned, and the panel still shows Imunify as working: malware arriving now is not found.',
+                $stuck ? 'Stop the stuck scan and queue a fresh one (see the command).' : 'No action needed.',
+                '', '', $stuck ? 'imunify360-agent malware on-demand stop; systemctl restart imunify360; imunify360-agent malware on-demand queue put /home' : '');
+        }
+    }
+    // b) own servers / never-block addresses inside a ban list
+    if (!function_exists('smpro_gh_trusted_ips')) { $gf = dirname(__DIR__) . '/includes/geohulk.php'; if (is_file($gf)) require_once $gf; }
+    $trusted = function_exists('smpro_gh_trusted_ips') ? smpro_gh_trusted_ips() : [];
+    $nft = smpro_sh_run('nft list set inet filter cphulk-TempBan', 10) . smpro_sh_run('nft list set inet filter cphulk-PermBan', 10);
+    $deny = function_exists('smpro_csf_blocked_set') ? smpro_csf_blocked_set() : [];
+    $hit = [];
+    foreach ($trusted as $t) {
+        if (strpos($t, '/') !== false) continue;
+        if (preg_match('/(^|[\s,{])' . preg_quote($t, '/') . '([\s,}]|$)/', $nft)) $hit[] = $t . ' (cPHulk ban)';
+        elseif (isset($deny[$t])) $hit[] = $t . ' (CSF deny)';
+    }
+    $out[] = smpro_sh_mk('Own servers not banned', $hit ? 'critical' : 'ok',
+        $hit ? 'Addresses this server must trust are banned: ' . implode(', ', array_slice($hit, 0, 6)) : 'None of the ' . count($trusted) . ' trusted address(es) (own, csf.allow, fleet) is in a ban list.',
+        'A banned sibling server cannot reach this one, and its replies to this server are dropped too: anything here that calls it (a store admin, an API, a backup) hangs.',
+        $hit ? 'Lift the ban and whitelist the address (see the command).' : 'No action needed.',
+        '', '', $hit ? 'for ip in ' . implode(' ', array_map(fn($x) => strtok($x, ' '), array_slice($hit, 0, 6))) . '; do whmapi1 create_cphulk_record list_name=white ip=$ip comment=own-server; whmapi1 flush_cphulk_login_history_for_ips ip=$ip; csf -dr $ip; done' : '');
+    // c) SSH flood limit
+    $pf = ''; foreach (@file('/etc/csf/csf.conf', FILE_IGNORE_NEW_LINES) ?: [] as $ln) if (preg_match('/^PORTFLOOD\s*=\s*"([^"]*)"/', $ln, $m)) { $pf = $m[1]; break; }
+    $low = '';
+    foreach (array_filter(array_map('trim', explode(',', $pf))) as $e) { $q = explode(';', $e); if (count($q) === 4 && (int)$q[0] === 22 && (int)$q[2] < 40) $low = $e; }
+    $out[] = smpro_sh_mk('SSH flood limit (CSF PORTFLOOD)', $pf === '' ? 'info' : ($low !== '' ? 'warning' : 'ok'),
+        $pf === '' ? 'No PORTFLOOD rule is set.' : ($low !== '' ? 'PORTFLOOD allows only ' . explode(';', $low)[2] . ' new SSH connection(s) per ' . explode(';', $low)[3] . ' s from one address (' . $low . ').' : 'PORTFLOOD is ' . $pf . '.'),
+        'Above the limit, new SSH connections are dropped silently - no csf.deny line, nothing for the home-region shield to lift. Admin tools that open many short connections, and people sharing one office address, trip it.',
+        $low !== '' ? 'Raise it to 60 connections per 60 s; SSH is still protected by the country wall and the login guard.' : 'No action needed.',
+        '', '', $low !== '' ? "sed -i 's/" . $low . "/22;tcp;60;60/' /etc/csf/csf.conf && csf -r" : '');
+    return $out;
+}
+
 function smpro_sh_all() {
     $C = [];
     /* ---- MySQL / MariaDB ---- */
@@ -529,6 +585,8 @@ function smpro_sh_all() {
             $slGaps ? 'kernel_harden' : '',
             $slGaps ? 'sysctl -w fs.protected_symlinks=1 ; sysctl -w fs.protected_hardlinks=1 — then persist in /etc/sysctl.d/99-hardening.conf: fs.protected_symlinks=1 and fs.protected_hardlinks=1' : ''),
     ];
+    /* ---- scanning that silently stopped, own servers in a ban list, SSH flood limit ---- */
+    $C['Scanning & own servers'] = smpro_sh_scan_own_checks();
     /* ---- Server hardening (fixable, each with Undo) ---- */
     $C['Server Hardening'] = smpro_shh_checks();
     return $C;

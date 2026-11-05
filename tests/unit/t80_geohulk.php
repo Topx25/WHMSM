@@ -55,7 +55,7 @@ ok($r['ok'], 'U3: armed (' . $r['msg'] . ')');
 $names = array_column($calls, 0);
 $iWhite = array_search('create_cphulk_record', $names, true); $iOn = array_search('enable_cphulk', $names, true); $iSet = array_search('set_cphulk_config_key', $names, true);
 ok($iWhite !== false && $iOn !== false && $iSet !== false && $iWhite < $iOn && $iOn < $iSet, 'U3: whitelist the operator FIRST, then enable cPHulk, then set the list');
-is_eq($HULK['white'], ['203.0.113.7'], 'U3: the operator\'s address is on cPHulk\'s whitelist');
+is_eq($HULK['white'][0] ?? '', '203.0.113.7', 'U3: the operator\'s address is the FIRST on cPHulk\'s whitelist (own servers and csf.allow follow it since beta398)');
 ok($HULK['enabled'], 'U3: cPHulk is on');
 ok(strpos($HULK['blacklist'], 'EG') === false && strpos($HULK['blacklist'], 'SA') === false && strpos($HULK['blacklist'], 'AU') === false, 'U3: no allowed country is in the blacklist');
 is_eq(substr_count($HULK['blacklist'], ',') + 1, 158 - 3, 'U3: every other known code is');
@@ -105,3 +105,12 @@ has($tick, '$pass < 3', 'U7: and the tick now passes three times a minute');
 $gl = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/geologin.php'));
 has($gl, '"* * * * * root $flock', 'U7: the lock runs every minute, not every two');
 unset($GLOBALS['smpro_gh_api']);
+
+// beta398: the door never refuses the operator's own servers
+$gh = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/geohulk.php'));
+has($gh, "function smpro_gh_trusted_ips(): array {", 'T1: trusted addresses are collected');
+has($gh, "if (function_exists('smpro_gw_always')) foreach (smpro_gw_always('') as \$a) \$out[(string)\$a] = 1;", 'T2: ...from the same list the country wall honours (own + csf.allow)');
+has($gh, "\$fl = SMPRO_VARLIB . '/hub/fleet.json';", 'T3: ...and the fleet on a hub');
+has($gh, "smpro_gh_whitelist_trusted(\$force);   // first, and before the cfg read below", 'T4: every sync whitelists them before refusing anyone');
+has($gh, "smpro_gh_api('flush_cphulk_login_history_for_ips', ['ip' => \$ip]);", 'T5: and clears the failures that caused a ban');
+$tr = smpro_gh_trusted_ips(); ok(is_array($tr) && !in_array('127.0.0.0/8', $tr, true), 'T6: returns a list without the loopback range');

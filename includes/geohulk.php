@@ -160,8 +160,52 @@ function smpro_gh_arm(string $operatorIp, string $by = ''): array {
     return ['ok' => $s['ok'], 'msg' => $s['ok'] ? ('Armed. ' . (int)$s['count'] . ' countries are refused at the door; ' . count($chk['allowed']) . ' allowed (' . implode(', ', $chk['allowed']) . '). Your address ' . $operatorIp . ' is whitelisted in cPHulk.') : ('Armed but the list did not apply: ' . $s['msg']), 'check' => $chk];
 }
 
+/**
+ * Addresses the door must never refuse: this server's own, everything on the operator's never-block list (csf.allow -
+ * the same list the country wall honours), and, on a hub, the members of its fleet. Without this the lock refused a
+ * sibling server in another country: every WHM API call it made counted as a failed login, cPHulk banned it for a
+ * day, and its nftables set then dropped ALL traffic from that server - replies to this server's own requests too.
+ */
+function smpro_gh_trusted_ips(): array {
+    $out = [];
+    if (!function_exists('smpro_gw_always')) { $gf = __DIR__ . '/geowall.php'; if (is_file($gf)) require_once $gf; }
+    if (function_exists('smpro_gw_always')) foreach (smpro_gw_always('') as $a) $out[(string)$a] = 1;
+    $fl = SMPRO_VARLIB . '/hub/fleet.json';
+    if (@is_file($fl)) {
+        $j = json_decode((string)@file_get_contents($fl), true);
+        foreach (array_slice((array)($j['snaps'] ?? []), 0, 50) as $snap) {
+            $h = strtolower(trim((string)($snap['hostname'] ?? ''))); if ($h === '') continue;
+            // a panel hostname such as 1-2-3-4.cprapid.com carries the address in its name; anything else is resolved
+            $ip = preg_match('/^(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})\./', $h, $m) ? ($m[1] . '.' . $m[2] . '.' . $m[3] . '.' . $m[4]) : (string)@gethostbyname($h);
+            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $out[$ip] = 1;
+        }
+    }
+    unset($out['127.0.0.0/8']);
+    return array_slice(array_keys($out), 0, 300);
+}
+/** Put every trusted address on cPHulk's white list (white beats the country blacklist) and clear its failure history.
+ *  Hourly, or at once when csf.allow changed; each address is added once and remembered. */
+function smpro_gh_whitelist_trusted(bool $force = false): array {
+    $cfg = smpro_gh_cfg(); if (!$cfg['enabled']) return ['added' => 0, 'skipped' => 'off'];
+    $at = (int)($cfg['trusted_at'] ?? 0); $allowM = (int)@filemtime('/etc/csf/csf.allow');
+    if (!$force && $at > time() - 3600 && $allowM <= $at) return ['added' => 0, 'skipped' => 'recent'];
+    $done = array_flip(array_map('strval', (array)($cfg['trusted_done'] ?? []))); $added = [];
+    foreach (smpro_gh_trusted_ips() as $ip) {
+        if (isset($done[$ip])) continue;
+        $r = smpro_gh_api('create_cphulk_record', ['list_name' => 'white', 'ip' => $ip, 'comment' => 'Safety Monitor Pro: trusted (own address, csf.allow or fleet)', 'skip_enabled_check' => 1]);
+        if (smpro_gh_api_ok($r) || stripos((string)($r['metadata']['reason'] ?? ''), 'already') !== false) {
+            $done[$ip] = 1; $added[] = $ip;
+            smpro_gh_api('flush_cphulk_login_history_for_ips', ['ip' => $ip]);
+        }
+    }
+    $cfg = smpro_gh_cfg(); $cfg['trusted_done'] = array_keys($done); $cfg['trusted_at'] = time(); smpro_gh_cfg_save($cfg);
+    if ($added && function_exists('smpro_audit')) @smpro_audit('geohulk_trusted_whitelisted', ['ips' => array_slice($added, 0, 50), 'count' => count($added)]);
+    return ['added' => count($added)];
+}
+
 /** Keep cPHulk's blacklist equal to "everything not allowed". Called every minute from the lock's tick; no-op when equal. */
 function smpro_gh_sync(bool $force = false): array {
+    smpro_gh_whitelist_trusted($force);   // first, and before the cfg read below, so its save is not overwritten
     $cfg = smpro_gh_cfg();
     if (!$cfg['enabled']) return ['ok' => true, 'msg' => 'off', 'count' => 0, 'changed' => false];
     $want = smpro_gh_blacklist(smpro_gh_all_codes(), smpro_gh_allowed());

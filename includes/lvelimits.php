@@ -219,11 +219,17 @@ function smpro_lv_kernel_state(): array {
     $mv = smpro_lv_module_versions();
     $n = count($lines); if ($n === 0) return ['broken' => false, 'n' => 0, 'last' => '', 'why' => $mv['mismatch'] ? 'the LVE kernel module was updated on disk (' . $mv['disk'] . ') but the older ' . $mv['loaded'] . ' is still loaded - a reboot loads the new one' : '', 'module' => $mv];
     $last = $lines[$n - 1];
-    $why = (bool)preg_match('/noub cgroup|os_resource_setup|os_cpu_enter/', $o)
-        ? 'the LVE kernel module cannot place processes in its cgroups or set CPU limits - usually a kmodlve / kernel update that is loaded half-way, or cgroup state lost since boot; the fix is a reboot into the installed kernel (lvectl apply all afterwards), not a setting on this page'
-        : 'the LVE kernel module is reporting failures';
+    // Two different failures read alike. rc -75 / "reseller quota -22" is the kernel refusing a CPU limit value, which
+    // a reboot does not clear (seen with default limits, right after a reboot): that is a CloudLinux support case. The
+    // cgroup errors (noub cgroup, os_cpu_enter) are a module loaded half-way, which a reboot into the installed kernel fixes.
+    $kind = preg_match('/rc -75|quota -22/', $o) ? 'value' : (preg_match('/noub cgroup|os_resource_setup|os_cpu_enter/', $o) ? 'module' : 'other');
+    $why = $kind === 'value'
+        ? 'the LVE kernel module refuses the CPU limit for some accounts (rc -75 / reseller quota -22), even ones on default limits - a reboot does not clear this; open a CloudLinux support ticket with the kernel lines shown here, the installed kmod-lve / lve versions, and the kernel version'
+        : ($kind === 'module'
+            ? 'the LVE kernel module cannot place processes in its cgroups or set CPU limits - usually a kmodlve / kernel update that is loaded half-way, or cgroup state lost since boot; the fix is a reboot into the installed kernel (lvectl apply all afterwards), not a setting on this page'
+            : 'the LVE kernel module is reporting failures');
     if ($mv['mismatch']) $why .= '. The module on disk is ' . $mv['disk'] . ' while ' . $mv['loaded'] . ' is loaded: the update is half-way, which is exactly this symptom';
-    return ['broken' => $n >= 3, 'n' => $n, 'last' => $last, 'why' => $why, 'module' => $mv];
+    return ['broken' => $n >= 3, 'n' => $n, 'last' => $last, 'why' => $why, 'module' => $mv, 'kind' => $kind];
 }
 
 /* ------------------------------------------------------------------ actions */
