@@ -265,3 +265,10 @@
 - **صفحة Resource Limit:** التحذير الأحمر بقى يفرّق: أخطاء cgroup = موديول نص محمّل والحل ريبوت؛ `rc -75`/`quota -22` = الكيرنل رافض قيمة الحد والحل تذكرة CloudLinux (الريبوت مش بيحله).
 - **Security Health، مجموعة جديدة "Scanning & own servers":** فحص Imunify عالق أكتر من يومين، وسيرفر من سيرفراتك محجوب فى cPHulk أو CSF، وحد سرعة SSH منخفض لدرجة إن أدوات الإدارة بتتحجب. كل واحد معاه أمر الإصلاح.
 - التطبيق: shopx بياخدها لوحده (التحديث التلقائى شغال). dc1 على 396 والتحديث التلقائى مقفول.
+
+## 6 نوفمبر 2026 — dc1: كل مواقع /home2 بتدّى 500 (CageFS)
+- من 5 نوفمبر 23:29 لحد 6 نوفمبر ~06:37، كل الحسابات على `/home2` (‏43 حساب، منهم منصة shopx: shopxstore وmembersshopx وscshopxstore) بتدّى 500. لوج suexec: `CageFS jail error Unable to create directory /home2/<user>/.cagefs (Read-only file system)`.
+- السبب: تحديث حزم cPanel/CloudLinux/Imunify (23:06–23:17) أعاد كتابة `/etc/cagefs/cagefs.mp` من غير ما يعيد تركيب سجون الحسابات، فجوه السجن `/home2` بقت قراية بس. القرص نفسه سليم. **مش SM Pro.**
+- الإصلاح: `cagefsctl --remount pyramidsaitechne` للتجربة، وبعدين `cagefsctl --remount-all`. الأخطاء وقفت، والمواقع والـ API رجعوا.
+- طريقة الكشف: 500 فى عُشر ثانية من غير لوج Laravel، والصفحة بتشتغل من سطر الأوامر كصاحب الحساب، فالسبب فى طريق التشغيل: `/etc/apache2/logs/suexec_log`.
+- ناقص فى المنتج: تنبيه لأخطاء "CageFS jail error" فى suexec_log.

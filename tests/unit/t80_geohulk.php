@@ -114,3 +114,12 @@ has($gh, "\$fl = SMPRO_VARLIB . '/hub/fleet.json';", 'T3: ...and the fleet on a 
 has($gh, "smpro_gh_whitelist_trusted(\$force);   // first, and before the cfg read below", 'T4: every sync whitelists them before refusing anyone');
 has($gh, "smpro_gh_api('flush_cphulk_login_history_for_ips', ['ip' => \$ip]);", 'T5: and clears the failures that caused a ban');
 $tr = smpro_gh_trusted_ips(); ok(is_array($tr) && !in_array('127.0.0.0/8', $tr, true), 'T6: returns a list without the loopback range');
+
+// beta399: no cPHulk rewrite every minute (each one reloads cpsrvd and cuts uploads)
+is_eq(smpro_gh_norm('ZZ, aa,BB ,aa'), 'AA,BB,ZZ', 'H1: lists compare as sets');
+$gh9 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/geohulk.php'));
+has($gh9, "\$have = \$st['blacklist'] !== null ? (string)\$st['blacklist'] : (string)(\$cfg['last_blacklist'] ?? '');", 'H2: an unreadable stored list falls back to the last applied list');
+has($gh9, "|| ((\$st['ranges'] === 0 || \$st['blacklist'] === null) && \$hourly('last_reapply'));", 'H3: the cannot-tell cases re-apply at most once an hour');
+has($gh9, "if (\$st['enabled'] === false && \$hourly('last_reenable')) {", 'H4: re-enabling cPHulk at most once an hour');
+$calls = []; $s9a = smpro_gh_sync(); $s9b = smpro_gh_sync();
+ok(!in_array('set_cphulk_config_key', array_column($calls, 0), true), 'H5: two syncs in a row with nothing changed write nothing');

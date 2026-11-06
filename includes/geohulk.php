@@ -203,6 +203,12 @@ function smpro_gh_whitelist_trusted(bool $force = false): array {
     return ['added' => count($added)];
 }
 
+/** A country list as a set: upper case, no blanks or repeats, sorted. Two lists that hold the same codes are equal. */
+function smpro_gh_norm($csv): string {
+    $a = array_values(array_unique(array_filter(array_map(fn($x) => strtoupper(trim((string)$x)), preg_split('/[\s,]+/', (string)$csv)))));
+    sort($a); return implode(',', $a);
+}
+
 /** Keep cPHulk's blacklist equal to "everything not allowed". Called every minute from the lock's tick; no-op when equal. */
 function smpro_gh_sync(bool $force = false): array {
     smpro_gh_whitelist_trusted($force);   // first, and before the cfg read below, so its save is not overwritten
@@ -211,14 +217,22 @@ function smpro_gh_sync(bool $force = false): array {
     $want = smpro_gh_blacklist(smpro_gh_all_codes(), smpro_gh_allowed());
     if ($want === '') { $cfg['last_error'] = 'every known country is allowed - nothing to refuse'; smpro_gh_cfg_save($cfg); return ['ok' => false, 'msg' => $cfg['last_error'], 'count' => 0, 'changed' => false]; }
     $st = smpro_gh_hulk_state();
-    if ($st['enabled'] === false) {
+    $hourly = function (string $k) use (&$cfg) { if ((int)($cfg[$k] ?? 0) >= time() - 3600) return false; $cfg[$k] = time(); return true; };
+    if ($st['enabled'] === false && $hourly('last_reenable')) {
         // Someone switched cPHulk off underneath the wall. The wall is a decision the operator made on this page;
-        // it is put back, and the event is recorded so the two decisions can be reconciled by a person.
+        // it is put back (once an hour at most: each enable reloads cPanel's web service), and the event is recorded.
         $e = smpro_gh_api('enable_cphulk');
         if (function_exists('smpro_audit')) @smpro_audit('geohulk_reenabled', ['ok' => smpro_gh_api_ok($e) ? 1 : 0]);
     }
     // ranges === null means the count could not be read (no sqlite); that is not "zero ranges".
-    $changed = $force || $st['blacklist'] !== $want || $st['ranges'] === 0;
+    // Every write of cPHulk's config makes cPanel reload its web service (a HUP to cpsrvd), and a reload cuts any
+    // upload or download running through cPanel at that moment. On a server where cPHulk's config file is not where it
+    // is looked for, the stored list read as "nothing" and the list was rewritten every minute - every File Manager
+    // upload longer than a minute failed. So: compare the lists as sets; when the stored list cannot be read, compare
+    // with the list this sync applied last; and the two "cannot tell" cases re-apply at most once an hour.
+    $have = $st['blacklist'] !== null ? (string)$st['blacklist'] : (string)($cfg['last_blacklist'] ?? '');
+    $changed = $force || smpro_gh_norm($have) !== smpro_gh_norm($want)
+        || (($st['ranges'] === 0 || $st['blacklist'] === null) && $hourly('last_reapply'));
     if ($changed) {
         $r = smpro_gh_api('set_cphulk_config_key', ['key' => 'country_blacklist', 'value' => $want]);
         if (!smpro_gh_api_ok($r)) { $cfg['last_error'] = 'cPHulk refused the country list: ' . (string)($r['metadata']['reason'] ?? 'no answer'); smpro_gh_cfg_save($cfg); return ['ok' => false, 'msg' => $cfg['last_error'], 'count' => 0, 'changed' => false]; }

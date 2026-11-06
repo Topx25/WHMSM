@@ -591,6 +591,15 @@ function smpro_bg_decide(array $scan, array $cfg, array $state, callable $verify
     }
     // forget untouched entries older than 30 days that carry no admin decision
     foreach ($bots as $ip => $b) if (($b['decided_by'] ?? '') === 'auto' || ($b['decided_by'] ?? '') === '') { $age = $now - (int)($b['seen'] ?? 0); if (($b['status'] ?? '') !== 'blocked' ? $age > 30 * 86400 : $age > 14 * 86400) unset($bots[$ip]); }   // blocked rows age out too: csf.deny / im_blocked.json are the authority, the state file is not a second firewall
+    // A hard cap on what nobody decided. Above it the least recently seen undecided entries (auto / no decision, not
+    // blocked) go first; blocked addresses and every operator decision are always kept.
+    $cap = 12000;
+    if (count($bots) > $cap) {
+        $cand = [];
+        foreach ($bots as $ip => $b) if ((($b['decided_by'] ?? '') === 'auto' || ($b['decided_by'] ?? '') === '') && ($b['status'] ?? '') !== 'blocked') $cand[$ip] = (int)($b['seen'] ?? 0);
+        asort($cand);
+        foreach (array_slice(array_keys($cand), 0, count($bots) - $cap) as $ip) unset($bots[$ip]);
+    }
     $state['bots'] = $bots; $state['last_scan'] = $now; $state['last_files'] = (int)($scan['files'] ?? 0); $state['last_lines'] = (int)($scan['lines'] ?? 0); $state['last_waf'] = (int)($scan['waf'] ?? 0);
     return ['state' => $state, 'to_block' => $toBlock, 'new_pending' => $newPending, 'new_gray' => $newGray, 'warn_allowed' => $warnAllowed, 'review' => $review];
 }
