@@ -37,3 +37,16 @@ has($src, "smpro_sdb_save('scan.json', \$scan);   // progress after every site",
 has($src, "if (\$resume && (int)(\$scan['results'][\$dom]['checked_at'] ?? 0) >= (int)\$scan['started']) continue;", 'R2: a resumed scan skips sites already checked');
 has($src, "if (\$dead) { \$j['running'] = false; \$j['stopped'] = true;", 'R3: a dead or stuck worker is not shown as running');
 has($sd, "if (\$act === 'bulk_resume') { echo json_encode(smpro_sdb_start('resume')", 'R4: Continue scan button');
+ok(!smpro_sdb_auto_allowed('disable_plugin', '/home/u/public_html/wp-content/plugins/wp-guard'), 'X1: the switch never disables the security plugin');
+ok(!smpro_sdb_auto_allowed('restore_wp_core'), 'X2: core restore is by hand only');
+$d = sys_get_temp_dir() . '/sdb' . getmypid(); @mkdir($d . '/wp-content/plugins/badp', 0700, true);
+$x = smpro_sdb_extra_fixes(['docroot' => $d, 'fixes' => [], 'fatals' => [
+    ['msg' => "PHP Fatal error:  Uncaught Error: Call to a member function get_row() on null in $d/wp-content/plugins/badp/x.php:50"],
+    ['msg' => "PHP Fatal error: Uncaught Error: Failed opening required '$d/wp-includes/version.php' (include_path='.')"]]], 'php_warning');
+is_eq(array_column($x, 'action'), ['disable_plugin', 'restore_wp_core', 'hide_php_errors'], 'X3: crash in a plugin, missing core file, printed warnings each get a fix');
+is_eq(smpro_sdb_noindex_cause($d), 'The web root has no index page (index.php / index.html), so the server refuses to list it.', 'X4: 403 cause = no index page');
+@rmdir($d . '/wp-content/plugins/badp'); @rmdir($d . '/wp-content/plugins'); @rmdir($d . '/wp-content');
+is_eq(smpro_sdb_noindex_cause($d), 'The web root is empty: the site has no content (upload it, or remove the domain).', 'X5: empty web root');
+@rmdir($d);
+$inv = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/investigate.php'));
+has($inv, "if ((\$e['kind'] ?? '') === 'tar') {   // restored WordPress core", 'X6: the core restore can be undone');

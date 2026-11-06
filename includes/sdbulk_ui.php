@@ -56,7 +56,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
         +'<td><a href="#" class="sdbOne" data-d="'+e(r.domain)+'">'+e(r.domain)+'</a></td><td>'+e(r.user)+'</td>'
         +'<td>'+e(r.platform||'')+(r.php?' <small>PHP '+e(r.php)+'</small>':'')+'</td>'
         +'<td><span class="sdb-pill '+(r.state==='ok'?'sdb-ok':'sdb-bad')+'">'+e(r.code||'—')+'</span></td>'
-        +'<td>'+e(r.text)+(r.cause?'<br><small>'+e(r.cause)+'</small>':'')+(r.locked?'<br><small>files locked</small>':'')+'</td><td>'+fx+'</td>'
+        +'<td>'+e(r.text)+(r.cause?'<br><small>'+e(r.cause)+'</small>':'')+(r.locked?'<br><small>files locked</small>':'')+(r.again?'<br><small><b>Broke again</b> after a fix on '+new Date(r.again*1000).toLocaleDateString()+'</small>':'')+'</td><td>'+fx+'</td>'
         +'<td>'+(rp?'<a href="#" class="sdbRep" data-d="'+e(r.domain)+'">report</a>':'')+'</td></tr>';
     });
     $('sdbRows').innerHTML=h||'<tr><td colspan="8"><small>Nothing to show.</small></td></tr>';

@@ -1817,6 +1817,15 @@ function smpro_inv_undo($id) {
         smpro_audit('sitedoctor_undo', ['kind'=>'wpurl','ok'=>true]);
         return ['ok'=>true,'msg'=>'Restored WordPress siteurl/home.'];
     }
+    if (($e['kind'] ?? '') === 'tar') {   // restored WordPress core -> unpack the previous files again, AS THE ACCOUNT
+        $user = (string)($e['user'] ?? ''); $bak = (string)($e['backup'] ?? ''); $doc = (string)($e['from'] ?? '');
+        if (!preg_match('/^[a-z0-9_-]+$/i', $user) || !is_file($bak) || is_link($bak) || strpos((string)@realpath($doc), '/home') !== 0) return ['ok'=>false,'msg'=>'backup missing or unsafe'];
+        @shell_exec('timeout 300 su -s /bin/bash ' . escapeshellarg($user) . ' -c ' . escapeshellarg('tar xzf ' . escapeshellarg($bak) . ' -C ' . escapeshellarg($doc)) . ' 2>&1');
+        $m[$hit]['status'] = 'undone'; $m[$hit]['undone_ts'] = time();
+        @file_put_contents(smpro_inv_manifest_path(), json_encode($m, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
+        smpro_audit('sitedoctor_undo', ['kind'=>'tar','ok'=>true]);
+        return ['ok'=>true,'msg'=>'Previous core files unpacked again.'];
+    }
     if (($e['kind'] ?? '') === 'created') {   // generated artifact (e.g. .webp) -> delete it
         $art = (string)($e['to'] ?? '');
         $dr = @realpath(dirname((string)($e['from'] ?? ''))); $ra = @realpath($art);

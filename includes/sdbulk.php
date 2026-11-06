@@ -31,10 +31,104 @@ function smpro_sdb_cfg(): array { return smpro_sdb_load('bulk.json') + ['auto' =
 function smpro_sdb_cfg_save(array $patch): array { $c = array_replace(smpro_sdb_cfg(), $patch); $c['auto'] = !empty($c['auto']); $c['scan_daily'] = !empty($c['scan_daily']); smpro_sdb_save('bulk.json', $c); if (function_exists('smpro_sdb_cron_sync')) smpro_sdb_cron_sync(); return $c; }
 
 /** Fixes the automatic switch may apply on its own. Everything else waits for a person to tick the site. */
-function smpro_sdb_auto_allowed(string $action): bool {
+function smpro_sdb_auto_allowed(string $action, string $path = ''): bool {
     // fix_wp_url edits the database; restart_phpfpm restarts a PHP pool other sites share; unharden is handled by the
-    // lock rule below (a locked site is never touched automatically).
-    return !in_array($action, ['fix_wp_url', 'restart_phpfpm', 'unharden'], true);
+    // lock rule below (a locked site is never touched automatically); restore_wp_core replaces code files.
+    if (in_array($action, ['fix_wp_url', 'restart_phpfpm', 'unharden', 'restore_wp_core'], true)) return false;
+    // The site's security plugin (WP Guard) is never switched off by a machine, even when it is the one failing.
+    if (preg_match('#/plugins/wp-guard$#', rtrim($path, '/'))) return false;
+    return true;
+}
+
+/**
+ * Scenarios the single-site engine has no fix for, found in the bulk scan on real servers:
+ *   - a plugin/theme throws an uncaught error (not a missing file / parse error)  -> disable it (renamed, reversible)
+ *   - a WordPress core file is missing (wp-includes / wp-admin / wp-*.php)         -> restore the core files (by hand)
+ *   - PHP warnings / deprecations printed to visitors                              -> display_errors off in .user.ini
+ * Returns fixes in the engine's shape, not already in $res['fixes'].
+ */
+function smpro_sdb_extra_fixes(array $res, string $kind): array {
+    $out = []; $have = array_column((array)($res['fixes'] ?? []), 'path');
+    $doc = rtrim((string)($res['docroot'] ?? ''), '/'); if ($doc === '') return [];
+    foreach ((array)($res['fatals'] ?? []) as $f) {
+        $msg = (string)($f['msg'] ?? '');
+        if (preg_match('#wp-content/(plugins|themes)/([A-Za-z0-9._-]+)#', $msg, $m) && preg_match('/Uncaught (Error|TypeError|ArgumentCountError|ValueError|DivisionByZeroError)/', $msg)) {
+            $p = $doc . '/wp-content/' . $m[1] . '/' . $m[2];
+            if (is_dir($p) && !in_array($p, $have, true)) { $have[] = $p; $out[] = ['action' => $m[1] === 'plugins' ? 'disable_plugin' : 'disable_theme', 'path' => $p, 'label' => 'Disable ' . $m[2] . ' (it crashes the site)', 'why' => 'Uncaught error inside ' . $m[2]]; }
+        }
+        if (preg_match("#Failed opening required '" . preg_quote($doc, '#') . "/(wp-includes/|wp-admin/|wp-[a-z-]+\.php)#", $msg) && !in_array('restore_wp_core', array_column($out, 'action'), true))
+            $out[] = ['action' => 'restore_wp_core', 'path' => $doc, 'label' => 'Restore the WordPress core files (wp-admin, wp-includes, root files)', 'why' => 'A WordPress core file is missing - often removed by a malware clean-up or a broken update. Content, uploads and wp-config.php are not touched.'];
+    }
+    if (in_array($kind, ['php_warning', 'php_deprecated'], true))
+        $out[] = ['action' => 'hide_php_errors', 'path' => $doc, 'label' => 'Stop printing PHP warnings to visitors (display_errors off)', 'why' => 'Warnings are shown on the page; they stay in the error log.'];
+    return $out;
+}
+
+/** Why a 403 / listing / default page: the web root has no index page. '' when it has one. */
+function smpro_sdb_noindex_cause(string $doc): string {
+    if ($doc === '' || !is_dir($doc)) return '';
+    foreach (['index.php', 'index.html', 'index.htm', 'default.html', 'index.shtml'] as $i) if (file_exists($doc . '/' . $i)) return '';
+    $n = count(array_diff((array)@scandir($doc), ['.', '..', 'cgi-bin', '.well-known', '.htaccess']));
+    return $n === 0 ? 'The web root is empty: the site has no content (upload it, or remove the domain).' : 'The web root has no index page (index.php / index.html), so the server refuses to list it.';
+}
+
+/** Run one fix: the bulk-only actions here, everything else through the single-site engine. */
+function smpro_sdb_fix_one(string $action, string $domain, string $path): array {
+    if ($action === 'hide_php_errors') return smpro_sdb_fix_hide_errors($domain);
+    if ($action === 'restore_wp_core') return smpro_sdb_fix_wp_core($domain);
+    return smpro_inv_fix($action, $domain, $path);
+}
+/** Write a file inside the account's web root as root without following a planted link; owner = the web root's owner. */
+function smpro_sdb_safe_write(string $dir, string $name, string $content): bool {
+    $d = @realpath($dir); if ($d === false || strpos($d, '/home') !== 0 || is_link($dir . '/' . $name)) return false;
+    $tmp = $d . '/.' . $name . '.smpro-tmp-' . bin2hex(random_bytes(4));
+    $h = @fopen($tmp, 'xb'); if (!$h) return false; $ok = @fwrite($h, $content) !== false; @fclose($h);
+    if ($ok) { @chmod($tmp, 0644); $st = @stat($d); if ($st) { @chown($tmp, $st['uid']); @chgrp($tmp, $st['gid']); } $ok = @rename($tmp, $d . '/' . $name); }
+    if (!$ok) @unlink($tmp);
+    return $ok;
+}
+function smpro_sdb_fix_hide_errors(string $domain): array {
+    $r = smpro_inv_resolve($domain); if (!$r) return ['ok' => false, 'msg' => 'unresolved target'];
+    $doc = rtrim($r['docroot'], '/'); $f = $doc . '/.user.ini';
+    if (is_link($f)) return ['ok' => false, 'msg' => 'refused: .user.ini is a link'];
+    $old = is_file($f) ? (string)@file_get_contents($f) : null;
+    if ($old !== null && preg_match('/^\s*display_errors\s*=\s*(off|0)\s*$/mi', $old)) return ['ok' => false, 'msg' => 'display_errors is already off in .user.ini (the warnings come from code that turns it on - see Diagnose).'];
+    $new = ($old === null ? '' : rtrim(preg_replace('/^\s*display_errors\s*=.*$/mi', '', $old)) . "\n") . "; Safety Monitor Pro Site Doctor: warnings go to the error log, not to visitors\ndisplay_errors = Off\n";
+    if ($old !== null) {
+        $bak = $f . '.smpro-bak-' . date('Ymd_His');
+        if (!smpro_sdb_safe_write($doc, basename($bak), $old)) return ['ok' => false, 'msg' => 'could not back up .user.ini - nothing changed'];
+        if (!smpro_sdb_safe_write($doc, '.user.ini', $new)) return ['ok' => false, 'msg' => 'could not write .user.ini'];
+        $id = smpro_inv_manifest_add(['user' => $r['user'], 'domain' => $r['domain'], 'action' => 'hide_php_errors', 'kind' => 'file', 'from' => $f, 'backup' => $bak]);
+    } else {
+        if (!smpro_sdb_safe_write($doc, '.user.ini', $new)) return ['ok' => false, 'msg' => 'could not write .user.ini'];
+        $id = smpro_inv_manifest_add(['user' => $r['user'], 'domain' => $r['domain'], 'action' => 'hide_php_errors', 'kind' => 'created', 'from' => $doc . '/index.php', 'to' => $f]);
+    }
+    smpro_audit('sitedoctor_fix', ['action' => 'hide_php_errors', 'user' => $r['user'], 'ok' => true]);
+    return ['ok' => true, 'msg' => 'display_errors = Off written to .user.ini' . ($old !== null ? ' (old file backed up)' : ' (new file)') . '. PHP re-reads it within 5 minutes.', 'undo_id' => $id, 'delayed' => true];
+}
+/**
+ * Missing WordPress core files: back up wp-admin, wp-includes and the root *.php (not wp-config.php) to a tarball in
+ * the account's home, then let wp-cli, run AS THE ACCOUNT, download the same version's core over them. wp-content and
+ * wp-config.php are never touched. Undo = unpack the tarball as the account.
+ */
+function smpro_sdb_fix_wp_core(string $domain): array {
+    $r = smpro_inv_resolve($domain); if (!$r) return ['ok' => false, 'msg' => 'unresolved target'];
+    $doc = rtrim($r['docroot'], '/'); $user = (string)$r['user']; $home = rtrim((string)$r['home'], '/');
+    $wp = ''; foreach (['/usr/local/bin/wp', '/usr/bin/wp', '/usr/local/cpanel/3rdparty/bin/wp'] as $c) if (is_executable($c)) { $wp = $c; break; }
+    if ($wp === '') return ['ok' => false, 'msg' => 'wp-cli is not installed on this server - restore the core files from a backup.'];
+    if (!is_file($doc . '/wp-config.php') || !preg_match('/^[a-z0-9_-]+$/i', $user)) return ['ok' => false, 'msg' => 'not a WordPress web root'];
+    $ver = '';
+    if (is_file($doc . '/wp-includes/version.php') && preg_match("/wp_version\s*=\s*'([0-9.]+)'/", (string)@file_get_contents($doc . '/wp-includes/version.php'), $m)) $ver = $m[1];
+    $bak = $home . '/.smpro-bak-wpcore-' . date('Ymd_His') . '.tar.gz';
+    $items = array_values(array_filter(array_merge(['wp-admin', 'wp-includes'], array_map('basename', (array)glob($doc . '/*.php'))), fn($x) => $x !== 'wp-config.php' && file_exists($doc . '/' . $x)));
+    $as = function (string $cmd) use ($user) { return (string)@shell_exec('timeout 300 su -s /bin/bash ' . escapeshellarg($user) . ' -c ' . escapeshellarg($cmd) . ' 2>&1'); };
+    if ($items) { $as('umask 077; tar czf ' . escapeshellarg($bak) . ' -C ' . escapeshellarg($doc) . ' ' . implode(' ', array_map('escapeshellarg', $items)));
+        if (!is_file($bak) || filesize($bak) < 1000) return ['ok' => false, 'msg' => 'could not back up the current core files - nothing changed']; }
+    $o = $as('cd ' . escapeshellarg($doc) . ' && ' . escapeshellarg($wp) . ' core download --skip-content --force' . ($ver !== '' ? ' --version=' . escapeshellarg($ver) : '') . ' --path=' . escapeshellarg($doc));
+    $ok = stripos($o, 'Success') !== false;
+    $id = $items ? smpro_inv_manifest_add(['user' => $user, 'domain' => $r['domain'], 'action' => 'restore_wp_core', 'kind' => 'tar', 'from' => $doc, 'backup' => $bak]) : '';
+    smpro_audit('sitedoctor_fix', ['action' => 'restore_wp_core', 'user' => $user, 'version' => $ver ?: 'latest', 'ok' => $ok]);
+    return ['ok' => $ok, 'msg' => $ok ? ('WordPress core ' . ($ver ?: '(latest)') . ' restored; wp-content and wp-config.php untouched. Previous core files backed up to ' . $bak . '.') : ('wp-cli failed: ' . substr(trim($o), -300)), 'undo_id' => $id];
 }
 
 /* ============================ discovery + probe ============================ */
@@ -120,8 +214,14 @@ function smpro_sdb_scan(array $only = [], int $budget = 3300, bool $resume = fal
                 $row['php'] = (string)($res['phpver'] ?? '');
                 $row['cause'] = (string)($res['live_cause']['msg'] ?? ($res['fatals'][0]['msg'] ?? ''));
                 $row['locked'] = count((array)($res['hardened'] ?? [])) > 0;
-                $row['fixes'] = array_values(array_map(fn($f) => ['action' => (string)($f['action'] ?? ''), 'label' => (string)($f['label'] ?? ''), 'path' => (string)($f['path'] ?? ''), 'auto' => smpro_sdb_auto_allowed((string)($f['action'] ?? ''))], (array)($res['fixes'] ?? [])));
+                $all_f = array_merge((array)($res['fixes'] ?? []), smpro_sdb_extra_fixes($res, (string)$p['kind']));
+                $row['fixes'] = array_values(array_map(fn($f) => ['action' => (string)($f['action'] ?? ''), 'label' => (string)($f['label'] ?? ''), 'path' => (string)($f['path'] ?? ''), 'auto' => smpro_sdb_auto_allowed((string)($f['action'] ?? ''), (string)($f['path'] ?? ''))], $all_f));
+                if ($row['cause'] === '' && in_array($p['kind'], ['http_403', 'dir_listing', 'default_page'], true)) $row['cause'] = smpro_sdb_noindex_cause((string)($res['docroot'] ?? ''));
             }
+            // A site that was fixed before and fails again: say so (something put the fault back - an update, a
+            // self-healing plugin, a restore), instead of showing it as a new problem.
+            $prev = smpro_sdb_reports($dom, 1)[0] ?? null;
+            if ($prev && !empty($prev['ok']) && !empty($prev['changed'])) $row['again'] = (int)$prev['ts'];
         }
         $scan['results'][$dom] = $row; $scan['done']++; $scan['beat'] = time();
         smpro_sdb_save('scan.json', $scan);   // progress after every site
@@ -150,12 +250,13 @@ function smpro_sdb_fix_site(string $domain, bool $auto): array {
     $rep['user'] = (string)$res['user']; $rep['platform'] = (string)($res['detect']['platform'] ?? ''); $rep['php'] = (string)($res['phpver'] ?? '');
     $rep['problem'] = $before['text']; $rep['cause'] = (string)($res['live_cause']['msg'] ?? ($res['fatals'][0]['msg'] ?? ''));
     if ($before['state'] === 'ok') { $rep['ok'] = true; $rep['steps'][] = 'The site already answers correctly; nothing was changed.'; $rep['after'] = $rep['before']; return smpro_sdb_report_add($rep); }
-    $fixes = (array)($res['fixes'] ?? []);
+    $fixes = array_merge((array)($res['fixes'] ?? []), smpro_sdb_extra_fixes($res, (string)$before['kind']));
+    if ($rep['cause'] === '' && in_array($before['kind'], ['http_403', 'dir_listing', 'default_page'], true)) $rep['cause'] = smpro_sdb_noindex_cause((string)($res['docroot'] ?? ''));
     if ($auto) {
         if (!empty($res['hardened'])) { $rep['steps'][] = 'Skipped by the automatic switch: some of this site\'s files are locked (PHP Harden / WP Guard). Tick the site to fix it by hand.'; return smpro_sdb_report_add($rep); }
-        $held = array_filter($fixes, fn($f) => !smpro_sdb_auto_allowed((string)($f['action'] ?? '')));
+        $held = array_filter($fixes, fn($f) => !smpro_sdb_auto_allowed((string)($f['action'] ?? ''), (string)($f['path'] ?? '')));
         foreach ($held as $f) $rep['steps'][] = 'Left for you (not done automatically): ' . (string)($f['label'] ?? $f['action']);
-        $fixes = array_values(array_filter($fixes, fn($f) => smpro_sdb_auto_allowed((string)($f['action'] ?? ''))));
+        $fixes = array_values(array_filter($fixes, fn($f) => smpro_sdb_auto_allowed((string)($f['action'] ?? ''), (string)($f['path'] ?? ''))));
     } elseif (function_exists('smpro_inv_unharden_base')) {
         $n = smpro_inv_unharden_base($res); if ($n) $rep['steps'][] = 'Cleared the immutable flag on ' . $n . ' file(s) to be edited (each is recorded for undo).';
     }
@@ -163,8 +264,9 @@ function smpro_sdb_fix_site(string $domain, bool $auto): array {
     $ids0 = array_column(smpro_inv_manifest_load(), 'id');
     $after = $before;
     foreach ($fixes as $f) {
-        $x = smpro_inv_fix((string)$f['action'], $domain, (string)($f['path'] ?? ''));
+        $x = smpro_sdb_fix_one((string)$f['action'], $domain, (string)($f['path'] ?? ''));
         $rep['steps'][] = (!empty($x['ok']) ? 'Done: ' : 'Failed: ') . (string)($f['label'] ?? $f['action']) . ' - ' . (string)($x['msg'] ?? '');
+        if (!empty($x['delayed'])) $rep['delayed'] = true;
         if (!empty($x['ok'])) { $after = smpro_sdb_probe($domain, $ip); if ($after['state'] === 'ok') break; }
     }
     foreach (smpro_inv_manifest_load() as $e) if (!in_array($e['id'] ?? '', $ids0, true) && ($e['domain'] ?? '') === $domain) {
@@ -173,6 +275,7 @@ function smpro_sdb_fix_site(string $domain, bool $auto): array {
     }
     $rep['after'] = ['code' => $after['code'], 'ms' => $after['ms'], 'text' => $after['text']];
     $rep['ok'] = $after['state'] === 'ok';
+    if (!$rep['ok'] && !empty($rep['delayed']) && $after['code'] === $before['code']) $rep['steps'][] = 'PHP picks up .user.ini within 5 minutes; scan the site again after that to confirm.';
     // a fix that made the answer worse is taken back at once
     if (!$rep['ok'] && $before['code'] >= 200 && $before['code'] < 500 && ($after['code'] === 0 || $after['code'] >= 500) && $rep['undo'] && function_exists('smpro_inv_undo')) {
         foreach (array_reverse($rep['undo']) as $uid) smpro_inv_undo($uid);
