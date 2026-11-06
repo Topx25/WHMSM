@@ -17,7 +17,7 @@ if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) exit;
 if (!function_exists('smpro_sdb_run_job')) exit;
 @ini_set('memory_limit', '512M'); @set_time_limit(0);
 $kind = (string)($argv[1] ?? 'scan');
-if (!in_array($kind, ['scan', 'fix', 'daily'], true)) exit(2);
+if (!in_array($kind, ['scan', 'resume', 'fix', 'daily'], true)) exit(2);
 $lk = @fopen(smpro_sdb_path('worker.lock'), 'c');
 if (!$lk || !@flock($lk, LOCK_EX | LOCK_NB)) exit;   // one worker at a time
 if ($kind === 'daily') {

@@ -45,11 +45,12 @@ if (($_GET['sd_bulk'] ?? '') === '1' && function_exists('smpro_sdb_load')) {
     echo json_encode(['ok' => true, 'cfg' => smpro_sdb_cfg(), 'job' => smpro_sdb_job(), 'scan' => smpro_sdb_load('scan.json', ['results' => []]), 'reports' => $rep, 'keep_days' => SMPRO_SDB_KEEP_DAYS], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 /* ---- all sites: start a scan, fix the ticked sites, the automatic switch (POST + CSRF + root) ---- */
-if ($reqMethod === 'POST' && in_array(($_POST['sd_action'] ?? ''), ['bulk_scan', 'bulk_fix', 'bulk_cfg'], true) && function_exists('smpro_sdb_start')) {
+if ($reqMethod === 'POST' && in_array(($_POST['sd_action'] ?? ''), ['bulk_scan', 'bulk_resume', 'bulk_fix', 'bulk_cfg'], true) && function_exists('smpro_sdb_start')) {
     smpro_require_valid_csrf('sd_action'); smpro_require_root();
     header('Content-Type: application/json');
     $act = $_POST['sd_action'];
     if ($act === 'bulk_scan') { echo json_encode(smpro_sdb_start('scan'), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); exit; }
+    if ($act === 'bulk_resume') { echo json_encode(smpro_sdb_start('resume'), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); exit; }
     if ($act === 'bulk_fix')  { echo json_encode(smpro_sdb_start('fix', explode(',', (string)($_POST['domains'] ?? ''))), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); exit; }
     $c = smpro_sdb_cfg_save(['auto' => ((string)($_POST['auto'] ?? '') === '1'), 'scan_daily' => ((string)($_POST['scan_daily'] ?? '1') === '1')]);
     smpro_audit('sitedoctor_bulk_cfg', ['auto' => $c['auto'], 'scan_daily' => $c['scan_daily']]);

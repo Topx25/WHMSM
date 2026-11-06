@@ -96,15 +96,21 @@ function smpro_sdb_probe(string $domain, string $ip): array {
 
 /* ============================ scan ============================ */
 /** Probe every site (or the given ones); diagnose the failing ones with the single-site engine. Time-bounded. */
-function smpro_sdb_scan(array $only = [], int $budget = 1500): array {
+function smpro_sdb_scan(array $only = [], int $budget = 3300, bool $resume = false): array {
     $t0 = time(); $all = smpro_sdb_targets();
     if ($only) $all = array_intersect_key($all, array_flip(array_map('strtolower', $only)));
     $scan = smpro_sdb_load('scan.json', ['results' => []]);
-    $scan['started'] = $t0; $scan['finished'] = 0; $scan['total'] = count($all); $scan['done'] = 0;
+    // Resume: an unfinished scan keeps its start time and skips every site already checked since then.
+    $resume = $resume && !$only && empty($scan['finished']) && !empty($scan['started']);
+    if (!$resume) $scan['started'] = $t0;
+    $scan['finished'] = 0; $scan['total'] = count($all); $scan['current'] = ''; $scan['beat'] = time(); unset($scan['partial']);
+    $scan['done'] = $resume ? count(array_filter((array)$scan['results'], fn($r) => (int)($r['checked_at'] ?? 0) >= (int)$scan['started'])) : 0;
     if (!$only) $scan['results'] = array_intersect_key((array)$scan['results'], $all);   // forget sites that no longer exist
     smpro_sdb_save('scan.json', $scan);
     foreach ($all as $dom => $t) {
         if (time() - $t0 > $budget) { $scan['partial'] = true; break; }
+        if ($resume && (int)($scan['results'][$dom]['checked_at'] ?? 0) >= (int)$scan['started']) continue;
+        $scan['current'] = $dom; $scan['beat'] = time(); smpro_sdb_save('scan.json', $scan);   // the page shows which site is being checked
         $p = smpro_sdb_probe($dom, $t['ip']);
         $row = ['domain' => $dom, 'user' => $t['user'], 'type' => $t['type'], 'checked_at' => time()] + $p;
         if ($p['state'] === 'problem' && function_exists('smpro_inv_run')) {
@@ -117,10 +123,11 @@ function smpro_sdb_scan(array $only = [], int $budget = 1500): array {
                 $row['fixes'] = array_values(array_map(fn($f) => ['action' => (string)($f['action'] ?? ''), 'label' => (string)($f['label'] ?? ''), 'path' => (string)($f['path'] ?? ''), 'auto' => smpro_sdb_auto_allowed((string)($f['action'] ?? ''))], (array)($res['fixes'] ?? [])));
             }
         }
-        $scan['results'][$dom] = $row; $scan['done']++;
-        if ($scan['done'] % 10 === 0) smpro_sdb_save('scan.json', $scan);   // progress for the page
+        $scan['results'][$dom] = $row; $scan['done']++; $scan['beat'] = time();
+        smpro_sdb_save('scan.json', $scan);   // progress after every site
     }
-    $scan['finished'] = time(); unset($scan['partial']);
+    $scan['current'] = '';
+    if (empty($scan['partial'])) $scan['finished'] = time();   // a scan cut by its time limit stays resumable
     smpro_sdb_save('scan.json', $scan);
     if (function_exists('smpro_audit')) @smpro_audit('sitedoctor_bulk_scan', ['sites' => $scan['done'], 'problems' => count(array_filter($scan['results'], fn($r) => ($r['state'] ?? '') === 'problem'))]);
     return $scan;
@@ -223,17 +230,26 @@ function smpro_sdb_purge(int $days = SMPRO_SDB_KEEP_DAYS): array {
 }
 
 /* ============================ jobs + cron ============================ */
-function smpro_sdb_job(): array { $j = smpro_sdb_load('job.json'); if (!empty($j['pid']) && !@file_exists('/proc/' . (int)$j['pid'])) $j['running'] = false; return $j; }
+/** The job as the page sees it. A worker that died, never started, or stopped moving for 15 minutes is not "running". */
+function smpro_sdb_job(): array {
+    $j = smpro_sdb_load('job.json'); if (empty($j['running'])) return $j;
+    $pid = (int)($j['pid'] ?? 0); $beat = (int)(smpro_sdb_load('scan.json')['beat'] ?? 0);
+    $dead = ($pid > 0 && !@file_exists('/proc/' . $pid)) || ($pid === 0 && (int)($j['started'] ?? 0) < time() - 90)
+         || (($j['kind'] ?? '') !== 'fix' && max($beat, (int)($j['started'] ?? 0)) < time() - 900);
+    if ($dead) { $j['running'] = false; $j['stopped'] = true; smpro_sdb_save('job.json', $j); }
+    return $j;
+}
 /** Start the detached worker: kind scan|fix, with the sites to fix. Refuses while one is running. */
 function smpro_sdb_start(string $kind, array $domains = []): array {
     $j = smpro_sdb_job(); if (!empty($j['running'])) return ['ok' => false, 'msg' => 'A ' . (string)$j['kind'] . ' is already running (' . (int)($j['done'] ?? 0) . ' of ' . (int)($j['total'] ?? 0) . ').'];
     $domains = array_values(array_unique(array_filter(array_map(fn($d) => strtolower(preg_replace('/[^A-Za-z0-9.-]/', '', (string)$d)), $domains))));
     if ($kind === 'fix' && !$domains) return ['ok' => false, 'msg' => 'No site was selected.'];
+    if (!in_array($kind, ['scan', 'resume', 'fix'], true)) return ['ok' => false, 'msg' => 'Unknown job.'];
     smpro_sdb_save('job.json', ['kind' => $kind, 'domains' => $domains, 'running' => true, 'started' => time(), 'done' => 0, 'total' => $kind === 'fix' ? count($domains) : 0, 'pid' => 0]);
     $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : 'php';
     $bin = SMPRO_BASE . '/bin/sitedoctor_bulk.php';
     @shell_exec('nohup timeout 3600 nice -n 10 ' . escapeshellarg($php) . ' ' . escapeshellarg($bin) . ' ' . escapeshellarg($kind) . ' >/dev/null 2>&1 </dev/null &');
-    return ['ok' => true, 'msg' => $kind === 'fix' ? ('Fixing ' . count($domains) . ' site(s) in the background - you can close this page.') : 'Scanning every site in the background - you can close this page.'];
+    return ['ok' => true, 'msg' => $kind === 'fix' ? ('Fixing ' . count($domains) . ' site(s) in the background - you can close this page.') : ($kind === 'resume' ? 'Continuing the scan where it stopped - you can close this page.' : 'Scanning every site in the background - you can close this page.')];
 }
 /** The worker body. */
 function smpro_sdb_run_job(string $kind): void {
@@ -241,7 +257,7 @@ function smpro_sdb_run_job(string $kind): void {
     if ($kind === 'fix') {
         foreach ((array)$j['domains'] as $d) { smpro_sdb_fix_site((string)$d, false); $j['done'] = (int)$j['done'] + 1; smpro_sdb_save('job.json', $j); }
     } else {
-        smpro_sdb_scan();
+        smpro_sdb_scan([], 3300, $kind === 'resume');
         $cfg = smpro_sdb_cfg();
         if ($kind === 'daily' && $cfg['auto']) {
             $scan = smpro_sdb_load('scan.json', ['results' => []]);

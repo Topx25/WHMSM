@@ -7,6 +7,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
     <div><h2 class="h" style="margin:0;font-size:17px" data-i18n>All sites</h2>
       <p class="sub" style="margin:2px 0 0" data-i18n>Check every domain, sub-domain and add-on on this server, see which ones fail and why, then fix the ones you tick. Every edited file is backed up first; backups are removed after 7 days.</p></div>
     <div class="sdb-ctl">
+      <button class="sd-go" id="sdbResume" type="button" style="display:none">Continue scan</button>
       <button class="sd-go" id="sdbScan" type="button" data-i18n>Scan all sites</button>
       <label class="sdb-sw" title="Once a day, failing sites get the safe fixes automatically. Never changes a PHP version, a database, a shared service or a locked site."><input type="checkbox" id="sdbAuto"> <span data-i18n>Automatic fixing</span></label>
     </div>
@@ -38,11 +39,13 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
   function draw(){
     $('sdbAuto').checked=!!st.cfg.auto;
     var jb=st.job||{},sc=st.scan||{},rs=vals(sc.results),msg;
-    if(jb.running)msg=(jb.kind==='fix'?'Fixing '+(jb.done||0)+' of '+(jb.total||0)+' site(s)…':'Scanning '+(sc.done||0)+' of '+(sc.total||'?')+' sites…')+' You can close this page; it keeps running.';
+    var unfinished=!jb.running&&sc.started&&!sc.finished;
+    if(jb.running)msg=(jb.kind==='fix'?'Fixing '+(jb.done||0)+' of '+(jb.total||0)+' site(s)…':'Scanning '+(sc.done||0)+' of '+(sc.total||'?')+' sites'+(sc.current?' — now checking '+sc.current:'')+'…')+' You can close this page; it keeps running.';
+    else if(unfinished)msg='The last scan stopped at '+(sc.done||0)+' of '+(sc.total||'?')+' sites. Press "Continue scan" to check the rest, or "Scan all sites" to start again.';
     else if(sc.finished)msg='Last scan: '+new Date(sc.finished*1000).toLocaleString()+' — '+rs.length+' sites, '+rs.filter(function(r){return r.state==='problem';}).length+' failing.';
     else msg='No scan yet. Press "Scan all sites".';
-    $('sdbJob').textContent=msg; $('sdbScan').disabled=!!jb.running;
-    var f=$('sdbFilter').value,q=$('sdbFind').value.toLowerCase(),h='';
+    $('sdbJob').textContent=msg; $('sdbScan').disabled=!!jb.running; $('sdbResume').style.display=unfinished?'':'none';
+    var f=jb.running?'all':$('sdbFilter').value,q=$('sdbFind').value.toLowerCase(),h='';
     rs.forEach(function(r){
       var rp=(st.reports||{})[r.domain];
       if(f==='problem'&&r.state!=='problem')return;
@@ -68,6 +71,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
       +'Before: '+(r.before?r.before.code+' '+r.before.text:'')+NL+'After:  '+(r.after?r.after.code+' '+r.after.text:'')+NL
       +'Result: '+(r.ok?'FIXED':'NOT FIXED')+(r.rolled_back?' (changes undone)':'')+NL+'Undo ids: '+((r.undo||[]).join(', ')||'none');
     $('sdbRep').innerHTML='<h3 class="h" style="font-size:15px">Report — '+e(d)+'</h3><pre>'+e(t)+'</pre>';$('sdbRep').scrollIntoView({behavior:'smooth'});}
+  $('sdbResume').onclick=function(){post({sd_action:'bulk_resume'}).then(function(j){$('sdbJob').textContent=j.msg||'';setTimeout(load,1500);});};
   $('sdbScan').onclick=function(){post({sd_action:'bulk_scan'}).then(function(j){$('sdbJob').textContent=j.msg||'';setTimeout(load,1500);});};
   $('sdbFix').onclick=function(){var d=[].map.call(document.querySelectorAll('.sdbChk:checked'),function(c){return c.value;});
     if(!d.length||!confirm('Fix '+d.length+' site(s)? Every file changed is backed up first and can be undone for 7 days.'))return;
