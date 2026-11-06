@@ -118,7 +118,10 @@ function smpro_ss_reload(bool $rebuild): array {
     if ($rebuild) { [$rc, $o] = smpro_ss_run('/scripts/rebuildhttpdconf'); if ($rc !== 0) return [false, 'rebuildhttpdconf refused: ' . substr($o, -300)]; }
     [$rc, $o] = smpro_ss_run('/usr/sbin/apachectl configtest', 60);
     if ($rc !== 0 || stripos($o, 'Syntax OK') === false) return [false, 'Apache configtest refused: ' . substr($o, -300)];
-    [$rc, $o] = smpro_ss_run('/usr/sbin/apachectl graceful', 60);
+    // cPanel's own restart script, not "apachectl graceful": with a missing or stale PID file apachectl starts a SECOND
+    // Apache, which cannot bind the ports ("Address already in use") - repeated every minute it ended with Apache down.
+    $rs = '/usr/local/cpanel/scripts/restartsrv_httpd';
+    [$rc, $o] = smpro_ss_run(is_executable($rs) ? $rs . ' --graceful' : '/usr/sbin/apachectl graceful', 90);
     return [$rc === 0, $rc === 0 ? 'ok' : 'graceful reload failed: ' . substr($o, -300)];
 }
 /** Turn the shield on for one domain. [ok, msg]. */
@@ -162,6 +165,8 @@ function smpro_ss_status(): array {
  *  operator address), the files are rewritten and Apache reloaded gracefully - at most one reload for all domains. */
 function smpro_ss_refresh(): array {
     $c = smpro_ss_cfg(); if (empty($c['domains'])) return ['changed' => 0];
+    // After a refused reload, wait 30 minutes before trying again (never a reload attempt every minute).
+    if ((int)($c['reload_failed_at'] ?? 0) > time() - 1800) return ['changed' => 0, 'why' => 'backing off after a failed reload'];
     if (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) return ['changed' => 0, 'why' => 'dry-run'];
     $prefixes = smpro_ss_prefixes(); if (count($prefixes) < 500) return ['changed' => 0, 'why' => 'lists not usable'];
     $operator = smpro_ss_operator_ips(); $changed = 0;
@@ -172,8 +177,9 @@ function smpro_ss_refresh(): array {
         $r['hash'] = $h; $r['prefixes'] = count($prefixes); $changed++;
     } unset($r);
     if ($changed === 0) return ['changed' => 0];
-    smpro_ss_cfg_save($c);
     [$ok, $msg] = smpro_ss_reload(false);
+    $c['reload_failed_at'] = $ok ? 0 : time();
+    smpro_ss_cfg_save($c);
     if (!$ok && function_exists('smpro_audit')) smpro_audit('siteshield_refresh_failed', ['msg' => $msg]);
     return ['changed' => $changed, 'ok' => $ok, 'msg' => $msg];
 }

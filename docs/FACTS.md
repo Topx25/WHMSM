@@ -292,3 +292,6 @@
 
 ## beta402: سيناريوهات إصلاح جديدة فى All sites (6 نوفمبر 2026)
 - من فحص dc2: plugin بيعمل Uncaught Error -> disable (wp-guard يدوى بس)؛ ملف WordPress core ناقص -> restore_wp_core بـ wp-cli كمستخدم الحساب، نفس النسخة، باكب tar فى home (`.smpro-bak-wpcore-*`، undo kind tar، يدوى بس)؛ PHP warnings ظاهرة -> display_errors=Off فى .user.ini (بيتطبق خلال 5 دقايق)؛ 403 بدون index -> السبب بيتقال؛ موقع اتصلح ورجع يقع -> «Broke again». حالة 10millionsa على dc2: fatal جوه plugin wp-guard (wp-guard.php:50 get_row on null) = بج فى WP Guard.
+
+## beta403: إخفاء المواقع الشغالة (6 نوفمبر 2026)
+- سويتش «Hide working sites (200, no problem)» فى All sites، شغال افتراضيًا ومتذكّر فى المتصفح، وبيشتغل كمان أثناء الفحص. مواقع 200 اللى فيها errors/warnings بتفضل ظاهرة. اتنشر 10:40 (source 8dad60d).
