@@ -10,7 +10,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? getenv('REQUEST_METHOD') ?: 'GET'));
 
 /* ---- all JSON endpoints below run privileged engines on arbitrary targets - root only ---- */
-if (isset($_GET['sd_investigate']) || isset($_GET['sd_speed']) || isset($_GET['sd_optimize']) || isset($_GET['sd_clearcache_preview'])) {
+if (isset($_GET['sd_investigate']) || isset($_GET['sd_speed']) || isset($_GET['sd_optimize']) || isset($_GET['sd_clearcache_preview']) || isset($_GET['sd_bulk'])) {
     smpro_require_root();
 }
 
@@ -37,6 +37,23 @@ if (($_GET['sd_optimize'] ?? '') === '1') {
 if (($_GET['sd_clearcache_preview'] ?? '') === '1') {
     header('Content-Type: application/json');
     echo json_encode(function_exists('smpro_inv_clearcache_plan') ? smpro_inv_clearcache_plan((string)($_GET['target'] ?? '')) : ['ok'=>false,'msg'=>'Cache engine unavailable.'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+}
+/* ---- all sites: the scan, the running job and the newest report per site (GET JSON, read-only, root) ---- */
+if (($_GET['sd_bulk'] ?? '') === '1' && function_exists('smpro_sdb_load')) {
+    header('Content-Type: application/json');
+    $rep = []; foreach (smpro_sdb_reports('', 300) as $r0) if (!isset($rep[$r0['domain']])) $rep[$r0['domain']] = $r0;
+    echo json_encode(['ok' => true, 'cfg' => smpro_sdb_cfg(), 'job' => smpro_sdb_job(), 'scan' => smpro_sdb_load('scan.json', ['results' => []]), 'reports' => $rep, 'keep_days' => SMPRO_SDB_KEEP_DAYS], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+}
+/* ---- all sites: start a scan, fix the ticked sites, the automatic switch (POST + CSRF + root) ---- */
+if ($reqMethod === 'POST' && in_array(($_POST['sd_action'] ?? ''), ['bulk_scan', 'bulk_fix', 'bulk_cfg'], true) && function_exists('smpro_sdb_start')) {
+    smpro_require_valid_csrf('sd_action'); smpro_require_root();
+    header('Content-Type: application/json');
+    $act = $_POST['sd_action'];
+    if ($act === 'bulk_scan') { echo json_encode(smpro_sdb_start('scan'), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); exit; }
+    if ($act === 'bulk_fix')  { echo json_encode(smpro_sdb_start('fix', explode(',', (string)($_POST['domains'] ?? ''))), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); exit; }
+    $c = smpro_sdb_cfg_save(['auto' => ((string)($_POST['auto'] ?? '') === '1'), 'scan_daily' => ((string)($_POST['scan_daily'] ?? '1') === '1')]);
+    smpro_audit('sitedoctor_bulk_cfg', ['auto' => $c['auto'], 'scan_daily' => $c['scan_daily']]);
+    echo json_encode(['ok' => true, 'cfg' => $c, 'msg' => $c['auto'] ? 'Automatic fixing is ON: once a day the safe fixes are applied to failing sites (backup first).' : 'Automatic fixing is OFF: nothing is changed unless you tick a site.'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); exit;
 }
 /* ---- fix / undo / ai-fix / ai-verdict / optimize / clearcache (POST + CSRF + root) ---- */
 if ($reqMethod === 'POST' && in_array(($_POST['sd_action'] ?? ''), ['fix','undo','fixit','ai_fix','ai','optimize','optimize_install','optimize_server','undo_run','clearcache'], true)) {
@@ -80,7 +97,8 @@ smpro_layout_header('Site Doctor');
 
 <div class="sd-search">
   <form id="sdForm" onsubmit="return false">
-    <input type="text" id="sdTarget" class="sd-in" value="<?= $qtarget ?>" placeholder="domain.com  or  cPanel account…" autocomplete="off" autofocus>
+    <input type="text" id="sdTarget" class="sd-in" value="<?= $qtarget ?>" placeholder="domain.com  or  cPanel account…" autocomplete="off" list="sdDomains" autofocus>
+    <datalist id="sdDomains"><?php foreach (array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : []) as $dl) echo '<option value="' . smpro_h($dl) . '">'; ?></datalist>
     <button class="sd-go" id="sdGo" type="submit">&#128270; Diagnose</button>
     <button class="sd-go sd-speed" id="sdSpeed" type="button" title="Measure why the site is slow">&#9889; Diagnose speed</button>
     <button class="sd-go sd-opt" id="sdOpt" type="button" title="Find & apply speed optimizations">&#128640; Optimize</button>
@@ -88,6 +106,7 @@ smpro_layout_header('Site Doctor');
   </form>
 </div>
 <div id="sdOut" class="sd-out"></div>
+<?php if (is_file(SMPRO_BASE . '/includes/sdbulk_ui.php')) include SMPRO_BASE . '/includes/sdbulk_ui.php'; ?>
 
 <style>
 .svc-kicker{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--brand);font-weight:800}

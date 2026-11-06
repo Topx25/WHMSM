@@ -59,6 +59,7 @@ require __DIR__ . '/includes/update.php';
 require __DIR__ . '/includes/integrity.php';
 require __DIR__ . '/includes/reports.php';
 require __DIR__ . '/includes/investigate.php';
+require __DIR__ . '/includes/sdbulk.php';
 require __DIR__ . '/includes/digest.php';
 require __DIR__ . '/includes/tuning.php';
 require __DIR__ . '/includes/domains.php';

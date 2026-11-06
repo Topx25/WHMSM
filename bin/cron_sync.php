@@ -27,6 +27,9 @@ foreach (['defines', 'mmdb', 'helpers', 'secret', 'license',
     if (is_file($f)) require_once $f;
 }
 
+// Site Doctor (all sites) needs the domain list and the single-site engine before its sync can run.
+foreach (['domains', 'investigate', 'sdbulk'] as $m) { $f = $base . '/includes/' . $m . '.php'; if (is_file($f)) require_once $f; }
+
 $quiet = in_array('--quiet', $argv, true);
 $done = []; $failed = []; $absent = [];
 
@@ -79,6 +82,8 @@ foreach ([
     'backup auto-retry'  => 'smpro_bm_cron_sync',
     // Learned Defense: the hidden-process check and the hunt after every new lesson.
     'learned defense'    => 'smpro_lr_cron_sync',
+    // Site Doctor: daily scan of every site, automatic fixes when switched on, 7-day backup purge.
+    'site doctor bulk'   => 'smpro_sdb_cron_sync',
 ] as $label => $fn) {
     if (!function_exists($fn)) { $absent[] = $label; continue; }
     try {
