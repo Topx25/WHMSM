@@ -16,6 +16,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
   <div class="sdb-bar">
     <select id="sdbFilter"><option value="problem">Failing only</option><option value="all">All sites</option><option value="fixed">Fixed</option></select>
     <input type="text" id="sdbFind" placeholder="Filter by domain or account" autocomplete="off">
+    <label class="sdb-sw"><input type="checkbox" id="sdbHideOk" checked> Hide working sites (200, no problem)</label>
     <button class="sd-go sd-auto" id="sdbFix" type="button" disabled>Fix selected</button>
   </div>
   <div style="overflow-x:auto"><table class="tbl sdb-tbl"><thead><tr><th><input type="checkbox" id="sdbAll"></th><th>Site</th><th>Account</th><th>Platform</th><th>Answer</th><th>Problem / cause</th><th>Fix</th><th></th></tr></thead><tbody id="sdbRows"></tbody></table></div>
@@ -45,10 +46,11 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
     else if(sc.finished)msg='Last scan: '+new Date(sc.finished*1000).toLocaleString()+' — '+rs.length+' sites, '+rs.filter(function(r){return r.state==='problem';}).length+' failing.';
     else msg='No scan yet. Press "Scan all sites".';
     $('sdbJob').textContent=msg; $('sdbScan').disabled=!!jb.running; $('sdbResume').style.display=unfinished?'':'none';
-    var f=jb.running?'all':$('sdbFilter').value,q=$('sdbFind').value.toLowerCase(),h='';
+    var f=$('sdbFilter').value,hideOk=$('sdbHideOk').checked,q=$('sdbFind').value.toLowerCase(),h='';
     rs.forEach(function(r){
       var rp=(st.reports||{})[r.domain];
       if(f==='problem'&&r.state!=='problem')return;
+      if(hideOk&&r.state==='ok'&&f!=='fixed')return;
       if(f==='fixed'&&!(rp&&rp.ok&&rp.changed&&rp.changed.length))return;
       if(q&&(r.domain+' '+r.user).toLowerCase().indexOf(q)<0)return;
       var fx=(r.fixes||[]).map(function(x){return e(x.label)+(x.auto?'':' <small>(by hand only)</small>');}).join('<br>')||(r.state==='problem'?'<small>none known — open the site</small>':'');
@@ -79,6 +81,8 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
   $('sdbAuto').onchange=function(){var on=this.checked;
     if(on&&!confirm('Turn on automatic fixing? Once a day the safe fixes are applied to failing sites (backup first, 7-day undo). PHP versions, databases, shared services and locked sites are never touched automatically.')){this.checked=false;return;}
     post({sd_action:'bulk_cfg',auto:on?'1':'0',scan_daily:'1'}).then(function(j){$('sdbJob').textContent=j.msg||'';load();});};
+  try{if(localStorage.getItem('sdbHideOk')==='0')$('sdbHideOk').checked=false;}catch(x){}
+  $('sdbHideOk').onchange=function(){try{localStorage.setItem('sdbHideOk',this.checked?'1':'0');}catch(x){}draw();};
   $('sdbFilter').onchange=draw; $('sdbFind').oninput=draw;
   $('sdbAll').onchange=function(){var on=this.checked;[].forEach.call(document.querySelectorAll('.sdbChk'),function(c){c.checked=on;});sel();};
   $('sdbRows').addEventListener('change',sel);

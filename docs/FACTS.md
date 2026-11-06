@@ -289,3 +289,6 @@
 
 ## beta401: بروجرس الفحص + استكمال (6 نوفمبر 2026)
 - الفحص بيحفظ التقدم بعد كل موقع ويعرض اسم الموقع اللى بيتفحص، والجدول بيتملى وهو شغال. شغلانة ماتت (pid مش موجود، ما بدأتش خلال 90 ثانية، أو واقفة 15 دقيقة) ماتتعرضش «شغالة» على طول؛ زرار «Continue scan» يكمّل المواقع اللى لسه، و«Scan all sites» يبدأ من الأول. اتنشر 09:35 (lab 5733/0، source 05bc516).
+
+## beta402: سيناريوهات إصلاح جديدة فى All sites (6 نوفمبر 2026)
+- من فحص dc2: plugin بيعمل Uncaught Error -> disable (wp-guard يدوى بس)؛ ملف WordPress core ناقص -> restore_wp_core بـ wp-cli كمستخدم الحساب، نفس النسخة، باكب tar فى home (`.smpro-bak-wpcore-*`، undo kind tar، يدوى بس)؛ PHP warnings ظاهرة -> display_errors=Off فى .user.ini (بيتطبق خلال 5 دقايق)؛ 403 بدون index -> السبب بيتقال؛ موقع اتصلح ورجع يقع -> «Broke again». حالة 10millionsa على dc2: fatal جوه plugin wp-guard (wp-guard.php:50 get_row on null) = بج فى WP Guard.
