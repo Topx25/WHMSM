@@ -222,9 +222,12 @@ function smpro_gh_norm($csv): string {
  * provider by listing it in its own "requested" entry of that file, and SM Pro applies it on its next sync.
  */
 function smpro_gh_mail_providers(): array {
+    // ONLY ranges the provider runs its own mail service from. Never a cloud platform where anybody can rent a server,
+    // VPS or node (Azure, Google Cloud, AWS, iCloud Private Relay...): whitelisting such a range would let any rented
+    // machine in it past the country lock. Names are fixed here; nobody can add a range by typing it (page or bot).
     return [
         'microsoft' => ['Microsoft (Outlook, Office 365, Hotmail)', ['40.96.0.0/13', '40.104.0.0/15', '52.96.0.0/14', '13.107.6.152/31', '13.107.18.10/31', '13.107.128.0/22', '23.103.160.0/20', '132.245.0.0/16', '150.171.32.0/22', '131.253.33.215/32', '204.79.197.215/32']],
-        'google'    => ['Google (Gmail)', ['209.85.128.0/17', '66.249.80.0/20', '74.125.0.0/16', '64.233.160.0/19', '108.177.8.0/21', '172.217.0.0/19', '173.194.0.0/16', '35.190.247.0/24']],
+        'google'    => ['Google (Gmail)', ['209.85.128.0/17', '66.249.80.0/20', '74.125.0.0/16', '64.233.160.0/19', '108.177.8.0/21', '172.217.0.0/19', '173.194.0.0/16']],
         'apple'     => ['Apple (iCloud Mail)', ['17.0.0.0/8']],
         'yahoo'     => ['Yahoo Mail', ['98.136.0.0/14', '67.195.0.0/16', '74.6.0.0/16']],
     ];

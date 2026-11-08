@@ -299,3 +299,7 @@
 ## dc1: وقعة 6 نوفمبر 16:13–16:21 + beta404 (Site Shield)
 - ريستارت 5 نوفمبر 23:21 كان `reboot` يدوى من root بعد dnf (كيرنل 687.65.1). بعده: nftables وquotaon وcpgreylistd فشلوا فى الإقلاع (لسه ماتبصّش عليهم).
 - وقعة UptimeRobot (justkidsway.com، 5 دقايق): Site Shield refresh كل دقيقة عمل `apachectl graceful` ورفض 9 مرات (Address already in use [::]:81، الـ PID file مش موجود فبيبدأ Apache تانى)، Apache وقع، وService Monitor رجّعه 16:21:30. الإصلاح فى beta404 (18:35، source 0ef0306): restartsrv_httpd --graceful + انتظار 30 دقيقة بعد أى فشل. dc1 لسه على نسخة قديمة.
+
+## beta406: Site Watch + بريد مزوّدى السحابة (8 نوفمبر)
+- Site Watch (قسم جديد): includes/sitewatch.php، modules/site-watch.php، bin/sitewatch.php، cron smpro-sitewatch كل 15 دقيقة (مسجّل فى cron_sync)، اختبار t162. أول build وقع فى r14 (catch فاضى ممنوع إلا 4 فى helpers.php).
+- قفل الدول بيعدّى مزوّدى البريد: smpro_gh_cloudmail_apply فى كل sync (Microsoft افتراضى؛ google/apple/yahoo بالطلب)، whitelist النطاقات + شيل المحظور منها من nft عنوان عنوان. بوت تليجرام: /mailallow <provider>. ملف مشترك /var/lib/hostguard/cloud-mail.json: SM Pro بس اللى بيكتب cPHulk؛ MailGuard يطلب تحت requested.mailguard (اتبعت لجلسة MailGuard). نطاقات المزوّدين اتضافت لـ build/hardcode-allow.txt. اتنشر 16:26 (lab 5779/0، source d1aeb29).

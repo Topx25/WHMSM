@@ -16,3 +16,7 @@ has($src, "smpro_gh_cloudmail_apply(\$force);     // cloud mail providers", 'C8:
 has($src, "@shell_exec('timeout 10 nft delete element inet filter ' . \$set", 'C9: bans already placed are lifted one address at a time');
 $tg = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/tgbot.php'));
 has($tg, "case 'mailallow': case 'cloudmail':", 'C10: the Telegram bot takes /mailallow <provider>');
+has($tg, "'allowed_updates' => ['message', 'callback_query']]", 'C11: the bot receives button presses');
+has($tg, "if (!(in_array(\$cfrom, \$cfg['allowed'], true) || (\$cpriv && in_array(\$cchat, \$cfg['allowed'], true))))", 'C12: a button press is authorized like a typed command');
+has($tg, "'✍️ Type the provider name', 'callback_data' => 'mailallow:?'", 'C13: a button to type another provider');
+foreach (smpro_gh_mail_providers() as $k => $p) foreach ($p[1] as $r) ok(strpos($r, '35.') !== 0 && strpos($r, '34.') !== 0 && strpos($r, '20.') !== 0, 'C14: ' . $k . ' ' . $r . ' is not a rentable cloud-compute range');

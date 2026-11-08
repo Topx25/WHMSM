@@ -38,6 +38,18 @@ function smpro_tg_api(string $token, string $method, array $params = [], int $ti
     $j = json_decode($res['body'], true);
     return is_array($j) ? $j : [];
 }
+/** A message with buttons (inline keyboard) or a reply prompt. */
+function smpro_tg_send_markup(string $token, $chat, string $text, array $markup): void {
+    smpro_tg_api($token, 'sendMessage', ['chat_id' => $chat, 'text' => $text, 'parse_mode' => 'HTML', 'reply_markup' => json_encode($markup)], 15);
+}
+/** The provider buttons for /mailallow: one per known provider + "type another name". */
+function smpro_tg_mail_buttons(): array {
+    $rows = [];
+    $names = function_exists('smpro_gh_mail_providers') ? smpro_gh_mail_providers() : [];
+    foreach ($names as $k => $p) $rows[] = [['text' => $p[0], 'callback_data' => 'mailallow:' . $k]];
+    $rows[] = [['text' => '✍️ Type the provider name', 'callback_data' => 'mailallow:?']];
+    return ['inline_keyboard' => $rows];
+}
 function smpro_tg_send(string $token, $chat, string $text): void {
     smpro_tg_api($token, 'sendMessage', ['chat_id' => $chat, 'text' => mb_substr($text, 0, 4000), 'parse_mode' => 'HTML', 'disable_web_page_preview' => 'true'], 15);
 }
@@ -83,13 +95,31 @@ function smpro_tg_poll(): void {
     smpro_tg_watch_services();                              // proactive service-down alerts (same minute cadence)
     if (function_exists('smpro_cool_tick')) smpro_cool_tick();  // safety-net revert if a cooler timer was missed
 
-    $res = smpro_tg_api($cfg['token'], 'getUpdates', ['offset' => $cfg['offset'], 'timeout' => 20, 'allowed_updates' => ['message']], 25);
+    $res = smpro_tg_api($cfg['token'], 'getUpdates', ['offset' => $cfg['offset'], 'timeout' => 20, 'allowed_updates' => ['message', 'callback_query']], 25);
     $offset = $cfg['offset'];
     foreach (($res['result'] ?? []) as $u) {
         $offset = max($offset, (int)($u['update_id'] ?? 0) + 1);
+        // A button press (inline keyboard). Same authorization as a typed command: the sender, or a private chat.
+        if (!empty($u['callback_query'])) {
+            $cq = $u['callback_query']; $cchat = (string)($cq['message']['chat']['id'] ?? ''); $cfrom = (string)($cq['from']['id'] ?? '');
+            $cpriv = ((string)($cq['message']['chat']['type'] ?? '') === 'private');
+            smpro_tg_api($cfg['token'], 'answerCallbackQuery', ['callback_query_id' => (string)($cq['id'] ?? '')], 10);
+            if (!(in_array($cfrom, $cfg['allowed'], true) || ($cpriv && in_array($cchat, $cfg['allowed'], true)))) { if (function_exists('smpro_audit')) smpro_audit('tgbot_denied', ['chat' => $cchat, 'from' => $cfrom, 'button' => 1]); continue; }
+            smpro_tg_state_save(['offset' => $offset]); $cfg['offset'] = $offset;
+            $data = (string)($cq['data'] ?? '');
+            if ($data === 'mailallow:?') { smpro_tg_send_markup($cfg['token'], $cchat, 'Type the mail provider name (for example: outlook, gmail, icloud, yahoo).', ['force_reply' => true, 'input_field_placeholder' => 'provider name']); continue; }
+            if (strpos($data, 'mailallow:') === 0) {
+                try { $reply = smpro_tg_handle('/mailallow ' . substr($data, 10)); } catch (\Throwable $e) { $reply = 'That command failed: ' . $e->getMessage(); }
+                smpro_tg_send($cfg['token'], $cchat, $reply);
+                if (function_exists('smpro_audit')) smpro_audit('tgbot_cmd', ['cmd' => '/mailallow', 'button' => 1, 'chat' => $cchat]);
+            }
+            continue;
+        }
         $msg = $u['message'] ?? null; if (!$msg) continue;
         $chat = (string)($msg['chat']['id'] ?? ''); $from = (string)($msg['from']['id'] ?? '');
         $text = trim((string)($msg['text'] ?? ''));
+        // the answer to "Type the mail provider name" comes back as a reply, not a command
+        if ($text !== '' && $text[0] !== '/' && stripos((string)($msg['reply_to_message']['text'] ?? ''), 'Type the mail provider name') === 0) $text = '/mailallow ' . $text;
         if ($text === '' || $text[0] !== '/') continue;
         // Authorize by SENDER id, or by chat id ONLY in a private 1:1 chat. In a group/supergroup the chat id
         // is shared by every member, so a chat-id match alone must NOT let an arbitrary member run root control
@@ -101,6 +131,7 @@ function smpro_tg_poll(): void {
             if (function_exists('smpro_audit')) smpro_audit('tgbot_denied', ['chat' => $chat, 'from' => $from]);
             continue;
         }
+        if (preg_match('#^/(mailallow|cloudmail)(@\S+)?\s*$#i', $text)) { smpro_tg_send_markup($cfg['token'], $chat, '📧 Which mail provider cannot sign in? Its mail servers will pass the country lock.', smpro_tg_mail_buttons()); smpro_tg_state_save(['offset' => $offset]); $cfg['offset'] = $offset; continue; }
         // the offset is committed BEFORE the command runs: a crash or the cron's kill inside the handler used to
         // replay the same /restart, /block or /harden batch at the next poll
         smpro_tg_state_save(['offset' => $offset]); $cfg['offset'] = $offset;
