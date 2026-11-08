@@ -295,3 +295,7 @@
 
 ## beta403: إخفاء المواقع الشغالة (6 نوفمبر 2026)
 - سويتش «Hide working sites (200, no problem)» فى All sites، شغال افتراضيًا ومتذكّر فى المتصفح، وبيشتغل كمان أثناء الفحص. مواقع 200 اللى فيها errors/warnings بتفضل ظاهرة. اتنشر 10:40 (source 8dad60d).
+
+## dc1: وقعة 6 نوفمبر 16:13–16:21 + beta404 (Site Shield)
+- ريستارت 5 نوفمبر 23:21 كان `reboot` يدوى من root بعد dnf (كيرنل 687.65.1). بعده: nftables وquotaon وcpgreylistd فشلوا فى الإقلاع (لسه ماتبصّش عليهم).
+- وقعة UptimeRobot (justkidsway.com، 5 دقايق): Site Shield refresh كل دقيقة عمل `apachectl graceful` ورفض 9 مرات (Address already in use [::]:81، الـ PID file مش موجود فبيبدأ Apache تانى)، Apache وقع، وService Monitor رجّعه 16:21:30. الإصلاح فى beta404 (18:35، source 0ef0306): restartsrv_httpd --graceful + انتظار 30 دقيقة بعد أى فشل. dc1 لسه على نسخة قديمة.

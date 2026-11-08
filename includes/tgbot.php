@@ -204,7 +204,16 @@ function smpro_tg_handle(string $text): string {
         case 'start': case 'help':
             return "<b>🛡 Safety Monitor Pro</b>\nCommands:\n"
                  . "/status — server health\n/services — service status\n/attacks — recent web attacks\n/blocked — auto-blocked IPs\n/sites — most-attacked domains\n/report — security digest\n/scan — quick compromise scan\n"
+                 . "/mailallow &lt;provider&gt; — mail app of a provider (Outlook, Gmail…) cannot sign in\n"
                  . "/block &lt;ip&gt; · /unblock &lt;ip&gt; · /allow &lt;ip&gt;\n/harden &lt;account&gt; — lock an account\n/restart &lt;service&gt; — restart a service\n/cooler [min] — throttle the load source\n/cooler guard 18 — keep load under a ceiling\n/update — check for updates\n/emergency on|off";
+        case 'mailallow': case 'cloudmail':
+            // A mail app whose provider signs in from abroad (new Outlook, Gmail fetch, iCloud) is refused by the country
+            // lock and then banned by cPHulk. Name the provider; its ranges are whitelisted and its bans lifted.
+            if ($arg === '') return "Usage: /mailallow &lt;provider&gt;\nKnown: microsoft (outlook, office365, hotmail), google (gmail), apple (icloud), yahoo";
+            if (!function_exists('smpro_gh_cloudmail_add')) { $f = SMPRO_BASE . '/includes/geohulk.php'; if (is_file($f)) require_once $f; }
+            if (!function_exists('smpro_gh_cloudmail_add')) return 'Country lock engine unavailable.';
+            $r = smpro_gh_cloudmail_add($arg . ($arg2 !== '' ? ' ' . $arg2 : ''));
+            return ($r['ok'] ? '✅ ' : '⚠️ ') . htmlspecialchars($r['msg']);
         case 'status': case 'health':
             $h = function_exists('smpro_sv_snapshot') ? smpro_sv_snapshot() : [];
             $m = function_exists('smpro_collect_metrics') ? smpro_collect_metrics() : [];

@@ -210,8 +210,93 @@ function smpro_gh_norm($csv): string {
 }
 
 /** Keep cPHulk's blacklist equal to "everything not allowed". Called every minute from the lock's tick; no-op when equal. */
+/* ============================ cloud mail providers ============================
+ * New Outlook, Gmail ("check mail from other accounts"), iCloud and Yahoo do not connect to IMAP/POP from the
+ * customer's computer: the provider's own servers do, from its data centres abroad. With the country lock armed those
+ * sign-ins are refused ("country is blacklisted"), the provider retries, and cPHulk then bans its address for a day in
+ * nftables - so even after a whitelist the connection never arrives (cPHulk cannot remove a prefix from a set
+ * without "flags interval", so the ban of each single address stays). Here: the provider's published ranges go on
+ * cPHulk's whitelist, and every address of those ranges already banned (nftables cphulk-TempBan/PermBan) is removed
+ * one by one with its failure history. Microsoft is on by default. The choice is shared with the other HostGuard
+ * products through /var/lib/hostguard/cloud-mail.json: SM Pro is the one that writes cPHulk; another product adds a
+ * provider by listing it in its own "requested" entry of that file, and SM Pro applies it on its next sync.
+ */
+function smpro_gh_mail_providers(): array {
+    return [
+        'microsoft' => ['Microsoft (Outlook, Office 365, Hotmail)', ['40.96.0.0/13', '40.104.0.0/15', '52.96.0.0/14', '13.107.6.152/31', '13.107.18.10/31', '13.107.128.0/22', '23.103.160.0/20', '132.245.0.0/16', '150.171.32.0/22', '131.253.33.215/32', '204.79.197.215/32']],
+        'google'    => ['Google (Gmail)', ['209.85.128.0/17', '66.249.80.0/20', '74.125.0.0/16', '64.233.160.0/19', '108.177.8.0/21', '172.217.0.0/19', '173.194.0.0/16', '35.190.247.0/24']],
+        'apple'     => ['Apple (iCloud Mail)', ['17.0.0.0/8']],
+        'yahoo'     => ['Yahoo Mail', ['98.136.0.0/14', '67.195.0.0/16', '74.6.0.0/16']],
+    ];
+}
+/** A name as people type it -> provider key, or ''. */
+function smpro_gh_mail_provider_key(string $name): string {
+    $n = strtolower(preg_replace('/[^a-z0-9]/i', '', $name));
+    $map = ['microsoft' => 'microsoft', 'outlook' => 'microsoft', 'office365' => 'microsoft', 'o365' => 'microsoft', 'hotmail' => 'microsoft', 'live' => 'microsoft', 'exchange' => 'microsoft', 'msn' => 'microsoft',
+            'google' => 'google', 'gmail' => 'google', 'gsuite' => 'google', 'workspace' => 'google', 'apple' => 'apple', 'icloud' => 'apple', 'yahoo' => 'yahoo', 'aol' => 'yahoo'];
+    return $map[$n] ?? '';
+}
+function smpro_gh_in_cidr(string $ip, string $cidr): bool {
+    if (strpos($cidr, '/') === false || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) return $ip === $cidr;
+    [$net, $bits] = explode('/', $cidr, 2); $bits = (int)$bits;
+    $mask = $bits === 0 ? 0 : (~0 << (32 - $bits)) & 0xFFFFFFFF;
+    return (ip2long($ip) & $mask) === (ip2long($net) & $mask);
+}
+function smpro_gh_cloudmail_shared(): string { return defined('SMPRO_HG_DIR') ? rtrim(SMPRO_HG_DIR, '/') . '/cloud-mail.json' : '/var/lib/hostguard/cloud-mail.json'; }
+/** Providers in force: this server's choice (Microsoft by default) plus what another HostGuard product requested. */
+function smpro_gh_cloudmail_enabled(): array {
+    $c = smpro_gh_cfg(); $on = isset($c['cloud_mail']) ? (array)$c['cloud_mail'] : ['microsoft'];
+    $sh = function_exists('smpro_hg_read_json') ? smpro_hg_read_json(smpro_gh_cloudmail_shared()) : null;
+    foreach ((array)($sh['requested'] ?? []) as $prod => $list) if ($prod !== 'smpro') foreach ((array)$list as $p) if (smpro_gh_mail_provider_key((string)$p) !== '') $on[] = smpro_gh_mail_provider_key((string)$p);
+    return array_values(array_unique(array_intersect($on, array_keys(smpro_gh_mail_providers()))));
+}
+/** Whitelist the ranges (once per provider, again when forced) and lift every ban that already caught them. */
+function smpro_gh_cloudmail_apply(bool $force = false): array {
+    $c = smpro_gh_cfg(); $all = smpro_gh_mail_providers(); $on = smpro_gh_cloudmail_enabled(); $done = (array)($c['cloud_done'] ?? []); $added = 0; $lifted = [];
+    $ranges = [];
+    foreach ($on as $p) {
+        foreach ($all[$p][1] as $r) $ranges[] = $r;
+        if (!$force && !empty($done[$p])) continue;
+        foreach ($all[$p][1] as $r) { smpro_gh_api('create_cphulk_record', ['list_name' => 'white', 'ip' => $r, 'comment' => 'hostguard-cloudmail:' . $p, 'skip_enabled_check' => 1]); $added++; }
+        $done[$p] = time();
+    }
+    // lift bans inside the ranges (at most every 10 minutes unless forced)
+    if ($ranges && ($force || (int)($c['cloud_sweep'] ?? 0) < time() - 600)) {
+        foreach (['cphulk-TempBan', 'cphulk-PermBan'] as $set) {
+            $o = (string)@shell_exec('timeout 20 nft list set inet filter ' . $set . ' 2>/dev/null');
+            if (!preg_match_all('/\b(\d{1,3}(?:\.\d{1,3}){3})\b/', $o, $m)) continue;
+            foreach (array_unique($m[1]) as $ip) foreach ($ranges as $r) if (smpro_gh_in_cidr($ip, $r)) {
+                @shell_exec('timeout 10 nft delete element inet filter ' . $set . ' ' . escapeshellarg('{ ' . $ip . ' }') . ' 2>/dev/null');
+                smpro_gh_api('flush_cphulk_login_history_for_ips', ['ip' => $ip]); $lifted[] = $ip; break;
+            }
+        }
+        $c['cloud_sweep'] = time();
+    }
+    $c['cloud_done'] = $done; smpro_gh_cfg_save($c);
+    if (function_exists('smpro_hg_json_write') && function_exists('smpro_hg_dir')) {
+        smpro_hg_dir();
+        $sh = (function_exists('smpro_hg_read_json') ? smpro_hg_read_json(smpro_gh_cloudmail_shared()) : null) ?: [];
+        $sh['applied_by'] = 'smpro'; $sh['providers'] = $on; $sh['ranges'] = $ranges; $sh['at'] = time();
+        $sh['requested'] = (array)($sh['requested'] ?? []); $sh['requested']['smpro'] = isset($c['cloud_mail']) ? (array)$c['cloud_mail'] : ['microsoft'];
+        smpro_hg_json_write(smpro_gh_cloudmail_shared(), $sh, 0644);
+    }
+    if (($added || $lifted) && function_exists('smpro_audit')) smpro_audit('geohulk_cloudmail', ['providers' => $on, 'ranges_added' => $added, 'lifted' => array_slice($lifted, 0, 50)]);
+    return ['providers' => $on, 'ranges_added' => $added, 'lifted' => $lifted];
+}
+/** Allow one more provider by name (page / Telegram bot). */
+function smpro_gh_cloudmail_add(string $name): array {
+    $k = smpro_gh_mail_provider_key($name);
+    if ($k === '') return ['ok' => false, 'msg' => 'Unknown provider "' . $name . '". Known: microsoft (outlook, office365, hotmail), google (gmail), apple (icloud), yahoo.'];
+    $c = smpro_gh_cfg(); $on = isset($c['cloud_mail']) ? (array)$c['cloud_mail'] : ['microsoft'];
+    if (!in_array($k, $on, true)) $on[] = $k;
+    $c['cloud_mail'] = array_values($on); unset($c['cloud_done'][$k]); smpro_gh_cfg_save($c);
+    $r = smpro_gh_cloudmail_apply(true);
+    return ['ok' => true, 'msg' => smpro_gh_mail_providers()[$k][0] . ' can now sign in to mail despite the country lock: ' . count(smpro_gh_mail_providers()[$k][1]) . ' range(s) whitelisted in cPHulk, ' . count($r['lifted']) . ' banned address(es) released.'];
+}
+
 function smpro_gh_sync(bool $force = false): array {
     smpro_gh_whitelist_trusted($force);   // first, and before the cfg read below, so its save is not overwritten
+    smpro_gh_cloudmail_apply($force);     // cloud mail providers (Outlook, Gmail...) are not refused by the country lock
     $cfg = smpro_gh_cfg();
     if (!$cfg['enabled']) return ['ok' => true, 'msg' => 'off', 'count' => 0, 'changed' => false];
     $want = smpro_gh_blacklist(smpro_gh_all_codes(), smpro_gh_allowed());

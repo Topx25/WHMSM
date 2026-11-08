@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Site Watch — mockup</title>
+<style>
+:root{--brand:#2563eb;--ink:#0f172a;--mut:#64748b;--line:#e2e8f0;--bg:#f1f5f9;--card:#fff;--red:#dc2626;--redbg:#fee2e2;--amb:#b45309;--ambbg:#fef3c7;--grn:#15803d;--grnbg:#dcfce7}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+.top{background:#0b1220;color:#cbd5e1;padding:10px 20px;font-size:13px;display:flex;gap:18px}.top b{color:#fff}
+.wrap{max-width:1240px;margin:0 auto;padding:18px 16px 60px}
+.kick{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--brand);font-weight:800}
+h1{margin:2px 0 4px;font-size:24px}.sub{color:var(--mut);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{border:0;border-radius:10px;padding:9px 16px;font-weight:700;cursor:pointer;background:var(--brand);color:#fff;font-size:13px}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn.grn{background:#059669}
+select,input[type=text]{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13px;background:#fff}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}.kpi .n{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}.kpi .l{color:var(--mut);font-size:12px}
+.kpi.r .n{color:var(--red)}.kpi.a .n{color:var(--amb)}
+.tabs{display:flex;gap:6px;margin-bottom:12px}.tab{padding:7px 14px;border-radius:9px;background:#fff;border:1px solid var(--line);cursor:pointer;font-weight:600;font-size:13px}.tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;color:var(--mut);font-weight:700;padding:8px;border-bottom:1px solid var(--line)}td{padding:9px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:13px}
+.pill{display:inline-block;border-radius:20px;padding:1px 9px;font-size:12px;font-weight:700;white-space:nowrap}
+.p-r{background:var(--redbg);color:var(--red)}.p-a{background:var(--ambbg);color:var(--amb)}.p-g{background:var(--grnbg);color:var(--grn)}.p-s{background:#e2e8f0;color:#334155}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}.mut{color:var(--mut)}
+.sw{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px}
+.tl{border-left:2px solid var(--line);margin-left:8px;padding-left:16px}
+.ev{position:relative;padding:8px 0 12px}.ev:before{content:"";position:absolute;left:-23px;top:13px;width:12px;height:12px;border-radius:50%;background:#94a3b8;border:2px solid #fff}
+.ev.r:before{background:var(--red)}.ev.a:before{background:#f59e0b}.ev.g:before{background:#22c55e}
+.ev .t{font-size:12px;color:var(--mut)}.ev .w{font-weight:700}
+.chain{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px;margin:8px 0}
+.chain span{background:#fff;border:1px solid #fdba74;border-radius:8px;padding:4px 8px;font-size:12px}.chain i{color:#ea580c;font-style:normal;font-weight:800}
+.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+.note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:10px 12px;font-size:13px}
+.prog{height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden}.prog>div{height:100%;width:62%;background:var(--brand)}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<div class="top"><b>Safety Monitor Pro</b><span>LOAD 2.1</span><span>CPU 7%</span><span>RAM 41%</span><span style="margin-left:auto">Dashboard · Refresh · WHM Home</span></div>
+<div class="wrap">
+<div class="kick">Security</div>
+<h1>&#128065; Site Watch</h1>
+<p class="sub">Who uploaded or changed which file, what ran on the site, what changed in its database — per site. Then fix it or lock it down — every change backed up first and undoable.</p>
+
+<!-- ============ run controls ============ -->
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <div class="row">
+      <select><option>Watch: All sites (84)</option><option>Selected sites…</option><option>One site…</option></select>
+      <span class="sw"><input type="checkbox" checked> Automatic</span>
+      <select><option>Files every hour</option><option>Every 15 minutes</option><option>Every 6 hours</option></select>
+      <select><option>Database once a day</option><option>Every 6 hours</option></select>
+      <select><option>Keep history 90 days</option><option>30 days</option><option>180 days</option></select>
+    </div>
+    <div class="row"><button class="btn">Check now</button><button class="btn ghost">Alerts…</button></div>
+  </div>
+  <div class="row" style="margin-top:12px;padding:10px;border:1px solid #bbf7d0;background:#f7fef9;border-radius:10px">
+    <span class="sw"><input type="checkbox" checked> Automatic protection</span>
+    <span class="mut" style="font-size:13px">only on these sites:</span>
+    <input type="text" style="min-width:320px" value="shop-example.com, clinic-example.sa, store-example.org" placeholder="Type to pick sites">
+    <span class="pill p-s">3 of 84</span>
+    <span class="mut" style="font-size:12px">Every other site is watched and reported only — nothing is changed on it automatically.</span>
+  </div>
+  <div style="margin-top:12px" class="row"><div style="flex:1"><div class="prog"><div></div></div></div><span class="mut" style="font-size:12px">Checking 52 of 84 — now: shop-example.com · you can close this page</span></div>
+</div>
+
+<!-- ============ KPIs ============ -->
+<div class="kpis">
+  <div class="kpi r"><div class="n">3</div><div class="l">Sites with a critical event (24 h)</div></div>
+  <div class="kpi a"><div class="n">11</div><div class="l">Sites with warnings</div></div>
+  <div class="kpi"><div class="n">146</div><div class="l">New / changed files (24 h)</div></div>
+  <div class="kpi r"><div class="n">2</div><div class="l">Database changes flagged</div></div>
+  <div class="kpi"><div class="n">70</div><div class="l">Clean sites</div></div>
+</div>
+
+<!-- ============ sites table ============ -->
+<div class="card">
+  <div class="row" style="justify-content:space-between;margin-bottom:8px">
+    <div class="row"><select><option>Needs attention</option><option>All sites</option><option>Clean</option></select><input type="text" placeholder="Filter by domain or account"><span class="sw"><input type="checkbox" checked> Hide clean sites</span></div>
+    <span class="mut" style="font-size:12px">Last full check 14:00 · next 15:00</span>
+  </div>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Site</th><th>Account</th><th>Auto-protect</th><th>Risk</th><th>Last 24 h</th><th>New PHP files</th><th>Database</th><th>Protection</th><th></th></tr></thead>
+    <tbody>
+    <tr><td><b>shop-example.com</b><br><span class="mut">WordPress 6.8.3</span></td><td>shopex</td><td><span class="pill p-g">On</span></td><td><span class="pill p-r">Critical</span></td><td>Shell uploaded through a plugin, then run from 3 addresses</td><td><span class="pill p-r">2 in uploads</span></td><td><span class="pill p-r">New admin user</span></td><td><span class="pill p-a">Harden off</span></td><td><a href="#site">Open</a></td></tr>
+    <tr><td><b>clinic-example.sa</b><br><span class="mut">WordPress 6.4.1</span></td><td>clinicex</td><td><span class="pill p-g">On</span></td><td><span class="pill p-r">Critical</span></td><td>Script injected in 14 posts (wp_posts)</td><td><span class="pill p-s">0</span></td><td><span class="pill p-r">Injected &lt;script&gt;</span></td><td><span class="pill p-g">WP Guard</span></td><td><a href="#">Open</a></td></tr>
+    <tr><td><b>news-example.net</b><br><span class="mut">Laravel 10</span></td><td>newsex</td><td><span class="pill p-s">Watch only</span></td><td><span class="pill p-r">Critical</span></td><td>.env readable from the web</td><td><span class="pill p-s">0</span></td><td><span class="pill p-s">—</span></td><td><span class="pill p-a">Exposed file</span></td><td><a href="#">Open</a></td></tr>
+    <tr><td><b>academy-example.com</b><br><span class="mut">WordPress 6.8.3</span></td><td>acadex</td><td><span class="pill p-s">Watch only</span></td><td><span class="pill p-a">Warning</span></td><td>23 files changed by FTP from a new address</td><td><span class="pill p-a">1 (theme)</span></td><td><span class="pill p-g">No change</span></td><td><span class="pill p-g">Harden on</span></td><td><a href="#">Open</a></td></tr>
+    <tr><td><b>store-example.org</b><br><span class="mut">OpenCart 3</span></td><td>storex</td><td><span class="pill p-g">On</span></td><td><span class="pill p-a">Warning</span></td><td>.htaccess changed in File Manager · 2 plugins with known flaws</td><td><span class="pill p-s">0</span></td><td><span class="pill p-g">No change</span></td><td><span class="pill p-a">Outdated</span></td><td><a href="#">Open</a></td></tr>
+    </tbody></table></div>
+</div>
+
+<!-- ============ one site ============ -->
+<div class="card" id="site">
+  <div class="row" style="justify-content:space-between">
+    <div><div class="kick">Site</div><h2 style="margin:0">shop-example.com <span class="pill p-r">Critical</span></h2><span class="mut">Account shopex · /home/shopex/public_html · WordPress 6.8.3 · PHP 8.2</span></div>
+    <div class="row"><button class="btn">Check this site now</button><button class="btn grn">Open in Site Doctor</button><button class="btn ghost">Compromise Check</button><button class="btn ghost">Export report</button></div>
+  </div>
+
+  <div class="chain"><b style="font-size:12px;color:#9a3412">Attack chain</b>
+    <span>11-08 03:12 · POST /wp-admin/admin-ajax.php from 185.x.x.41 (NL)</span><i>→</i>
+    <span>uploads/2026/11/cache-img.php created (by the site, uid shopex)</span><i>→</i>
+    <span>run 37× from 3 addresses</span><i>→</i>
+    <span>wp-config.php read · admin "wp_support" added</span><i>→</i>
+    <span>index.php modified</span>
+  </div>
+
+  <div class="tabs"><span class="tab on">Timeline</span><span class="tab">New &amp; changed files</span><span class="tab">Database</span><span class="tab">Who ran what</span><span class="tab">Security checks</span></div>
+
+  <div class="grid2">
+    <div class="tl">
+      <div class="ev r"><div class="t">Nov 8 · 03:14:09</div><div class="w">Admin user added in the database</div><div>wp_users: <span class="mono">wp_support</span> (administrator) — not created from wp-admin login; inserted while the shell was running</div></div>
+      <div class="ev r"><div class="t">Nov 8 · 03:13:40</div><div class="w">Injected file run from the web</div><div><span class="mono">/wp-content/uploads/2026/11/cache-img.php</span> — 37 requests · 185.x.x.41 (NL), 45.x.x.9 (US), 103.x.x.20 (ID)</div></div>
+      <div class="ev r"><div class="t">Nov 8 · 03:12:55</div><div class="w">PHP file created in uploads</div><div>Door: <b>web (the site itself)</b> · request <span class="mono">POST /wp-admin/admin-ajax.php?action=upload_img</span> · plugin <span class="mono">img-uploader 1.2</span> (known flaw)</div></div>
+      <div class="ev a"><div class="t">Nov 7 · 22:40:02</div><div class="w">14 files changed</div><div>Door: <b>FTP</b> · user <span class="mono">shopex</span> · from 197.x.x.88 (EG) · wp-content/themes/shop-child/*</div></div>
+      <div class="ev g"><div class="t">Nov 7 · 18:05:31</div><div class="w">Plugin updated</div><div>Door: <b>WordPress admin</b> · woocommerce 9.3 → 9.4 · 312 files</div></div>
+      <div class="ev"><div class="t">Nov 7 · 10:00:00</div><div class="w">Daily database snapshot</div><div>No change in users, options or posts</div></div>
+    </div>
+    <div>
+      <div class="card" style="margin:0 0 12px;padding:12px">
+        <b>New PHP files</b>
+        <table style="margin-top:6px"><tr><th>Path</th><th>When</th><th>Door</th></tr>
+        <tr><td class="mono">wp-content/uploads/2026/11/cache-img.php</td><td>03:12</td><td><span class="pill p-r">web</span></td></tr>
+        <tr><td class="mono">wp-content/uploads/.tmp/x.php</td><td>03:15</td><td><span class="pill p-r">shell</span></td></tr>
+        <tr><td class="mono">wp-content/themes/shop-child/inc/help.php</td><td>22:40</td><td><span class="pill p-s">FTP</span></td></tr></table>
+      </div>
+      <div class="card" style="margin:0 0 12px;padding:12px">
+        <b>Database (since yesterday)</b>
+        <table style="margin-top:6px"><tr><td><span class="pill p-r">users</span></td><td>+1 administrator <span class="mono">wp_support</span></td></tr>
+        <tr><td><span class="pill p-a">options</span></td><td><span class="mono">siteurl</span> unchanged · <span class="mono">active_plugins</span> +1</td></tr>
+        <tr><td><span class="pill p-g">posts</span></td><td>No injected code</td></tr></table>
+      </div>
+      <div class="card" style="margin:0;padding:12px">
+        <b>Security checks</b>
+        <table style="margin-top:6px">
+        <tr><td><span class="pill p-r">Fail</span></td><td>Plugin img-uploader 1.2 — known file-upload flaw</td></tr>
+        <tr><td><span class="pill p-a">Warn</span></td><td>PHP runs inside uploads (PHP Harden off)</td></tr>
+        <tr><td><span class="pill p-a">Warn</span></td><td>412 failed wp-login attempts (24 h)</td></tr>
+        <tr><td><span class="pill p-g">OK</span></td><td>No .env / .git / backup files reachable</td></tr>
+        <tr><td><span class="pill p-g">OK</span></td><td>File ownership and permissions</td></tr></table>
+      </div>
+    </div>
+  </div>
+  <!-- ============ fix & protect ============ -->
+  <div class="card" style="margin:14px 0 0;border-color:#bbf7d0;background:#f7fef9">
+    <div class="row" style="justify-content:space-between">
+      <div><b>Fix &amp; protect this site</b> <span class="mut">— every step backs up first and can be undone for 7 days</span></div>
+      <div class="row"><button class="btn grn">Fix all safe steps (5)</button><button class="btn ghost">Undo…</button></div>
+    </div>
+    <table style="margin-top:8px">
+      <thead><tr><th style="width:28px"></th><th>Problem</th><th>Fix</th><th>Kind</th><th></th></tr></thead>
+      <tbody>
+      <tr><td><input type="checkbox" checked></td><td>Injected files <span class="mono">uploads/2026/11/cache-img.php</span>, <span class="mono">uploads/.tmp/x.php</span></td><td>Move to quarantine (original kept)</td><td><span class="pill p-g">Safe</span></td><td><button class="btn" style="padding:5px 10px">Fix</button></td></tr>
+      <tr><td><input type="checkbox" checked></td><td>3 addresses ran the injected file</td><td>Block the 3 addresses in the firewall</td><td><span class="pill p-g">Safe</span></td><td><button class="btn" style="padding:5px 10px">Fix</button></td></tr>
+      <tr><td><input type="checkbox" checked></td><td><span class="mono">index.php</span> modified at 03:15</td><td>Restore the clean copy from before 03:12</td><td><span class="pill p-g">Safe</span></td><td><button class="btn" style="padding:5px 10px">Fix</button></td></tr>
+      <tr><td><input type="checkbox" checked></td><td>Plugin img-uploader 1.2 has a known upload flaw</td><td>Disable the plugin (renamed, reversible)</td><td><span class="pill p-g">Safe</span></td><td><button class="btn" style="padding:5px 10px">Fix</button></td></tr>
+      <tr><td><input type="checkbox" checked></td><td>PHP can run inside uploads</td><td><b>Protect:</b> turn on PHP Harden for uploads</td><td><span class="pill p-g">Safe</span></td><td><button class="btn" style="padding:5px 10px">Protect</button></td></tr>
+      <tr><td><input type="checkbox"></td><td>Admin user <span class="mono">wp_support</span> added by the attacker</td><td>Remove the user (database backed up first)</td><td><span class="pill p-a">Database · by hand</span></td><td><button class="btn ghost" style="padding:5px 10px">Review &amp; fix</button></td></tr>
+      <tr><td><input type="checkbox"></td><td>wp-config.php was read by the shell</td><td>Change the database password + WordPress salts</td><td><span class="pill p-a">By hand</span></td><td><button class="btn ghost" style="padding:5px 10px">Review &amp; fix</button></td></tr>
+      <tr><td><input type="checkbox"></td><td>412 failed wp-login attempts</td><td><b>Protect:</b> limit wp-login to the site's countries</td><td><span class="pill p-a">By hand</span></td><td><button class="btn ghost" style="padding:5px 10px">Protect</button></td></tr>
+      </tbody>
+    </table>
+    <div class="row" style="margin-top:10px;justify-content:space-between">
+      <span class="sw"><input type="checkbox" checked> Automatic protection is ON for this site (it is in the selected list): the <b>Safe</b> steps run the moment a Critical event is found</span>
+      <span class="mut" style="font-size:12px">Database edits, password changes and locking steps always wait for you.</span>
+    </div>
+  </div>
+  <div class="note" style="margin-top:12px"><b>After the fix:</b> Site Watch checks the site again and sends the report to this site's numbers — what was found, what was fixed, which files were backed up and where, and what is still waiting for you.</div>
+</div>
+
+<!-- ============ report recipients ============ -->
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <div><b>Who gets the reports</b> <span class="mut">— each rule: which sites, which numbers, from which level, how often</span></div>
+    <button class="btn">+ Add rule</button>
+  </div>
+  <div style="overflow-x:auto;margin-top:8px"><table>
+    <thead><tr><th>Sites</th><th>Send to</th><th>Channel</th><th>From level</th><th>When</th><th></th></tr></thead>
+    <tbody>
+    <tr><td><span class="pill p-s">All sites (84)</span></td><td class="mono">+20 10x xxx 1234<br>+20 11x xxx 5678</td><td>WhatsApp</td><td><span class="pill p-r">Critical</span></td><td>Instantly</td><td><a href="#">Edit</a> · <a href="#">Test</a></td></tr>
+    <tr><td><span class="pill p-s">All sites (84)</span></td><td class="mono">ops@example.com</td><td>E-mail</td><td><span class="pill p-a">Warning +</span></td><td>Daily summary 09:00</td><td><a href="#">Edit</a> · <a href="#">Test</a></td></tr>
+    <tr><td><b>clinic-example.sa</b></td><td class="mono">+966 5x xxx 4321</td><td>WhatsApp</td><td><span class="pill p-a">Warning +</span></td><td>Instantly</td><td><a href="#">Edit</a> · <a href="#">Test</a></td></tr>
+    <tr><td><b>shop-example.com</b>, <b>store-example.org</b>, <b>academy-example.com</b> <span class="mut">(3 sites)</span></td><td class="mono">+20 12x xxx 9876</td><td>WhatsApp + Telegram</td><td><span class="pill p-r">Critical</span></td><td>Instantly + weekly report</td><td><a href="#">Edit</a> · <a href="#">Test</a></td></tr>
+    </tbody></table></div>
+
+  <div class="card" style="margin:12px 0 0;background:#f8fafc">
+    <b>New rule</b>
+    <div class="row" style="margin-top:8px">
+      <select><option>One site</option><option selected>Several sites</option><option>All sites</option><option>All sites of an account</option></select>
+      <input type="text" style="min-width:260px" value="shop-example.com, store-example.org" placeholder="Type to pick sites">
+      <input type="text" style="min-width:220px" value="+201xxxxxxxxx, +9665xxxxxxxx" placeholder="Numbers / e-mails, comma separated">
+      <select><option>WhatsApp</option><option>Telegram</option><option>E-mail</option><option>WhatsApp + Telegram</option></select>
+      <select><option>Critical only</option><option>Warning and above</option><option>Everything</option></select>
+      <select><option>Instantly</option><option>Daily summary</option><option>Weekly report</option><option>Instantly + daily summary</option></select>
+      <button class="btn grn">Save rule</button>
+    </div>
+    <p class="mut" style="margin:8px 0 0;font-size:12px">A site can be in several rules; every matching rule sends. The same event is never sent twice to the same number. Owner numbers can be marked "also receives everything".</p>
+  </div>
+
+  <div class="note" style="margin-top:12px"><b>Example message (Critical, WhatsApp):</b><br>
+  🔴 shop-example.com — injected file run from the web<br>
+  File: wp-content/uploads/2026/11/cache-img.php · uploaded 03:12 through plugin img-uploader 1.2<br>
+  Run 37× from 185.x.x.41 (NL), 45.x.x.9 (US) · new admin "wp_support" at 03:14<br>
+  Open: Site Watch → shop-example.com</div>
+</div>
+
+<!-- ============ alerts ============ -->
+<div class="card">
+  <b>Instant alerts</b> <span class="mut">(WhatsApp / Telegram / e-mail)</span>
+  <div class="row" style="margin-top:8px">
+    <span class="sw"><input type="checkbox" checked> PHP file created in uploads</span>
+    <span class="sw"><input type="checkbox" checked> Injected file run from the web</span>
+    <span class="sw"><input type="checkbox" checked> New admin user in a database</span>
+    <span class="sw"><input type="checkbox" checked> Script injected in posts / options</span>
+    <span class="sw"><input type="checkbox"> Any .htaccess change</span>
+    <span class="sw"><input type="checkbox"> Files changed from a new address</span>
+  </div>
+</div>
+</div></body></html>
