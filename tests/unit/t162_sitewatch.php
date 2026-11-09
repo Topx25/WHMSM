@@ -25,3 +25,8 @@ has($src, "\$k = \$e['id'] . '|' . \$ch . '|' . \$to; if (isset(\$sent[\$k])) co
 $m = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/site-watch.php'));
 has($m, "smpro_require_valid_csrf('sw_action'); smpro_require_root();", 'S1: actions need CSRF + root');
 has($m, "smpro_require_root(); header('Content-Type: application/json');", 'S2: read endpoints are root only');
+ok(smpro_sw_classify_file('wp-includes/php-ai-client/src/Files/ValueObjects/MimeType.php', true) === null, 'F6: WordPress own Files/ folder is not "uploads"');
+ok(smpro_sw_classify_file('wp-content/plugins/really-simple-ssl/assets/img/index.php', true) === null, 'F7: a plugin img/ folder is not "uploads"');
+ok(smpro_sw_classify_file('wp-content/uploads/index.php', true, 28) === null, 'F8: the silence-is-golden index.php is not flagged');
+is_eq(smpro_sw_classify_file('wp-content/uploads/cfdb7_uploads/index.php', true, 4000)[0] ?? '', 'critical', 'F9: a real PHP file in uploads still is');
+ok(!smpro_sw_event_live(['kind' => 'upload_php', 'data' => ['path' => 'wp-includes/php-ai-client/src/Files/ValueObjects/MimeType.php']]), 'F10: old false alarms stop counting');

@@ -19,7 +19,7 @@ if (isset($_GET['sw_state']) || isset($_GET['sw_site'])) {
     $rows = []; $cut = time() - 86400;
     foreach (array_keys(smpro_sdb_targets()) as $d) {
         $st = smpro_sw_load('sites/' . $d . '/state.json'); if (!$st) { $rows[] = ['domain' => $d, 'risk' => 'unchecked']; continue; }
-        $ev = array_values(array_filter(smpro_sw_events($d, 60), fn($e) => $e['ts'] >= $cut && empty($e['resolved'])));
+        $ev = array_values(array_filter(smpro_sw_events($d, 60), fn($e) => $e['ts'] >= $cut && smpro_sw_event_live($e)));
         usort($ev, fn($a, $b) => smpro_sw_rank($b['sev']) <=> smpro_sw_rank($a['sev']));
         $rows[] = ['domain' => $d, 'user' => $st['user'] ?? '', 'risk' => $st['risk'] ?? 'clean', 'checked_at' => $st['checked_at'] ?? 0, 'top' => $ev[0]['title'] ?? '',
                    'n24' => count($ev), 'newphp' => count(array_filter(($st['new24'] ?? []), 'smpro_sw_is_php')), 'db' => count(array_filter($ev, fn($e) => strpos($e['kind'], 'db_') === 0 || $e['kind'] === 'new_admin')),
@@ -88,7 +88,7 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
     <label><input type="checkbox" class="swAl" value="upload_php"> PHP in uploads</label><label><input type="checkbox" class="swAl" value="shell_run"> Injected file run</label>
     <label><input type="checkbox" class="swAl" value="new_admin"> New admin</label><label><input type="checkbox" class="swAl" value="db_inject"> Script in database</label>
     <label><input type="checkbox" class="swAl" value="htaccess"> .htaccess change</label>
-    <button class="sd-go" id="swSave" type="button">Save</button><button class="sd-go sw-g" id="swCheck" type="button">Check now</button>
+    <button class="sd-go" id="swSave" type="button">Save</button><select id="swWhat"><option value="one">Check: one site…</option><option value="prot">Check: the auto-protected sites</option><option value="scope">Check: all watched sites</option></select><input type="text" id="swOne" list="swDoms" placeholder="site to check" style="min-width:180px"><button class="sd-go sw-g" id="swCheck" type="button">Check now</button>
   </div>
   <div id="swJob" class="sw-mut" style="margin-top:6px"></div>
 </div>
@@ -181,7 +181,12 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
   });}
   $('swSave').onclick=function(){post({sw_action:'cfg',auto:$('swAuto').checked?'1':'0',scope:$('swScope').value,sites:$('swSites').value,files_min:$('swFiles').value,db_min:$('swDb').value,keep_days:$('swKeep').value,
     protect:$('swProtOn').checked?$('swProt').value:'',alerts:[].filter.call(document.querySelectorAll('.swAl'),function(x){return x.checked;}).map(function(x){return x.value;}).join(',')}).then(function(j){$('swJob').textContent=j.msg||'';S=null;load();});};
-  $('swCheck').onclick=function(){post({sw_action:'check',domains:''}).then(function(j){$('swJob').textContent=j.msg||'';setTimeout(load,1500);});};
+  $('swWhat').onchange=function(){$('swOne').style.display=this.value==='one'?'':'none';};
+  $('swCheck').onclick=function(){var w=$('swWhat').value,d='';
+    if(w==='one'){d=$('swOne').value.trim();if(!d){alert('Type the site to check.');return;}}
+    else if(w==='prot'){d=(S.cfg.protect||[]).join(',');if(!d){alert('No auto-protected site is selected.');return;}}
+    else if(!confirm('Check every watched site ('+(S.cfg.scope==='list'?(S.cfg.sites||[]).length:S.rows.length)+')? It runs in the background.'))return;
+    post({sw_action:'check',domains:d}).then(function(j){$('swJob').textContent=j.msg||'';setTimeout(load,1500);});};
   $('rAdd').onclick=function(){post({sw_action:'rule_add',sites_mode:$('rMode').value,sites:$('rSites').value,to:$('rTo').value,channels:[].filter.call(document.querySelectorAll('.rCh'),function(x){return x.checked;}).map(function(x){return x.value;}).join(','),level:$('rLevel').value,when:$('rWhen').value}).then(function(j){alert(j.msg);load();});};
   $('swRules').onclick=function(ev){var a=ev.target.closest('a');if(!a)return;ev.preventDefault();if(a.className==='rT')post({sw_action:'rule_test',i:a.dataset.t}).then(function(j){alert(j.msg);});else if(confirm('Delete this rule?'))post({sw_action:'rule_del',i:a.dataset.x}).then(function(){load();});};
   $('swRows').onclick=function(ev){var a=ev.target.closest('a.swOpen');if(!a)return;ev.preventDefault();site(a.dataset.d);};

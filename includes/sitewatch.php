@@ -68,9 +68,16 @@ function smpro_sw_scan_files(string $doc): ?array {
 }
 function smpro_sw_is_php(string $rel): bool { return (bool)preg_match('/\.(php\d?|phtml|phar)$/i', $rel); }
 /** How dangerous a new or changed file is, by where it is and what it is called. [sev, why] or null when ordinary. */
-function smpro_sw_classify_file(string $rel, bool $isNew): ?array {
+function smpro_sw_classify_file(string $rel, bool $isNew, int $size = -1): ?array {
     $b = basename($rel);
-    if (smpro_sw_is_php($rel) && preg_match('#(^|/)(wp-content/uploads|uploads|images|img|media|files)/#i', $rel)) return ['critical', 'PHP file in an uploads/images folder'];
+    // Uploads = WordPress' uploads folder, or an uploads/images folder at the top of the web root. NOT any folder that
+    // happens to be called "files" or "img" inside a plugin, a theme or WordPress itself (wp-includes/.../Files/,
+    // plugins/x/assets/img/index.php): those are the software's own code and flagged thousands of false alarms.
+    if (smpro_sw_is_php($rel) && !preg_match('#^(wp-includes|wp-admin)/#', $rel) && !preg_match('#(^|/)wp-content/(plugins|themes|mu-plugins)/#', $rel)
+        && preg_match('#^(wp-content/uploads|uploads|images|img|upload|media)/#i', $rel)) {
+        if ($b === 'index.php' && $size >= 0 && $size <= 200) return null;   // the "silence is golden" placeholder
+        return ['critical', 'PHP file in an uploads/images folder'];
+    }
     if (smpro_sw_is_php($rel) && preg_match('#(^|/)\.[^/]+#', $rel)) return ['critical', 'PHP file that is hidden or in a hidden folder'];
     if (smpro_sw_is_php($rel) && preg_match('/\.(jpe?g|png|gif|ico|txt)\.php$|^[a-f0-9]{8,}\.php$/i', $b)) return ['critical', 'PHP file with a disguised name'];
     if ($b === '.htaccess' || $b === '.user.ini') return ['warning', $b . ' ' . ($isNew ? 'created' : 'changed')];
@@ -172,6 +179,13 @@ function smpro_sw_checks(string $doc): array {
 }
 
 /* ============================ events ============================ */
+/** An event still counts: not resolved, and (for a flagged file) the file would still be flagged by today's rules -
+ *  events recorded by the first release, which flagged plugin/WordPress folders named img/files, no longer count. */
+function smpro_sw_event_live(array $e): bool {
+    if (!empty($e['resolved'])) return false;
+    if (in_array($e['kind'] ?? '', ['upload_php', 'shell_run'], true) && !empty($e['data']['path'])) return smpro_sw_classify_file((string)$e['data']['path'], true)[0] ?? '' ? true : false;
+    return true;
+}
 function smpro_sw_event_add(string $dom, array &$batch, string $sev, string $kind, string $title, array $data): void {
     $id = substr(sha1($dom . '|' . $kind . '|' . $title . '|' . json_encode($data['path'] ?? ($data['login'] ?? ''))), 0, 16);
     $batch[] = ['id' => $id, 'ts' => time(), 'domain' => $dom, 'sev' => $sev, 'kind' => $kind, 'title' => $title, 'data' => $data];
@@ -210,7 +224,7 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
         $new = array_diff_key($files, $prevF); $chg = []; foreach (array_intersect_key($files, $prevF) as $k => $v) if ($prevF[$k] !== $v) $chg[$k] = $v;
         $del = $first ? [] : array_diff_key($prevF, $files);
         $flag = [];
-        foreach ([[$new, true], [$chg, false]] as [$set, $isNew]) foreach ($set as $rel => $v) { $c = smpro_sw_classify_file((string)$rel, $isNew); if ($c) $flag[$rel] = [$c[0], $c[1], $isNew, (int)explode('|', $v)[1]]; }
+        foreach ([[$new, true], [$chg, false]] as [$set, $isNew]) foreach ($set as $rel => $v) { $c = smpro_sw_classify_file((string)$rel, $isNew, (int)explode('|', $v)[0]); if ($c) $flag[$rel] = [$c[0], $c[1], $isNew, (int)explode('|', $v)[1]]; }
         if ($first) { $flag = array_filter($flag, fn($x) => $x[0] === 'critical'); }   // first look: only what is dangerous already
         if ($flag) $access = smpro_sw_access($dom);
         $i = 0;
@@ -228,7 +242,7 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
             if ($np > 0 || count($chg) || count($del)) smpro_sw_event_add($dom, $batch, 'info', 'files', count($new) . ' new, ' . count($chg) . ' changed, ' . count($del) . ' deleted code file(s)', ['path' => 'summary-' . date('YmdH'), 'new' => array_slice(array_keys($new), 0, 200), 'changed' => array_slice(array_keys($chg), 0, 200), 'deleted' => array_slice(array_keys($del), 0, 100)]);
         }
         smpro_sw_save('sites/' . $dom . '/files.json', $files);
-        $st['files_at'] = time(); $st['files_n'] = count($files); $st['new24'] = array_slice(array_keys($new), 0, 300);
+        $st['files_at'] = time(); $st['files_n'] = count($files); $st['new24'] = $first ? [] : array_slice(array_keys($new), 0, 300);   // the first look sets the baseline: nothing in it is "new"
     }
     if ($withDb) {
         $snap = smpro_sw_db_snapshot($doc);
@@ -247,7 +261,7 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
     smpro_sw_events_write($dom, $batch);
     $st['user'] = $user; $st['docroot'] = $doc; $st['checked_at'] = time();
     $evs = smpro_sw_events($dom, 200); $cut = time() - 86400; $risk = 'clean';
-    foreach ($evs as $e) if ($e['ts'] >= $cut && empty($e['resolved'])) { if ($e['sev'] === 'critical') { $risk = 'critical'; break; } if ($e['sev'] === 'warning') $risk = 'warning'; }
+    foreach ($evs as $e) if ($e['ts'] >= $cut && smpro_sw_event_live($e)) { if ($e['sev'] === 'critical') { $risk = 'critical'; break; } if ($e['sev'] === 'warning') $risk = 'warning'; }
     foreach ($st['checks'] as $c) if ($c[0] === 'fail') $risk = 'critical'; elseif ($c[0] === 'warn' && $risk === 'clean') $risk = 'warning';
     $st['risk'] = $risk;
     smpro_sw_save('sites/' . $dom . '/state.json', $st);
@@ -316,7 +330,7 @@ function smpro_sw_plan(string $dom): array {
     if ($doc === '') return [];
     $steps = []; $ips = []; $seen = [];
     foreach (smpro_sw_events($dom, 300) as $e) {
-        if (!empty($e['resolved'])) continue;
+        if (!smpro_sw_event_live($e)) continue;
         $d = $e['data'] ?? [];
         if (in_array($e['kind'], ['upload_php', 'shell_run'], true) && !empty($d['path']) && !isset($seen['q' . $d['path']]) && @is_file($doc . '/' . $d['path'])) {
             $seen['q' . $d['path']] = 1; $steps[] = ['action' => 'quarantine', 'arg' => $d['path'], 'label' => 'Move ' . $d['path'] . ' to quarantine (original kept)', 'safe' => true, 'event' => $e['id']];
