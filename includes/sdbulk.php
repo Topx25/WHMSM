@@ -91,7 +91,14 @@ function smpro_sdb_fix_hide_errors(string $domain): array {
     $r = smpro_inv_resolve($domain); if (!$r) return ['ok' => false, 'msg' => 'unresolved target'];
     $doc = rtrim($r['docroot'], '/'); $f = $doc . '/.user.ini';
     if (is_link($f)) return ['ok' => false, 'msg' => 'refused: .user.ini is a link'];
-    $old = is_file($f) ? (string)@file_get_contents($f) : null;
+    $old = null;
+    if (file_exists($f)) {
+        // read without following a link the account could swap in after the check above (root would copy the target)
+        $st0 = @lstat($f); $h = ($st0 && ($st0['mode'] & 0170000) === 0100000 && $st0['nlink'] === 1) ? @fopen($f, 'rb') : false;
+        $st1 = $h ? @fstat($h) : null;
+        if (!$h || !$st1 || $st1['ino'] !== $st0['ino'] || $st1['dev'] !== $st0['dev'] || $st1['size'] > 65536) { if ($h) @fclose($h); return ['ok' => false, 'msg' => 'refused: .user.ini is not a plain file of the site']; }
+        $old = (string)stream_get_contents($h); @fclose($h);
+    }
     if ($old !== null && preg_match('/^\s*display_errors\s*=\s*(off|0)\s*$/mi', $old)) return ['ok' => false, 'msg' => 'display_errors is already off in .user.ini (the warnings come from code that turns it on - see Diagnose).'];
     $new = ($old === null ? '' : rtrim(preg_replace('/^\s*display_errors\s*=.*$/mi', '', $old)) . "\n") . "; Safety Monitor Pro Site Doctor: warnings go to the error log, not to visitors\ndisplay_errors = Off\n";
     if ($old !== null) {
@@ -322,7 +329,8 @@ function smpro_sdb_purge(int $days = SMPRO_SDB_KEEP_DAYS): array {
         $b = (string)($e['backup'] ?? '');
         if ($b === '' || !preg_match('/\.smpro-(bak|optbak)-/', basename($b))) continue;
         $real = @realpath($b);
-        if ($real !== false && (strpos($real, '/home') === 0) && !is_link($b) && @is_file($real) && @unlink($real)) $removed++;
+        $u = preg_quote((string)($e['user'] ?? ''), '#');
+        if ($real !== false && $u !== '' && preg_match('#^/home[^/]*/' . $u . '/#', $real) && !is_link($b) && @is_file($real) && @unlink($real)) $removed++;
         $e['status'] = 'expired'; $e['expired_at'] = time(); $closed++; $dirty = true;
     }
     unset($e);
@@ -364,7 +372,10 @@ function smpro_sdb_run_job(string $kind): void {
         $cfg = smpro_sdb_cfg();
         if ($kind === 'daily' && $cfg['auto']) {
             $scan = smpro_sdb_load('scan.json', ['results' => []]);
-            foreach ($scan['results'] as $dom => $r) if (($r['state'] ?? '') === 'problem' && !empty($r['fixes'])) smpro_sdb_fix_site((string)$dom, true);
+            foreach ($scan['results'] as $dom => $r) if (($r['state'] ?? '') === 'problem' && !empty($r['fixes'])) {
+                smpro_sdb_fix_site((string)$dom, true);
+                $sc = smpro_sdb_load('scan.json'); $sc['beat'] = time(); $sc['current'] = 'fixing ' . $dom; smpro_sdb_save('scan.json', $sc);   // still alive
+            }
         }
         smpro_sdb_purge();
     }

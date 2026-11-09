@@ -275,13 +275,20 @@ function smpro_gh_cloudmail_apply(bool $force = false): array {
         }
         $c['cloud_sweep'] = time();
     }
-    $c['cloud_done'] = $done; smpro_gh_cfg_save($c);
+    // a provider no longer wanted (here or by another product) loses its whitelist entries again
+    foreach (array_keys($done) as $p) if (!in_array($p, $on, true) && isset($all[$p])) {
+        foreach ($all[$p][1] as $r) smpro_gh_api('delete_cphulk_record', ['list_name' => 'white', 'ip' => $r]);
+        unset($done[$p]); $added++;
+    }
+    $dirtyCfg = ($c['cloud_done'] ?? null) !== $done || $lifted || $force || isset($c['cloud_sweep_new']);
+    $c['cloud_done'] = $done; if ($dirtyCfg || ($c['cloud_sweep'] ?? 0) > time() - 5) smpro_gh_cfg_save($c);
     if (function_exists('smpro_hg_json_write') && function_exists('smpro_hg_dir')) {
         smpro_hg_dir();
         $sh = (function_exists('smpro_hg_read_json') ? smpro_hg_read_json(smpro_gh_cloudmail_shared()) : null) ?: [];
-        $sh['applied_by'] = 'smpro'; $sh['providers'] = $on; $sh['ranges'] = $ranges; $sh['at'] = time();
-        $sh['requested'] = (array)($sh['requested'] ?? []); $sh['requested']['smpro'] = isset($c['cloud_mail']) ? (array)$c['cloud_mail'] : ['microsoft'];
-        smpro_hg_json_write(smpro_gh_cloudmail_shared(), $sh, 0644);
+        $want = $sh; $want['applied_by'] = 'smpro'; $want['providers'] = $on; $want['ranges'] = $ranges;
+        $want['requested'] = (array)($sh['requested'] ?? []); $want['requested']['smpro'] = isset($c['cloud_mail']) ? (array)$c['cloud_mail'] : ['microsoft'];
+        $cmp = function ($x) { unset($x['at']); return json_encode($x); };
+        if (!$sh || $cmp($sh) !== $cmp($want)) { $want['at'] = time(); smpro_hg_json_write(smpro_gh_cloudmail_shared(), $want, 0644); }   // only on a change
     }
     if (($added || $lifted) && function_exists('smpro_audit')) smpro_audit('geohulk_cloudmail', ['providers' => $on, 'ranges_added' => $added, 'lifted' => array_slice($lifted, 0, 50)]);
     return ['providers' => $on, 'ranges_added' => $added, 'lifted' => $lifted];

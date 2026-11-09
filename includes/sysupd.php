@@ -353,12 +353,17 @@ function smpro_su_reboot_plan(string $why = ''): array {
     if (!function_exists('smpro_reboot_sched_save')) return ['planned' => false, 'why' => 'reboot engine missing'];
     $cur = smpro_reboot_sched(); if (!empty($cur['enabled']) && $cur['at'] > time()) return ['planned' => false, 'why' => 'already scheduled for ' . date('Y-m-d H:i', $cur['at'])];
     [$need, $reason] = smpro_su_reboot_needed(); if (!$need) return ['planned' => false, 'why' => 'no reboot needed'];
+    // Planned once for this reason and now gone (the operator cancelled it, or the safety check aborted it): do not
+    // plan it again by itself - the next update with a new reason (a newer kernel) plans a new one.
+    $s = smpro_su_state();
+    if (($s['reboot_reason'] ?? '') === $reason) return ['planned' => false, 'why' => 'a reboot for this was already planned once and cancelled or aborted'];
     $at = smpro_su_reboot_slot($cfg);
     $r = smpro_reboot_sched_save(['enabled' => true, 'at' => $at, 'target' => 'next']);
     $local = (new DateTime('@' . $at))->setTimezone(new DateTimeZone($cfg['reboot_tz']))->format('Y-m-d H:i');
     smpro_su_log('reboot planned: ' . $reason . ' -> ' . $local . ' ' . $cfg['reboot_tz'] . ' (' . ($r['ok'] ? 'ok' : $r['msg']) . ')');
     if (!empty($r['ok']) && function_exists('smpro_notify')) @smpro_notify('sysupd_reboot_planned', 'Reboot scheduled after the update: ' . $local . ' ' . $cfg['reboot_tz'],
         'The update needs a reboot: ' . $reason . '. It is scheduled for ' . $local . ' (' . $cfg['reboot_tz'] . '), inside the window ' . sprintf('%02d:00-%02d:00', $cfg['reboot_from'], $cfg['reboot_to']) . '. Safety checks run again at that minute and the reboot is cancelled if anything critical fails. Cancel it from the Scheduled Reboot page.' . ($why !== '' ? ' (' . $why . ')' : ''));
+    if (!empty($r['ok'])) { $s = smpro_su_state(); $s['reboot_reason'] = $reason; $s['reboot_planned_at'] = time(); smpro_su_state_save($s); }
     if (function_exists('smpro_audit')) smpro_audit('sysupd_reboot_planned', ['at' => $at, 'reason' => $reason, 'ok' => !empty($r['ok'])]);
     return ['planned' => !empty($r['ok']), 'at' => $at, 'local' => $local, 'reason' => $reason, 'msg' => $r['msg'] ?? ''];
 }

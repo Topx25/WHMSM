@@ -48,7 +48,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['sw_action'] ?? ''), ['check', 'cf
         smpro_sw_cfg_save(['rules' => $c['rules']]); smpro_audit('sitewatch_rule_add', ['sites' => is_array($sites) ? count($sites) : 'all', 'to' => count($to)]);
         echo $J(['ok' => true, 'msg' => 'Rule saved.']); exit;
     }
-    if ($a === 'rule_del') { $c = smpro_sw_cfg(); array_splice($c['rules'], (int)($_POST['i'] ?? -1), 1); smpro_sw_cfg_save(['rules' => $c['rules']]); echo $J(['ok' => true, 'msg' => 'Rule removed.']); exit; }
+    if ($a === 'rule_del') { $c = smpro_sw_cfg(); $i = (int)($_POST['i'] ?? -1); if ($i < 0 || !isset($c['rules'][$i])) { echo $J(['ok' => false, 'msg' => 'No such rule.']); exit; } array_splice($c['rules'], $i, 1); smpro_sw_save('digest.json', []); smpro_sw_cfg_save(['rules' => $c['rules']]); echo $J(['ok' => true, 'msg' => 'Rule removed.']); exit; }
     if ($a === 'rule_test') {
         $r = smpro_sw_cfg()['rules'][(int)($_POST['i'] ?? -1)] ?? null; if (!$r) { echo $J(['ok' => false, 'msg' => 'No such rule.']); exit; }
         $out = []; foreach ($r['to'] as $to) foreach ($r['channels'] as $ch) { [$ok, $d] = smpro_sw_send($ch, $to, 'Site Watch test', "Site Watch test message from " . gethostname()); $out[] = $ch . ' ' . $to . ': ' . ($ok ? 'sent' : 'failed - ' . $d); }

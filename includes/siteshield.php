@@ -169,15 +169,21 @@ function smpro_ss_refresh(): array {
     if ((int)($c['reload_failed_at'] ?? 0) > time() - 1800) return ['changed' => 0, 'why' => 'backing off after a failed reload'];
     if (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) return ['changed' => 0, 'why' => 'dry-run'];
     $prefixes = smpro_ss_prefixes(); if (count($prefixes) < 500) return ['changed' => 0, 'why' => 'lists not usable'];
-    $operator = smpro_ss_operator_ips(); $changed = 0;
+    $operator = smpro_ss_operator_ips(); $changed = 0; $c0 = $c; $prev = [];
     foreach ($c['domains'] as $d => &$r) {
         $content = smpro_ss_render($d, $prefixes, $operator); $h = sha1($content);
         if ($h === (string)($r['hash'] ?? '') && smpro_ss_live($d, (string)$r['user'])) continue;
-        foreach (smpro_ss_paths($d, (string)$r['user']) as $p) { @mkdir(dirname($p), 0755, true); @file_put_contents($p, $content); @chmod($p, 0644); }
+        foreach (smpro_ss_paths($d, (string)$r['user']) as $p) { $prev[$p] = @is_file($p) ? (string)@file_get_contents($p) : null; @mkdir(dirname($p), 0755, true); @file_put_contents($p, $content); @chmod($p, 0644); }
         $r['hash'] = $h; $r['prefixes'] = count($prefixes); $changed++;
     } unset($r);
     if ($changed === 0) return ['changed' => 0];
     [$ok, $msg] = smpro_ss_reload(false);
+    if (!$ok) {
+        // put the previous files back, so a refused include never waits on disk for the next Apache restart; the
+        // hashes stay as they were, so the refresh tries again after the back-off
+        foreach ($prev as $p => $old) { if ($old === null) @unlink($p); else @file_put_contents($p, $old); }
+        $c = $c0;
+    }
     $c['reload_failed_at'] = $ok ? 0 : time();
     smpro_ss_cfg_save($c);
     if (!$ok && function_exists('smpro_audit')) smpro_audit('siteshield_refresh_failed', ['msg' => $msg]);

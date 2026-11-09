@@ -31,3 +31,11 @@ ok(smpro_sw_classify_file('wp-content/uploads/index.php', true, 28) === null, 'F
 is_eq(smpro_sw_classify_file('wp-content/uploads/cfdb7_uploads/index.php', true, 4000)[0] ?? '', 'critical', 'F9: a real PHP file in uploads still is');
 ok(!smpro_sw_event_live(['kind' => 'upload_php', 'data' => ['path' => 'wp-includes/php-ai-client/src/Files/ValueObjects/MimeType.php']]), 'F10: old false alarms stop counting');
 has($m, "var per=+\$('swPer').value,pages=Math.max(1,Math.ceil(list.length/per));", 'U1: the sites table is paginated');
+$b1 = []; smpro_sw_event_add('a.com', $b1, 'critical', 'upload_php', 't', ['path' => 'wp-content/uploads/x.php', 'mtime' => 1]);
+smpro_sw_event_add('a.com', $b1, 'critical', 'upload_php', 't', ['path' => 'wp-content/uploads/x.php', 'mtime' => 2]);
+ok($b1[0]['id'] !== $b1[1]['id'], 'B1: the same file uploaded again is a new event');
+has($src, "su -s /bin/sh ' . escapeshellarg(\$user) . ' -c ' . escapeshellarg('cd ' . escapeshellarg(\$doc) . ' && chmod 600 -- wp-config.php')", 'B2: wp-config.php chmod runs as the account');
+has($src, "if (!smpro_sw_doc_ok(\$doc, \$user)) return ['ok' => false, 'msg' => 'the web root is not inside the account home - not checked'];", 'B3: a web root outside the account home is refused');
+has($src, "(int)\$m[1] === 124", 'B4: a timed-out listing is not saved as a baseline');
+has($src, "'sev' => 'info', 'kind' => 'fixed',", 'B5: a fix does not keep the site Critical');
+has($src, "\$lk = smpro_sw_evlock(\$dom); @file_put_contents(\$f, \$s, FILE_APPEND | LOCK_EX);", 'B6: appends and rewrites share a lock');

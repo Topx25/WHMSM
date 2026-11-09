@@ -57,13 +57,23 @@ function smpro_sw_rank(string $sev): int { return ['info' => 1, 'warning' => 2, 
 
 /* ============================ files ============================ */
 /** Fingerprint of the code files under a web root: [relpath => "size|mtime"]. Null when it cannot look. */
+/** The real web root, only when it sits inside the account's own home (a docroot symlinked into another account is refused). */
+function smpro_sw_doc_ok(string $doc, string $user): bool {
+    $r = @realpath($doc); $pw = function_exists('posix_getpwnam') && $user !== '' ? @posix_getpwnam($user) : null;
+    $home = $pw ? (string)@realpath((string)$pw['dir']) : '';
+    return $r !== false && $home !== '' && strpos($r . '/', rtrim($home, '/') . '/') === 0;
+}
 function smpro_sw_scan_files(string $doc): ?array {
     if (!@is_dir($doc) || strpos((string)@realpath($doc), '/home') !== 0) return null;
     $cmd = 'timeout 120 find ' . escapeshellarg($doc) . ' -xdev \( -path "*/cache/*" -o -path "*/node_modules/*" -o -path "*/.git/objects/*" -o -name "*.smpro-*" \) -prune -o -type f'
          . ' \( -iname "*.php" -o -iname "*.php[0-9]" -o -iname "*.phtml" -o -iname "*.phar" -o -name ".htaccess" -o -name ".user.ini" -o -iname "*.js" -o -iname "*.html" -o -iname "*.htm" -o -iname "*.cgi" -o -iname "*.pl" -o -iname "*.sh" \)'
-         . ' -printf "%P\t%s\t%T@\n" 2>/dev/null | head -n 400000';
+         . ' -printf "%P\t%s\t%T@\n" 2>/dev/null; echo "__SMPRO_RC=$?"';
+    $raw = (string)@shell_exec($cmd);
+    // a listing cut by the time limit (rc 124) or that never ran is not a fingerprint: comparing with it would report
+    // every missing file as deleted now and as new next time
+    if (!preg_match('/__SMPRO_RC=(\d+)\s*$/', $raw, $m) || (int)$m[1] === 124 || (int)$m[1] === 137) return null;
     $out = [];
-    foreach (explode("\n", (string)@shell_exec($cmd)) as $l) { $p = explode("\t", $l); if (count($p) === 3 && $p[0] !== '') $out[$p[0]] = $p[1] . '|' . (int)$p[2]; }
+    foreach (explode("\n", $raw) as $l) { $p = explode("\t", $l); if (count($p) === 3 && $p[0] !== '') $out[$p[0]] = $p[1] . '|' . (int)$p[2]; if (count($out) > 400000) return null; }
     return $out;
 }
 function smpro_sw_is_php(string $rel): bool { return (bool)preg_match('/\.(php\d?|phtml|phar)$/i', $rel); }
@@ -124,7 +134,7 @@ function smpro_sw_who(string $user, string $abs, int $mtime, array $access, stri
 function smpro_sw_ran(string $rel, array $access, string $sub): array {
     $want = '/' . ltrim(($sub !== '' ? rtrim($sub, '/') . '/' : '') . $rel, '/');
     $n = 0; $ips = []; $first = 0; $last = 0;
-    foreach ($access as [$ts, $ip, $meth, $path, $code]) if ($path === $want) { $n++; $ips[$ip] = 1; $first = $first ? min($first, $ts) : $ts; $last = max($last, $ts); }
+    foreach ($access as [$ts, $ip, $meth, $path, $code]) if ($path === $want && $code >= 200 && $code < 400) { $n++; $ips[$ip] = 1; $first = $first ? min($first, $ts) : $ts; $last = max($last, $ts); }
     return ['runs' => $n, 'ips' => array_slice(array_keys($ips), 0, 10), 'first' => $first, 'last' => $last];
 }
 
@@ -187,7 +197,9 @@ function smpro_sw_event_live(array $e): bool {
     return true;
 }
 function smpro_sw_event_add(string $dom, array &$batch, string $sev, string $kind, string $title, array $data): void {
-    $id = substr(sha1($dom . '|' . $kind . '|' . $title . '|' . json_encode($data['path'] ?? ($data['login'] ?? ''))), 0, 16);
+    // the id names THIS occurrence: the same file uploaded again (new mtime) or the same login re-created (new id) is a
+    // new event, not a duplicate of the one already resolved
+    $id = substr(sha1($dom . '|' . $kind . '|' . $title . '|' . json_encode([$data['path'] ?? ($data['login'] ?? ''), $data['mtime'] ?? '', $data['id'] ?? '', $data['registered'] ?? '', $data['files'] ?? ''])), 0, 16);
     $batch[] = ['id' => $id, 'ts' => time(), 'domain' => $dom, 'sev' => $sev, 'kind' => $kind, 'title' => $title, 'data' => $data];
 }
 function smpro_sw_events(string $dom, int $limit = 300): array {
@@ -199,13 +211,18 @@ function smpro_sw_events_write(string $dom, array $batch): void {
     if (!$batch) return;
     $f = smpro_sw_path('sites/' . smpro_sw_key($dom) . '/events.jsonl'); $s = '';
     foreach ($batch as $e) $s .= json_encode($e, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
-    @file_put_contents($f, $s, FILE_APPEND | LOCK_EX); @chmod($f, 0600);
+    $lk = smpro_sw_evlock($dom); @file_put_contents($f, $s, FILE_APPEND | LOCK_EX); @chmod($f, 0600); smpro_sw_evunlock($lk);
 }
+/** Read-modify-write of an events file and appends share one lock, so neither loses the other's lines. */
+function smpro_sw_evlock(string $dom) { $h = @fopen(smpro_sw_path('sites/' . smpro_sw_key($dom) . '/events.lock'), 'c'); if ($h) @flock($h, LOCK_EX); return $h; }
+function smpro_sw_evunlock($h): void { if ($h) { @flock($h, LOCK_UN); @fclose($h); } }
 function smpro_sw_prune(): void {
     $keep = time() - smpro_sw_cfg()['keep_days'] * 86400;
     foreach ((array)@glob(SMPRO_SW_DIR . '/sites/*/events.jsonl') as $f) {
+        $lk = smpro_sw_evlock(basename(dirname($f)));
         $ls = file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []; $k = array_filter($ls, fn($l) => (int)(json_decode($l, true)['ts'] ?? 0) >= $keep);
         if (count($k) < count($ls)) @file_put_contents($f, $k ? implode("\n", $k) . "\n" : '', LOCK_EX);
+        smpro_sw_evunlock($lk);
     }
 }
 
@@ -215,6 +232,7 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
     $r = function_exists('smpro_inv_resolve') ? smpro_inv_resolve($dom) : null;
     if (!$r) return ['ok' => false, 'msg' => 'unresolved site'];
     $doc = rtrim((string)$r['docroot'], '/'); $user = (string)$r['user']; $sub = (string)($r['urlpath'] ?? '');
+    if (!smpro_sw_doc_ok($doc, $user)) return ['ok' => false, 'msg' => 'the web root is not inside the account home - not checked'];
     $st = smpro_sw_load('sites/' . $dom . '/state.json'); $batch = [];
     $files = smpro_sw_scan_files($doc);
     $access = null;
@@ -254,7 +272,11 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
         }
     }
     $st['checks'] = smpro_sw_checks($doc);
-    foreach ($st['checks'] as $c) if ($c[0] === 'fail' && !in_array('exposed', (array)($st['exposed_told'] ?? []), true)) { smpro_sw_event_add($dom, $batch, 'critical', 'exposed', $c[1], ['path' => 'exposed', 'files' => $c[3]]); $st['exposed_told'] = ['exposed']; }
+    foreach ($st['checks'] as $c) if ($c[2] === 'exposed') {
+        $now = $c[0] === 'fail' ? (array)$c[3] : []; sort($now);
+        if ($now && $now !== (array)($st['exposed_told'] ?? [])) smpro_sw_event_add($dom, $batch, 'critical', 'exposed', $c[1], ['path' => 'exposed', 'files' => $now]);
+        $st['exposed_told'] = $now;
+    }
     // the same event (same id) is recorded once
     $seen = array_flip(array_column(smpro_sw_events($dom, 500), 'id'));
     $batch = array_values(array_filter($batch, fn($e) => !isset($seen[$e['id']])));
@@ -293,7 +315,7 @@ function smpro_sw_send(string $channel, string $to, string $subject, string $tex
 /** Instant events go out now; daily/weekly ones are queued for the digest. Never the same event twice to one recipient. */
 function smpro_sw_dispatch(string $dom, array $batch): void {
     $c = smpro_sw_cfg(); $sent = smpro_sw_load('sent.json'); $queue = smpro_sw_load('digest.json');
-    $alertOn = fn($e) => $e['sev'] !== 'critical' || !isset($c['alerts'][$e['kind']]) || !empty($c['alerts'][$e['kind']]);
+    $alertOn = fn($e) => !isset($c['alerts'][$e['kind']]) || !empty($c['alerts'][$e['kind']]);
     foreach ($c['rules'] as $ri => $rule) {
         if (!smpro_sw_rule_match($rule, $dom)) continue;
         $min = smpro_sw_rank((string)($rule['level'] ?? 'critical'));
@@ -338,11 +360,12 @@ function smpro_sw_plan(string $dom): array {
         foreach (array_merge((array)($d['ips'] ?? []), (array)($d['ran']['ips'] ?? [])) as $ip) if ($e['sev'] === 'critical' && filter_var($ip, FILTER_VALIDATE_IP)) $ips[$ip] = 1;
         if ($e['kind'] === 'new_admin' && !empty($d['login']) && !isset($seen['a' . $d['login']])) { $seen['a' . $d['login']] = 1; $steps[] = ['action' => 'remove_admin', 'arg' => (string)$d['login'], 'label' => 'Remove administrator ' . $d['login'] . ' (database backed up first)', 'safe' => false, 'event' => $e['id']]; }
     }
-    foreach (array_keys($ips) as $ip) $steps[] = ['action' => 'block_ip', 'arg' => $ip, 'label' => 'Block ' . $ip . ' in the firewall (it ran an injected file)', 'safe' => true, 'event' => ''];
+    $own = function_exists('smpro_gw_always') ? array_flip(array_map('strval', (array)smpro_gw_always(''))) : [];
+    foreach (array_keys($ips) as $ip) if (!isset($own[$ip])) $steps[] = ['action' => 'block_ip', 'arg' => $ip, 'label' => 'Block ' . $ip . ' in the firewall (it ran an injected file)', 'safe' => true, 'event' => ''];
     foreach ((array)($st['checks'] ?? []) as $c) {
         if ($c[2] === 'uploads' && $c[0] === 'warn') $steps[] = ['action' => 'protect_uploads', 'arg' => '', 'label' => 'Protect: stop PHP from running inside uploads', 'safe' => true, 'event' => ''];
         if ($c[2] === 'exposed' && $c[0] === 'fail') foreach ((array)$c[3] as $f) $steps[] = ['action' => 'quarantine', 'arg' => $f, 'label' => 'Move ' . $f . ' out of the web root (original kept)', 'safe' => false, 'event' => ''];
-        if ($c[2] === 'cfgperm') $steps[] = ['action' => 'cfg_perm', 'arg' => '', 'label' => 'Protect: make wp-config.php readable by its own account only (600)', 'safe' => true, 'event' => ''];
+        if ($c[2] === 'cfgperm') $steps[] = ['action' => 'cfg_perm', 'arg' => '', 'label' => 'Protect: make wp-config.php readable by its own account only (600) - only where PHP runs as the account (PHP-FPM / suPHP)', 'safe' => false, 'event' => ''];
     }
     if (array_filter(smpro_sw_events($dom, 300), fn($e) => $e['kind'] === 'shell_run' && empty($e['resolved'])))
         $steps[] = ['action' => 'advice', 'arg' => '', 'label' => 'By hand: an injected file ran - change the database password and the WordPress salts in wp-config.php', 'safe' => false, 'event' => ''];
@@ -351,7 +374,7 @@ function smpro_sw_plan(string $dom): array {
 /** Run one step. Every change is backed up and recorded for undo in the Site Doctor manifest. */
 function smpro_sw_fix(string $dom, string $action, string $arg): array {
     $dom = smpro_sw_key($dom); $st = smpro_sw_load('sites/' . $dom . '/state.json'); $doc = (string)($st['docroot'] ?? ''); $user = (string)($st['user'] ?? '');
-    if ($doc === '' || strpos((string)@realpath($doc), '/home') !== 0) return ['ok' => false, 'msg' => 'check the site first'];
+    if ($doc === '' || !smpro_sw_doc_ok($doc, $user)) return ['ok' => false, 'msg' => 'check the site first (or its web root is outside the account home)'];
     $res = ['ok' => false, 'msg' => 'unknown step'];
     if ($action === 'quarantine') {
         $abs = $doc . '/' . ltrim($arg, '/'); $real = @realpath($abs);
@@ -383,12 +406,15 @@ function smpro_sw_fix(string $dom, string $action, string $arg): array {
         $res = ['ok' => true, 'msg' => 'PHP can no longer run inside uploads' . ($old !== null ? ' (old .htaccess backed up)' : ''), 'undo_id' => $id];
     } elseif ($action === 'cfg_perm') {
         $f = $doc . '/wp-config.php'; if (is_link($f) || !is_file($f)) return ['ok' => false, 'msg' => 'no wp-config.php'];
-        $mode = @fileperms($f) & 0777; $ok = @chmod($f, 0600);
+        // as the account, never as root: root's chmod follows a link the account could swap in at this moment
+        $mode = @fileperms($f) & 0777;
+        @shell_exec('timeout 20 su -s /bin/sh ' . escapeshellarg($user) . ' -c ' . escapeshellarg('cd ' . escapeshellarg($doc) . ' && chmod 600 -- wp-config.php') . ' 2>/dev/null');
+        clearstatcache(); $ok = (@fileperms($f) & 0777) === 0600;
         $res = ['ok' => $ok, 'msg' => $ok ? 'wp-config.php is now 600 (was ' . sprintf('%o', $mode) . ')' : 'chmod failed'];
     } elseif ($action === 'remove_admin') {
         [$my, $p] = smpro_sw_db_conn($doc); if (!$my) return ['ok' => false, 'msg' => 'cannot reach the database'];
         $l = mysqli_real_escape_string($my, $arg);
-        $u = mysqli_fetch_assoc(@mysqli_query($my, "SELECT * FROM `{$p}users` WHERE user_login='$l' LIMIT 1") ?: null) ?: null;
+        $q = @mysqli_query($my, "SELECT * FROM `{$p}users` WHERE user_login='$l' LIMIT 1"); $u = $q instanceof mysqli_result ? (mysqli_fetch_assoc($q) ?: null) : null;
         if (!$u) { @mysqli_close($my); return ['ok' => false, 'msg' => 'user not found']; }
         $meta = []; $r = @mysqli_query($my, "SELECT * FROM `{$p}usermeta` WHERE user_id=" . (int)$u['ID']); if ($r) while ($x = mysqli_fetch_assoc($r)) $meta[] = $x;
         $bak = smpro_sw_path('backups/' . $dom . '-user-' . preg_replace('/[^a-z0-9_.-]/i', '', $arg) . '-' . date('Ymd_His') . '.json');
@@ -402,10 +428,12 @@ function smpro_sw_fix(string $dom, string $action, string $arg): array {
     }
     if (!empty($res['ok'])) {
         // the events the step answered are marked resolved
+        $lk = smpro_sw_evlock($dom);
         $f = smpro_sw_path('sites/' . $dom . '/events.jsonl'); $ls = @file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []; $ch = false;
         foreach ($ls as &$l) { $e = json_decode($l, true); if (!is_array($e) || !empty($e['resolved'])) continue; $d = $e['data'] ?? [];
             if (($action === 'quarantine' && ($d['path'] ?? '') === $arg) || ($action === 'remove_admin' && ($d['login'] ?? '') === $arg)) { $e['resolved'] = time(); $l = json_encode($e, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); $ch = true; } }
         unset($l); if ($ch) @file_put_contents($f, implode("\n", $ls) . "\n", LOCK_EX);
+        smpro_sw_evunlock($lk);
         $log = smpro_sw_load('sites/' . $dom . '/fixes.json'); array_unshift($log, ['ts' => time(), 'action' => $action, 'arg' => $arg, 'msg' => $res['msg'], 'undo_id' => $res['undo_id'] ?? '']); smpro_sw_save('sites/' . $dom . '/fixes.json', array_slice($log, 0, 200));
     }
     if (function_exists('smpro_audit')) smpro_audit('sitewatch_fix', ['domain' => $dom, 'action' => $action, 'ok' => !empty($res['ok'])]);
@@ -417,7 +445,7 @@ function smpro_sw_fix_safe(string $dom, string $mode = 'manual'): array {
     foreach (smpro_sw_plan($dom) as $s) if ($s['safe']) { $r = smpro_sw_fix($dom, $s['action'], $s['arg']); $done[] = (!empty($r['ok']) ? 'Done: ' : 'Failed: ') . $s['label'] . ' - ' . $r['msg']; }
     if ($done) {
         $left = array_filter(smpro_sw_plan($dom), fn($s) => !$s['safe']);
-        $e = ['id' => 'fix' . time(), 'ts' => time(), 'domain' => $dom, 'sev' => 'critical', 'kind' => 'fixed', 'title' => ($mode === 'auto' ? 'Automatic protection ran' : 'Safe fixes applied') . ' (' . count($done) . ' step(s))' . ($left ? '; ' . count($left) . ' step(s) wait for you' : ''), 'data' => ['steps' => $done, 'left' => array_column($left, 'label')]];
+        $e = ['id' => 'fix' . time(), 'ts' => time(), 'domain' => $dom, 'sev' => 'info', 'kind' => 'fixed', 'title' => ($mode === 'auto' ? 'Automatic protection ran' : 'Safe fixes applied') . ' (' . count($done) . ' step(s))' . ($left ? '; ' . count($left) . ' step(s) wait for you' : ''), 'data' => ['steps' => $done, 'left' => array_column($left, 'label')]];
         smpro_sw_events_write($dom, [$e]);
         $c = smpro_sw_cfg();
         foreach ($c['rules'] as $rule) if (smpro_sw_rule_match($rule, $dom)) foreach ((array)$rule['to'] as $to) foreach ((array)$rule['channels'] as $ch)
@@ -454,12 +482,12 @@ function smpro_sw_run_job(): void {
 /** The cron tick (every 15 minutes): start what is due, send digests, prune. */
 function smpro_sw_tick(): void {
     $c = smpro_sw_cfg(); smpro_sw_digest();
-    if (!$c['auto'] || !empty(smpro_sw_job()['running'])) return;
     $st = smpro_sw_load('sched.json');
+    if (($st['pruned'] ?? '') !== date('Y-m-d')) { smpro_sw_prune(); $st['pruned'] = date('Y-m-d'); smpro_sw_save('sched.json', $st); }
+    if (!$c['auto'] || !empty(smpro_sw_job()['running'])) return;
     $filesDue = (int)($st['files'] ?? 0) <= time() - $c['files_min'] * 60; $dbDue = (int)($st['db'] ?? 0) <= time() - $c['db_min'] * 60;
     if (!$filesDue && !$dbDue) return;
     $st['files'] = time(); if ($dbDue) $st['db'] = time(); smpro_sw_save('sched.json', $st);
-    if (date('G') === '3') smpro_sw_prune();
     smpro_sw_save('job.json', ['running' => true, 'started' => time(), 'beat' => time(), 'pid' => getmypid(), 'domains' => array_keys(smpro_sw_targets()), 'db' => $dbDue, 'done' => 0, 'total' => count(smpro_sw_targets()), 'current' => '']);
     smpro_sw_run_job();
 }

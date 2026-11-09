@@ -17,7 +17,7 @@ ok(smpro_sdb_auto_allowed('fix_htaccess') && smpro_sdb_auto_allowed('disable_plu
 $src = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/sdbulk.php'));
 has($src, "Skipped by the automatic switch: some of this site", 'A5: a locked site is skipped by the switch');
 has($src, "preg_match('/\\.smpro-(bak|optbak)-/', basename(", 'P1: only real backup copies are purged');
-has($src, "(strpos(\$real, '/home') === 0) && !is_link(\$b)", 'P2: only inside /home, never through a link');
+has($src, "preg_match('#^/home[^/]*/' . \$u . '/#', \$real) && !is_link(\$b)", 'P2: only inside the backup own account home, never through a link');
 $mf = smpro_inv_manifest_path(); @mkdir(dirname($mf), 0700, true); $keep = @file_get_contents($mf);
 file_put_contents($mf, json_encode([
     ['id' => 'x1', 'status' => 'applied', 'ts' => time() - 8 * 86400, 'backup' => '/nonexistent/.htaccess.smpro-bak-1'],
