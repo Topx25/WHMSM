@@ -303,3 +303,6 @@
 ## beta406: Site Watch + بريد مزوّدى السحابة (8 نوفمبر)
 - Site Watch (قسم جديد): includes/sitewatch.php، modules/site-watch.php، bin/sitewatch.php، cron smpro-sitewatch كل 15 دقيقة (مسجّل فى cron_sync)، اختبار t162. أول build وقع فى r14 (catch فاضى ممنوع إلا 4 فى helpers.php).
 - قفل الدول بيعدّى مزوّدى البريد: smpro_gh_cloudmail_apply فى كل sync (Microsoft افتراضى؛ google/apple/yahoo بالطلب)، whitelist النطاقات + شيل المحظور منها من nft عنوان عنوان. بوت تليجرام: /mailallow <provider>. ملف مشترك /var/lib/hostguard/cloud-mail.json: SM Pro بس اللى بيكتب cPHulk؛ MailGuard يطلب تحت requested.mailguard (اتبعت لجلسة MailGuard). نطاقات المزوّدين اتضافت لـ build/hardcode-allow.txt. اتنشر 16:26 (lab 5779/0، source d1aeb29).
+
+## beta407: زراير المزوّد فى البوت + قاعدة «مش سيرفر عميل» (8 نوفمبر)
+- /mailallow من غير اسم بيطلّع زراير (Microsoft/Google/Apple/Yahoo) + زرار «Type the provider name» (force_reply). ضغطة الزرار بتتصرّح زى الأمر المكتوب. قايمة النطاقات خدمة البريد بتاعة المزوّد بس، أبدًا مش منصات تأجير سيرفرات/VPS (Azure/GCP/AWS)؛ نطاق 35.190.247.0/24 اتشال. محدش يقدر يضيف نطاق بكتابته. t118 M5 بيثبّت ترتيب حفظ الـ offset قبل smpro_tg_handle. اتنشر 16:41 (lab 5804/0، 501512c).

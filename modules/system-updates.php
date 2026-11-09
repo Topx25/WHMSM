@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $act !== '') {
     $out = ['ok' => false, 'msg' => 'Unknown action.'];
     if ($act === 'settings') {
         $c = smpro_su_cfg_save(['mode' => (string)($_POST['mode'] ?? 'manual') === 'auto' ? 'auto' : 'manual', 'hour' => (int)($_POST['hour'] ?? 4), 'check_hours' => (int)($_POST['check_hours'] ?? 6),
-                                 'cpanel_auto' => !empty($_POST['cpanel_auto']), 'notify_new' => !empty($_POST['notify_new']), 'notify_result' => !empty($_POST['notify_result']), 'notify_problem' => !empty($_POST['notify_problem'])]);
+                                 'cpanel_auto' => !empty($_POST['cpanel_auto']), 'notify_new' => !empty($_POST['notify_new']), 'notify_result' => !empty($_POST['notify_result']), 'notify_problem' => !empty($_POST['notify_problem']), 'auto_reboot' => !empty($_POST['auto_reboot']), 'reboot_from' => (int)($_POST['reboot_from'] ?? 1), 'reboot_to' => (int)($_POST['reboot_to'] ?? 3)]);
         $cron = smpro_su_cron_sync();
         smpro_audit('sysupd_settings', ['mode' => $c['mode'], 'hour' => $c['hour'], 'check_hours' => $c['check_hours'], 'cpanel_auto' => $c['cpanel_auto'] ? 1 : 0]);
         $out = ['ok' => true, 'msg' => 'Saved. Mode: ' . ($c['mode'] === 'auto' ? 'automatic at ' . sprintf('%02d:00', $c['hour']) . ' server time (packages' . ($c['cpanel_auto'] ? ' + cPanel' : '') . ', never a reboot)' : 'manual - you are told, you press Update now') . '. Check every ' . $c['check_hours'] . ' h.' . ($cron ? '' : ' WARNING: the cron line could not be written.')];
@@ -121,6 +121,10 @@ smpro_layout_header('System updates');
     <label>Hour (server time, automatic mode)<br><select name="hour" class="tp-sel"><?php for ($h = 0; $h < 24; $h++): ?><option value="<?= $h ?>"<?= $h === $cfg['hour'] ? ' selected' : '' ?>><?= sprintf('%02d:00', $h) ?></option><?php endfor; ?></select></label>
     <label>Check every<br><select name="check_hours" class="tp-sel"><?php foreach ([1, 3, 6, 12, 24] as $h): ?><option value="<?= $h ?>"<?= $h === $cfg['check_hours'] ? ' selected' : '' ?>><?= $h ?> hour<?= $h > 1 ? 's' : '' ?></option><?php endforeach; ?></select></label>
     <label class="lm-chkl"><input type="checkbox" name="cpanel_auto" value="1"<?= $cfg['cpanel_auto'] ? ' checked' : '' ?>> in automatic mode, run cPanel's updater (upcp) too</label>
+    <label class="lm-chkl"><input type="checkbox" name="auto_reboot" value="1"<?= $cfg['auto_reboot'] ? ' checked' : '' ?>> when an update needs a reboot (new kernel, core libraries), reboot between
+      <select name="reboot_from"><?php for ($h = 0; $h <= 22; $h++) echo '<option value="' . $h . '"' . ($cfg['reboot_from'] === $h ? ' selected' : '') . '>' . sprintf('%02d:00', $h) . '</option>'; ?></select> and
+      <select name="reboot_to"><?php for ($h = 1; $h <= 23; $h++) echo '<option value="' . $h . '"' . ($cfg['reboot_to'] === $h ? ' selected' : '') . '>' . sprintf('%02d:00', $h) . '</option>'; ?></select>
+      <?= smpro_h($cfg['reboot_tz']) ?> time (safety checks run again at that minute; the reboot is cancelled if anything critical fails)</label>
     <label class="lm-chkl"><input type="checkbox" name="notify_new" value="1"<?= $cfg['notify_new'] ? ' checked' : '' ?>> tell me when new updates appear</label>
     <label class="lm-chkl"><input type="checkbox" name="notify_result" value="1"<?= $cfg['notify_result'] ? ' checked' : '' ?>> tell me after each automatic apply</label>
     <label class="lm-chkl"><input type="checkbox" name="notify_problem" value="1"<?= $cfg['notify_problem'] ? ' checked' : '' ?>> tell me when a check or download breaks (with the diagnosis)</label>

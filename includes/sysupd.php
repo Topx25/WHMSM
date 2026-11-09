@@ -32,10 +32,12 @@ function smpro_su_save(string $n, array $v): void { smpro_json_save(smpro_su_dir
 /** The operator's choices. mode: 'manual' (show + tell, never apply) | 'auto' (apply at the hour, packages only;
  *  cPanel by its own nightly job unless cpanel_auto). */
 function smpro_su_cfg(): array {
-    $c = smpro_su_load('cfg', ['mode' => 'manual', 'hour' => 4, 'check_hours' => 6, 'cpanel_auto' => false, 'notify_new' => true, 'notify_result' => true, 'notify_problem' => true]);
+    $c = smpro_su_load('cfg', ['mode' => 'manual', 'hour' => 4, 'check_hours' => 6, 'cpanel_auto' => false, 'notify_new' => true, 'notify_result' => true, 'notify_problem' => true, 'auto_reboot' => false, 'reboot_tz' => 'Africa/Cairo', 'reboot_from' => 1, 'reboot_to' => 3]);
     $c['mode'] = in_array((string)$c['mode'], ['manual', 'auto'], true) ? (string)$c['mode'] : 'manual';
     $c['hour'] = max(0, min(23, (int)$c['hour'])); $c['check_hours'] = max(1, min(24, (int)$c['check_hours']));
-    foreach (['cpanel_auto', 'notify_new', 'notify_result', 'notify_problem'] as $k) $c[$k] = !empty($c[$k]);
+    foreach (['cpanel_auto', 'notify_new', 'notify_result', 'notify_problem', 'auto_reboot'] as $k) $c[$k] = !empty($c[$k]);
+    $c['reboot_from'] = max(0, min(22, (int)$c['reboot_from'])); $c['reboot_to'] = max($c['reboot_from'] + 1, min(23, (int)$c['reboot_to']));
+    if (!in_array((string)$c['reboot_tz'], timezone_identifiers_list(), true)) $c['reboot_tz'] = 'Africa/Cairo';
     return $c;
 }
 function smpro_su_cfg_save(array $patch): array { $c = array_replace(smpro_su_cfg(), $patch); smpro_su_save('cfg', $c); return smpro_su_cfg(); }
@@ -126,7 +128,7 @@ function smpro_su_check(bool $notify = true): array {
                 'Pending on this server: ' . count($s['pending']) . ' package(s) - ' . implode(', ', array_map(fn($k, $n) => $k . ' ' . $n, array_keys($kinds), $kinds)) . '.'
               . ($hl ? "\nWorth attention: " . implode(', ', array_map(fn($x) => $x['name'] . ' ' . $x['version'], array_slice(array_values($hl), 0, 8))) : '')
               . (!empty($s['cpanel']['behind']) ? "\ncPanel " . $s['cpanel']['current'] . ' -> ' . $s['cpanel']['latest'] . ' (tier ' . $s['cpanel']['tier'] . ')' : '')
-              . "\nMode: " . ($cfg['mode'] === 'auto' ? 'automatic - applied at ' . sprintf('%02d:00', $cfg['hour']) . ' server time, no reboot' : 'manual - open System updates and press Update now'));
+              . "\nMode: " . ($cfg['mode'] === 'auto' ? 'automatic - applied at ' . sprintf('%02d:00', $cfg['hour']) . ' server time' . ($cfg['auto_reboot'] ? ', reboot if needed between ' . sprintf('%02d:00-%02d:00', $cfg['reboot_from'], $cfg['reboot_to']) . ' ' . $cfg['reboot_tz'] : ', no reboot') : 'manual - open System updates and press Update now'));
         }
         $s['seen_sig'] = $sig;
     }
@@ -317,7 +319,48 @@ function smpro_su_apply(string $by = 'operator', bool $cpanelToo = false): array
         elseif ($cfg['notify_result']) @smpro_notify('sysupd_result', 'System update applied (' . $rec['updated'] . ' package(s))', $rec['msg']);
     }
     smpro_su_check(false);   // refresh what is still pending (a kernel waiting for a reboot, a skipped repository)
+    if ($rec['ok']) { $rp = smpro_su_reboot_plan('after the update by ' . $by); if (!empty($rp['planned'])) { $rec['reboot'] = $rp['local']; $s = smpro_su_state(); $s['last_apply'] = $rec; smpro_su_state_save($s); } }
     return $rec;
+}
+
+/* ------------------------------------------------------------------ reboot after an update */
+/** Does the system need a reboot to use what was installed? (new kernel, or dnf's needs-restarting says so) */
+function smpro_su_reboot_needed(): array {
+    $k = smpro_su_check_kernel();
+    if (!empty($k['reboot_pending'])) return [true, 'new kernel ' . $k['installed'] . ' installed (running ' . $k['running'] . ')'];
+    if (is_executable('/usr/bin/needs-restarting')) { [$rc, $o] = smpro_su_run('/usr/bin/needs-restarting -r', 60); if ($rc === 1) return [true, 'core libraries were updated (' . trim(strtok((string)$o, "\n")) . ')']; }
+    return [false, ''];
+}
+/** The next moment inside the reboot window [from, to) of the chosen time zone, at least 10 minutes from now, with a
+ *  random minute so servers of one operator do not all go down at once. Never in the last 15 minutes of the window. */
+function smpro_su_reboot_slot(array $cfg, int $now = 0): int {
+    $now = $now ?: time(); $tz = new DateTimeZone($cfg['reboot_tz']);
+    $span = max(15, ($cfg['reboot_to'] - $cfg['reboot_from']) * 60 - 15);
+    for ($d = 0; $d < 3; $d++) {
+        $start = (new DateTime('@' . $now))->setTimezone($tz)->modify('+' . $d . ' day')->setTime($cfg['reboot_from'], 0)->getTimestamp();
+        $end = $start + $span * 60;
+        if ($end <= $now + 600) continue;
+        $lo = max($start, $now + 600);
+        return $lo + random_int(0, max(0, intdiv($end - $lo, 60))) * 60;
+    }
+    return $now + 86400;
+}
+/** With "reboot automatically" on: when the system needs a reboot and none is scheduled, schedule one in the window.
+ *  The reboot itself is the Scheduled Reboot feature: it re-checks the server at that minute and aborts if unsafe. */
+function smpro_su_reboot_plan(string $why = ''): array {
+    $cfg = smpro_su_cfg(); if (!$cfg['auto_reboot']) return ['planned' => false, 'why' => 'off'];
+    if (!function_exists('smpro_reboot_sched_save')) { $f = __DIR__ . '/reboot.php'; if (is_file($f)) require_once $f; }
+    if (!function_exists('smpro_reboot_sched_save')) return ['planned' => false, 'why' => 'reboot engine missing'];
+    $cur = smpro_reboot_sched(); if (!empty($cur['enabled']) && $cur['at'] > time()) return ['planned' => false, 'why' => 'already scheduled for ' . date('Y-m-d H:i', $cur['at'])];
+    [$need, $reason] = smpro_su_reboot_needed(); if (!$need) return ['planned' => false, 'why' => 'no reboot needed'];
+    $at = smpro_su_reboot_slot($cfg);
+    $r = smpro_reboot_sched_save(['enabled' => true, 'at' => $at, 'target' => 'next']);
+    $local = (new DateTime('@' . $at))->setTimezone(new DateTimeZone($cfg['reboot_tz']))->format('Y-m-d H:i');
+    smpro_su_log('reboot planned: ' . $reason . ' -> ' . $local . ' ' . $cfg['reboot_tz'] . ' (' . ($r['ok'] ? 'ok' : $r['msg']) . ')');
+    if (!empty($r['ok']) && function_exists('smpro_notify')) @smpro_notify('sysupd_reboot_planned', 'Reboot scheduled after the update: ' . $local . ' ' . $cfg['reboot_tz'],
+        'The update needs a reboot: ' . $reason . '. It is scheduled for ' . $local . ' (' . $cfg['reboot_tz'] . '), inside the window ' . sprintf('%02d:00-%02d:00', $cfg['reboot_from'], $cfg['reboot_to']) . '. Safety checks run again at that minute and the reboot is cancelled if anything critical fails. Cancel it from the Scheduled Reboot page.' . ($why !== '' ? ' (' . $why . ')' : ''));
+    if (function_exists('smpro_audit')) smpro_audit('sysupd_reboot_planned', ['at' => $at, 'reason' => $reason, 'ok' => !empty($r['ok'])]);
+    return ['planned' => !empty($r['ok']), 'at' => $at, 'local' => $local, 'reason' => $reason, 'msg' => $r['msg'] ?? ''];
 }
 
 /* ------------------------------------------------------------------ schedule */
@@ -335,6 +378,8 @@ function smpro_su_tick(): array {
         $la = (array)($s['last_apply'] ?? []);
         if (date('Y-m-d', (int)($la['at'] ?? 0)) !== date('Y-m-d')) { smpro_su_apply('auto'); $did[] = 'applied'; }
     }
+    // a reboot still owed (an update applied by hand, by cPanel, or a plan cancelled by a failed safety check)
+    if ($cfg['auto_reboot'] && !(function_exists('smpro_ctl_disabled') && smpro_ctl_disabled())) { $rp = smpro_su_reboot_plan('reboot still pending'); if (!empty($rp['planned'])) $did[] = 'reboot planned ' . $rp['local']; }
     return $did;
 }
 /** Always scheduled: the check must run whatever the mode, so "manual" still means "shown and told". */
