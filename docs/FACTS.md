@@ -310,3 +310,4 @@
 ## beta408/409 (9 نوفمبر)
 - 408: System updates خيار auto_reboot: لو التحديث محتاج ريبوت (كيرنل جديد أو needs-restarting -r) يتجدول ريبوت بين reboot_from/reboot_to بتوقيت reboot_tz (افتراضى 01:00-03:00 Africa/Cairo) فى دقيقة عشوائية عبر Scheduled Reboot (فحوص أمان عند الدقيقة)، مايستبدلش ريبوت المشغّل. مقفول افتراضيًا. (14:01، 0559219)
 - 409: Site Watch: «Check now» بقى يسأل (موقع واحد / المحمية / الكل) — خانة Automatic protection كانت بتتفهم كاختيار للفحص. قاعدة PHP فى uploads بقت wp-content/uploads أو uploads/images فى أول الـ docroot بس (مش wp-includes/plugins/themes)، وindex.php ≤200 بايت متجاهل؛ الأحداث القديمة بالقاعدة الغلط مابتتحسبش (smpro_sw_event_live). أول فحص baseline مايتعدّش «جديد». (14:17، 3cb951d)
+- 410: Site Watch جدول المواقع بقى صفحات (25/50/100، Prev/Next وأرقام). (16:48، c0cd12f)

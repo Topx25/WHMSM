@@ -70,27 +70,53 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
 <h1 class="h" style="margin:2px 0 4px">&#128065; Site Watch</h1>
 <p class="sub">Who uploaded or changed which file, what ran on the site, what changed in its database — per site. Then fix it or lock it down; every change is backed up first and can be undone.</p>
 
+<div class="card sw-c sw-bar">
+  <div class="sw-bar-l">
+    <div class="sw-h">Check now</div>
+    <div class="sw-row">
+      <select id="swWhat" title="What to check"><option value="one">One site</option><option value="prot">The auto-protected sites</option><option value="scope">All watched sites</option></select>
+      <input type="text" id="swOne" list="swDoms" placeholder="type or pick a site" style="min-width:220px">
+      <button class="sd-go sw-g" id="swCheck" type="button">&#9654; Check now</button>
+    </div>
+  </div>
+  <div class="sw-bar-r">
+    <div id="swJob" class="sw-mut">No check running.</div>
+    <div class="sw-prog" id="swProgW" style="display:none"><div id="swProg"></div></div>
+  </div>
+</div>
+
 <div class="card sw-c">
-  <div class="sw-row">
-    <label class="sw-sw"><input type="checkbox" id="swAuto"> Automatic checks</label>
-    <select id="swScope"><option value="all">All sites</option><option value="list">Only these sites:</option></select>
-    <input type="text" id="swSites" list="swDoms" placeholder="domain names, comma separated" style="min-width:240px">
-    <select id="swFiles"><option value="15">Files every 15 min</option><option value="60">Files every hour</option><option value="360">Files every 6 h</option></select>
-    <select id="swDb"><option value="360">Database every 6 h</option><option value="1440">Database daily</option></select>
-    <select id="swKeep"><option value="30">Keep 30 days</option><option value="90">Keep 90 days</option><option value="180">Keep 180 days</option></select>
+  <div class="sw-row" style="justify-content:space-between"><div class="sw-h" style="margin:0">Settings</div><span class="sw-mut" id="swDirty"></span></div>
+  <div class="sw-grid">
+    <section class="sw-panel">
+      <label class="sw-sw"><span class="sw-tg"><input type="checkbox" id="swAuto"><i></i></span> Automatic checks</label>
+      <p class="sw-help">Checks run in the background on a schedule.</p>
+      <label class="sw-f">Which sites<select id="swScope"><option value="all">All sites</option><option value="list">Only the sites below</option></select></label>
+      <label class="sw-f" id="swSitesW">Sites<input type="text" id="swSites" list="swDoms" placeholder="domain names, comma separated"></label>
+      <div class="sw-3">
+        <label class="sw-f">Files<select id="swFiles"><option value="15">every 15 min</option><option value="60">every hour</option><option value="360">every 6 h</option></select></label>
+        <label class="sw-f">Database<select id="swDb"><option value="360">every 6 h</option><option value="1440">daily</option></select></label>
+        <label class="sw-f">History<select id="swKeep"><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option></select></label>
+      </div>
+    </section>
+    <section class="sw-panel sw-prot">
+      <label class="sw-sw"><span class="sw-tg"><input type="checkbox" id="swProtOn"><i></i></span> Automatic protection</label>
+      <p class="sw-help">When a Critical event is found on these sites, the safe steps run at once (quarantine the file, block who ran it, no PHP in uploads). Database edits always wait for you. Other sites are watched and reported only.</p>
+      <label class="sw-f">Protected sites <span class="sw-mut" id="swProtN"></span><input type="text" id="swProt" list="swDoms" placeholder="domain names, comma separated"></label>
+    </section>
+    <section class="sw-panel">
+      <div class="sw-sw">Instant alerts</div>
+      <p class="sw-help">Sent at once to the report rules below, for these Critical events.</p>
+      <div class="sw-chips">
+        <label><input type="checkbox" class="swAl" value="upload_php"> PHP in uploads</label>
+        <label><input type="checkbox" class="swAl" value="shell_run"> Injected file run</label>
+        <label><input type="checkbox" class="swAl" value="new_admin"> New admin</label>
+        <label><input type="checkbox" class="swAl" value="db_inject"> Script in database</label>
+        <label><input type="checkbox" class="swAl" value="htaccess"> .htaccess change</label>
+      </div>
+    </section>
   </div>
-  <div class="sw-row sw-prot">
-    <label class="sw-sw"><input type="checkbox" id="swProtOn"> Automatic protection</label><span class="sw-mut">only on these sites:</span>
-    <input type="text" id="swProt" list="swDoms" placeholder="pick sites" style="min-width:320px"><span class="sw-mut" id="swProtN"></span>
-    <span class="sw-mut">Other sites are watched and reported only.</span>
-  </div>
-  <div class="sw-row"><span class="sw-mut">Instant alerts on:</span>
-    <label><input type="checkbox" class="swAl" value="upload_php"> PHP in uploads</label><label><input type="checkbox" class="swAl" value="shell_run"> Injected file run</label>
-    <label><input type="checkbox" class="swAl" value="new_admin"> New admin</label><label><input type="checkbox" class="swAl" value="db_inject"> Script in database</label>
-    <label><input type="checkbox" class="swAl" value="htaccess"> .htaccess change</label>
-    <button class="sd-go" id="swSave" type="button">Save</button><select id="swWhat"><option value="one">Check: one site…</option><option value="prot">Check: the auto-protected sites</option><option value="scope">Check: all watched sites</option></select><input type="text" id="swOne" list="swDoms" placeholder="site to check" style="min-width:180px"><button class="sd-go sw-g" id="swCheck" type="button">Check now</button>
-  </div>
-  <div id="swJob" class="sw-mut" style="margin-top:6px"></div>
+  <div class="sw-row" style="justify-content:flex-end;margin-top:10px"><button class="sd-go" id="swSave" type="button">Save settings</button></div>
 </div>
 
 <div class="sw-k" id="swKpi"></div>
@@ -105,14 +131,17 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
 <div class="card sw-c">
   <b>Who gets the reports</b> <span class="sw-mut">— which sites, which numbers, from which level, how often. A site can be in several rules; the same event never goes twice to the same number.</span>
   <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Sites</th><th>Send to</th><th>Channel</th><th>From level</th><th>When</th><th></th></tr></thead><tbody id="swRules"></tbody></table></div>
-  <div class="sw-row" style="margin-top:8px">
-    <select id="rMode"><option value="list">These sites:</option><option value="all">All sites</option></select>
-    <input type="text" id="rSites" list="swDoms" placeholder="domain names, comma separated" style="min-width:220px">
-    <input type="text" id="rTo" placeholder="Numbers / chat ids / e-mails, comma separated" style="min-width:260px">
-    <label><input type="checkbox" class="rCh" value="whatsapp" checked> WhatsApp</label><label><input type="checkbox" class="rCh" value="telegram"> Telegram</label><label><input type="checkbox" class="rCh" value="email"> E-mail</label>
-    <select id="rLevel"><option value="critical">Critical only</option><option value="warning">Warning and above</option><option value="info">Everything</option></select>
-    <select id="rWhen"><option value="instant">Instantly</option><option value="daily">Daily summary</option><option value="weekly">Weekly report</option><option value="instant_daily">Instantly + daily summary</option></select>
-    <button class="sd-go sw-g" id="rAdd" type="button">Add rule</button>
+  <div class="sw-panel" style="margin-top:10px">
+    <div class="sw-sw">New rule</div>
+    <div class="sw-rule">
+      <label class="sw-f">Sites<select id="rMode"><option value="list">These sites</option><option value="all">All sites</option></select></label>
+      <label class="sw-f" id="rSitesW">Which<input type="text" id="rSites" list="swDoms" placeholder="domain names, comma separated"></label>
+      <label class="sw-f">Send to<input type="text" id="rTo" placeholder="numbers / chat ids / e-mails, comma separated"></label>
+      <div class="sw-f">Channel<div class="sw-chips"><label><input type="checkbox" class="rCh" value="whatsapp" checked> WhatsApp</label><label><input type="checkbox" class="rCh" value="telegram"> Telegram</label><label><input type="checkbox" class="rCh" value="email"> E-mail</label></div></div>
+      <label class="sw-f">From level<select id="rLevel"><option value="critical">Critical only</option><option value="warning">Warning and above</option><option value="info">Everything</option></select></label>
+      <label class="sw-f">When<select id="rWhen"><option value="instant">Instantly</option><option value="daily">Daily summary</option><option value="weekly">Weekly report</option><option value="instant_daily">Instantly + daily summary</option></select></label>
+    </div>
+    <div class="sw-row" style="justify-content:flex-end"><button class="sd-go sw-g" id="rAdd" type="button">+ Add rule</button></div>
   </div>
   <p class="sw-mut" style="font-size:12px;margin:6px 0 0">WhatsApp numbers in international form without + (e.g. 2010xxxxxxxx); the WhatsApp gateway of the Notifications page is used.</p>
 </div>
@@ -124,6 +153,18 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
 .sw-k{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}.sw-k div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px}.sw-k b{font-size:22px;display:block}
 .pl{display:inline-block;border-radius:20px;padding:1px 8px;font-size:12px;font-weight:700}.pr{background:#fee2e2;color:#991b1b}.pa{background:#fef3c7;color:#92400e}.pg{background:#dcfce7;color:#166534}.ps{background:#e2e8f0;color:#334155}
 .sw-tl{border-left:2px solid var(--line);margin-left:6px;padding-left:14px}.sw-ev{padding:6px 0 10px}.sw-ev small{color:#64748b}.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.sw-h{font-weight:800;font-size:15px;margin-bottom:6px}
+.sw-bar{display:flex;gap:16px;justify-content:space-between;align-items:center;flex-wrap:wrap}.sw-bar-r{flex:1;min-width:260px;max-width:520px}
+.sw-prog{height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin-top:6px}.sw-prog>div{height:100%;width:0;background:#059669;transition:width .4s}
+.sw-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px}.sw-panel{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
+.sw-panel.sw-prot{border-color:#bbf7d0;background:#f7fef9}.sw-help{color:#64748b;font-size:12px;margin:4px 0 8px}
+.sw-f{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:#475569;margin-bottom:8px}.sw-f input[type=text],.sw-f select{border:1px solid var(--line);border-radius:9px;padding:7px 9px;font-weight:400;font-size:13px;color:#0f172a}
+.sw-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.sw-chips{display:flex;flex-wrap:wrap;gap:6px}.sw-chips label{border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:13px;font-weight:600;color:#0f172a;cursor:pointer;display:inline-flex;gap:5px;align-items:center}
+.sw-rule{display:grid;grid-template-columns:150px 1fr 1fr;gap:8px 12px;margin-top:8px}
+.sw-tg{position:relative;width:36px;height:20px;display:inline-block}.sw-tg input{opacity:0;width:0;height:0}.sw-tg i{position:absolute;inset:0;background:#cbd5e1;border-radius:20px;transition:.2s}.sw-tg i:before{content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.2s}
+.sw-tg input:checked+i{background:#059669}.sw-tg input:checked+i:before{transform:translateX(16px)}.sw-tg input:focus-visible+i{outline:2px solid var(--brand);outline-offset:2px}
+.sw-k div{cursor:pointer}.sw-k div:hover{border-color:var(--brand)}.sd-go:disabled{opacity:.5;cursor:default}
+@media(max-width:1000px){.sw-grid,.sw-rule{grid-template-columns:1fr}}
 .sw-2{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}@media(max-width:900px){.sw-2,.sw-k{grid-template-columns:1fr}}
 </style>
 <script>
@@ -133,15 +174,16 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
   function post(d){var f=new URLSearchParams();f.set('smpro_csrf',SW_CSRF);Object.keys(d).forEach(function(k){f.set(k,d[k]);});return fetch('index.cgi?page=site-watch',{method:'POST',body:f,credentials:'same-origin'}).then(function(r){return r.json();});}
   function pill(r){return {critical:'<span class="pl pr">Critical</span>',warning:'<span class="pl pa">Warning</span>',clean:'<span class="pl pg">Clean</span>',unchecked:'<span class="pl ps">Not checked</span>'}[r]||e(r);}
   function ago(t){if(!t)return '—';var s=Math.round(Date.now()/1000-t);return s<3600?Math.round(s/60)+' min ago':s<86400?Math.round(s/3600)+' h ago':Math.round(s/86400)+' d ago';}
-  function load(){fetch('index.cgi?page=site-watch&sw_state=1',{cache:'no-store',credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){var first=!S;S=j;if(first)fillCfg();draw();clearTimeout(tm);if(j.job&&j.job.running)tm=setTimeout(load,4000);});}
+  function load(){fetch('index.cgi?page=site-watch&sw_state=1',{cache:'no-store',credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){var first=!S;S=j;if(first){fillCfg();vis();}draw();clearTimeout(tm);if(j.job&&j.job.running)tm=setTimeout(load,4000);});}
   function fillCfg(){var c=S.cfg;$('swAuto').checked=!!c.auto;$('swScope').value=c.scope;$('swSites').value=(c.sites||[]).join(', ');$('swFiles').value=String(c.files_min);$('swDb').value=String(c.db_min);$('swKeep').value=String(c.keep_days);
     $('swProtOn').checked=(c.protect||[]).length>0;$('swProt').value=(c.protect||[]).join(', ');[].forEach.call(document.querySelectorAll('.swAl'),function(x){x.checked=!!c.alerts[x.value];});}
   function draw(){
     var jb=S.job||{},rs=S.rows||[],c=S.cfg;
-    $('swJob').textContent=jb.running?('Checking '+(jb.done||0)+' of '+(jb.total||0)+(jb.current?' — now: '+jb.current:'')+' · you can close this page'):(jb.finished?'Last check finished '+ago(jb.finished):'');
+    $('swProgW').style.display=jb.running?'':'none';if(jb.running)$('swProg').style.width=Math.round(100*(jb.done||0)/Math.max(1,jb.total||1))+'%';
+    $('swJob').textContent=jb.running?('Checking '+(jb.done||0)+' of '+(jb.total||0)+(jb.current?' — now: '+jb.current:'')+' · you can close this page'):(jb.finished?'Last check finished '+ago(jb.finished)+'.':'No check running.');
     $('swCheck').disabled=!!jb.running; $('swProtN').textContent=(c.protect||[]).length+' of '+rs.length;
     var cr=rs.filter(function(r){return r.risk==='critical';}).length,wa=rs.filter(function(r){return r.risk==='warning';}).length,np=rs.reduce(function(a,r){return a+(r.newphp||0);},0),db=rs.reduce(function(a,r){return a+(r.db?1:0);},0),cl=rs.filter(function(r){return r.risk==='clean';}).length;
-    $('swKpi').innerHTML='<div><b style="color:#dc2626">'+cr+'</b>Critical sites</div><div><b style="color:#b45309">'+wa+'</b>Warnings</div><div><b>'+np+'</b>New PHP files (last check)</div><div><b style="color:#dc2626">'+db+'</b>Database changes (24 h)</div><div><b>'+cl+'</b>Clean sites</div>';
+    $('swKpi').innerHTML='<div data-k="crit"><b style="color:#dc2626">'+cr+'</b>Critical sites</div><div data-k="warn"><b style="color:#b45309">'+wa+'</b>Warnings</div><div data-k="new"><b>'+np+'</b>New PHP files (last check)</div><div data-k="db"><b style="color:#dc2626">'+db+'</b>Database changes (24 h)</div><div data-k="clean"><b>'+cl+'</b>Clean sites</div>';
     var f=$('swF').value,q=$('swQ').value.toLowerCase(),hide=$('swHide').checked,h='';
     var list=rs.slice().sort(function(a,b){var o={critical:0,warning:1,unchecked:2,clean:3};return (o[a.risk]-o[b.risk])||(a.domain<b.domain?-1:1);}).filter(function(r){
       if(hide&&r.risk==='clean')return false; if(f==='att'&&r.risk!=='critical'&&r.risk!=='warning')return false; if(q&&(r.domain+' '+(r.user||'')).toLowerCase().indexOf(q)<0)return false; return true;});
@@ -187,7 +229,12 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
       var s=plan[+b.dataset.fix];if(!confirm(s.label+'?'+(s.safe?'':'\n\nThis is a by-hand step: read it carefully.')))return;post({sw_action:'fix',domain:d,act:s.action,arg:s.arg}).then(function(x){alert(x.msg||'');site(d);});};
   });}
   $('swSave').onclick=function(){post({sw_action:'cfg',auto:$('swAuto').checked?'1':'0',scope:$('swScope').value,sites:$('swSites').value,files_min:$('swFiles').value,db_min:$('swDb').value,keep_days:$('swKeep').value,
-    protect:$('swProtOn').checked?$('swProt').value:'',alerts:[].filter.call(document.querySelectorAll('.swAl'),function(x){return x.checked;}).map(function(x){return x.value;}).join(',')}).then(function(j){$('swJob').textContent=j.msg||'';S=null;load();});};
+    protect:$('swProtOn').checked?$('swProt').value:'',alerts:[].filter.call(document.querySelectorAll('.swAl'),function(x){return x.checked;}).map(function(x){return x.value;}).join(',')}).then(function(j){$('swJob').textContent=j.msg||'';$('swDirty').textContent='Saved';S=null;load();});};
+  function vis(){$('swSitesW').style.display=$('swScope').value==='list'?'':'none';$('swProt').disabled=!$('swProtOn').checked;$('rSitesW').style.display=$('rMode').value==='all'?'none':'';}
+  ['swAuto','swScope','swSites','swFiles','swDb','swKeep','swProtOn','swProt'].forEach(function(id){$(id).addEventListener('change',function(){vis();$('swDirty').textContent='Unsaved changes';});});
+  [].forEach.call(document.querySelectorAll('.swAl'),function(x){x.addEventListener('change',function(){$('swDirty').textContent='Unsaved changes';});});
+  $('rMode').addEventListener('change',vis);
+  $('swKpi').onclick=function(ev){var k=ev.target.closest('div[data-k]');if(!k)return;$('swF').value=k.dataset.k==='clean'?'all':'att';$('swHide').checked=k.dataset.k!=='clean';PG=1;draw();};
   $('swWhat').onchange=function(){$('swOne').style.display=this.value==='one'?'':'none';};
   $('swCheck').onclick=function(){var w=$('swWhat').value,d='';
     if(w==='one'){d=$('swOne').value.trim();if(!d){alert('Type the site to check.');return;}}
