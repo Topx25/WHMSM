@@ -96,7 +96,7 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
 <div class="sw-k" id="swKpi"></div>
 
 <div class="card sw-c">
-  <div class="sw-row"><select id="swF"><option value="att">Needs attention</option><option value="all">All sites</option></select><input type="text" id="swQ" placeholder="Filter by domain or account"><label class="sw-sw"><input type="checkbox" id="swHide" checked> Hide clean sites</label></div>
+  <div class="sw-row"><select id="swF"><option value="att">Needs attention</option><option value="all">All sites</option></select><input type="text" id="swQ" placeholder="Filter by domain or account"><label class="sw-sw"><input type="checkbox" id="swHide" checked> Hide clean sites</label><select id="swPer"><option value="25">25 per page</option><option value="50" selected>50 per page</option><option value="100">100 per page</option></select><span id="swPager" class="sw-row" style="margin-left:auto"></span></div>
   <div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Site</th><th>Account</th><th>Auto-protect</th><th>Risk</th><th>Last 24 h</th><th>New PHP</th><th>Database</th><th>Checked</th><th></th></tr></thead><tbody id="swRows"></tbody></table></div>
 </div>
 
@@ -128,7 +128,7 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
 </style>
 <script>
 (function(){
-  var S=null,tm=null,$=function(i){return document.getElementById(i);};
+  var S=null,tm=null,PG=1,$=function(i){return document.getElementById(i);};
   function e(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function post(d){var f=new URLSearchParams();f.set('smpro_csrf',SW_CSRF);Object.keys(d).forEach(function(k){f.set(k,d[k]);});return fetch('index.cgi?page=site-watch',{method:'POST',body:f,credentials:'same-origin'}).then(function(r){return r.json();});}
   function pill(r){return {critical:'<span class="pl pr">Critical</span>',warning:'<span class="pl pa">Warning</span>',clean:'<span class="pl pg">Clean</span>',unchecked:'<span class="pl ps">Not checked</span>'}[r]||e(r);}
@@ -143,8 +143,15 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
     var cr=rs.filter(function(r){return r.risk==='critical';}).length,wa=rs.filter(function(r){return r.risk==='warning';}).length,np=rs.reduce(function(a,r){return a+(r.newphp||0);},0),db=rs.reduce(function(a,r){return a+(r.db?1:0);},0),cl=rs.filter(function(r){return r.risk==='clean';}).length;
     $('swKpi').innerHTML='<div><b style="color:#dc2626">'+cr+'</b>Critical sites</div><div><b style="color:#b45309">'+wa+'</b>Warnings</div><div><b>'+np+'</b>New PHP files (last check)</div><div><b style="color:#dc2626">'+db+'</b>Database changes (24 h)</div><div><b>'+cl+'</b>Clean sites</div>';
     var f=$('swF').value,q=$('swQ').value.toLowerCase(),hide=$('swHide').checked,h='';
-    rs.slice().sort(function(a,b){var o={critical:0,warning:1,unchecked:2,clean:3};return o[a.risk]-o[b.risk];}).forEach(function(r){
-      if(hide&&r.risk==='clean')return; if(f==='att'&&r.risk!=='critical'&&r.risk!=='warning')return; if(q&&(r.domain+' '+(r.user||'')).toLowerCase().indexOf(q)<0)return;
+    var list=rs.slice().sort(function(a,b){var o={critical:0,warning:1,unchecked:2,clean:3};return (o[a.risk]-o[b.risk])||(a.domain<b.domain?-1:1);}).filter(function(r){
+      if(hide&&r.risk==='clean')return false; if(f==='att'&&r.risk!=='critical'&&r.risk!=='warning')return false; if(q&&(r.domain+' '+(r.user||'')).toLowerCase().indexOf(q)<0)return false; return true;});
+    var per=+$('swPer').value,pages=Math.max(1,Math.ceil(list.length/per));if(PG>pages)PG=pages;
+    var ph='<span class="sw-mut">'+(list.length?((PG-1)*per+1)+'–'+Math.min(PG*per,list.length)+' of '+list.length:'0')+'</span> ';
+    if(pages>1){ph+='<button class="sd-go sw-o swPg" data-p="'+Math.max(1,PG-1)+'"'+(PG===1?' disabled':'')+'>‹ Prev</button>';
+      for(var p=1;p<=pages;p++){if(p===1||p===pages||Math.abs(p-PG)<=2)ph+='<button class="sd-go swPg'+(p===PG?'':' sw-o')+'" data-p="'+p+'">'+p+'</button>';else if(Math.abs(p-PG)===3)ph+='<span class="sw-mut">…</span>';}
+      ph+='<button class="sd-go sw-o swPg" data-p="'+Math.min(pages,PG+1)+'"'+(PG===pages?' disabled':'')+'>Next ›</button>';}
+    $('swPager').innerHTML=ph;
+    list.slice((PG-1)*per,PG*per).forEach(function(r){
       var pr=(c.protect||[]).indexOf(r.domain)>=0;
       h+='<tr><td><b>'+e(r.domain)+'</b></td><td>'+e(r.user||'')+'</td><td>'+(pr?'<span class="pl pg">On</span>':'<span class="pl ps">Watch only</span>')+'</td><td>'+pill(r.risk)+'</td><td>'+e(r.top||'')+'</td><td>'+(r.newphp?'<span class="pl pa">'+r.newphp+'</span>':'0')+'</td><td>'+(r.db?'<span class="pl pr">'+r.db+'</span>':'—')+'</td><td>'+ago(r.checked_at)+'</td><td><a href="#" class="swOpen" data-d="'+e(r.domain)+'">Open</a></td></tr>';
     });
@@ -190,7 +197,9 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
   $('rAdd').onclick=function(){post({sw_action:'rule_add',sites_mode:$('rMode').value,sites:$('rSites').value,to:$('rTo').value,channels:[].filter.call(document.querySelectorAll('.rCh'),function(x){return x.checked;}).map(function(x){return x.value;}).join(','),level:$('rLevel').value,when:$('rWhen').value}).then(function(j){alert(j.msg);load();});};
   $('swRules').onclick=function(ev){var a=ev.target.closest('a');if(!a)return;ev.preventDefault();if(a.className==='rT')post({sw_action:'rule_test',i:a.dataset.t}).then(function(j){alert(j.msg);});else if(confirm('Delete this rule?'))post({sw_action:'rule_del',i:a.dataset.x}).then(function(){load();});};
   $('swRows').onclick=function(ev){var a=ev.target.closest('a.swOpen');if(!a)return;ev.preventDefault();site(a.dataset.d);};
-  $('swF').onchange=draw;$('swQ').oninput=draw;$('swHide').onchange=draw;
+  var rst=function(){PG=1;draw();};
+  $('swF').onchange=rst;$('swQ').oninput=rst;$('swHide').onchange=rst;$('swPer').onchange=rst;
+  $('swPager').onclick=function(ev){var b=ev.target.closest('.swPg');if(!b||b.disabled)return;PG=+b.dataset.p;draw();$('swPager').scrollIntoView({block:'nearest'});};
   load();
 })();
 </script>

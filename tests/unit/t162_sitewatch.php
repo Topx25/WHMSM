@@ -30,3 +30,4 @@ ok(smpro_sw_classify_file('wp-content/plugins/really-simple-ssl/assets/img/index
 ok(smpro_sw_classify_file('wp-content/uploads/index.php', true, 28) === null, 'F8: the silence-is-golden index.php is not flagged');
 is_eq(smpro_sw_classify_file('wp-content/uploads/cfdb7_uploads/index.php', true, 4000)[0] ?? '', 'critical', 'F9: a real PHP file in uploads still is');
 ok(!smpro_sw_event_live(['kind' => 'upload_php', 'data' => ['path' => 'wp-includes/php-ai-client/src/Files/ValueObjects/MimeType.php']]), 'F10: old false alarms stop counting');
+has($m, "var per=+\$('swPer').value,pages=Math.max(1,Math.ceil(list.length/per));", 'U1: the sites table is paginated');
