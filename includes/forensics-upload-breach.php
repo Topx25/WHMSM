@@ -285,7 +285,12 @@ function smpro_ub_harden_dir($account, $dir) {
     $under = false; foreach ((array)($scope['docroots'] ?? []) as $droot) { $dr = @realpath($droot); if ($dr && strpos($rp . '/', rtrim($dr, '/') . '/') === 0) { $under = true; break; } }
     if (!$under && !($home !== '' && strpos($rp . '/', $home . '/') === 0)) return ['ok'=>false, 'msg'=>"refused: directory is not inside this account's web root"];
     $ht = $rp . '/.htaccess';
-    $existing = is_file($ht) ? (string)@file_get_contents($ht) : '';
+    // the account owns this folder: a .htaccess that is a link (or a pipe/device) would make root read, copy,
+    // append to and chmod whatever it points at. Only a regular file of a sane size is touched.
+    clearstatcache(true, $ht);
+    if (is_link($ht) || (file_exists($ht) && !is_file($ht))) return ['ok'=>false, 'msg'=>'refused: .htaccess in this directory is a link or not a regular file'];
+    if (is_file($ht) && (int)@filesize($ht) > 1048576) return ['ok'=>false, 'msg'=>'refused: .htaccess is larger than 1 MB'];
+    $existing = is_file($ht) ? (string)@file_get_contents($ht, false, null, 0, 1048576) : '';
     if (strpos($existing, 'Safety Monitor Pro — disable PHP execution') !== false) return ['ok'=>true, 'msg'=>'Already hardened — SM Pro .htaccess is present in this directory.'];
     if (is_file($ht)) { $b = SMPRO_VARLIB . '/quarantine'; @is_dir($b) || @mkdir($b, 0700, true); @copy($ht, $b . '/htaccess-' . $account . '-' . substr(md5($rp), 0, 10) . '-' . gmdate('Ymd_His') . '.bak'); }
     $block = "# Added by Safety Monitor Pro — disable PHP execution in this upload directory (reversible: delete this block)\n"
@@ -294,8 +299,12 @@ function smpro_ub_harden_dir($account, $dir) {
            . "RemoveType .php .phtml .phar .pht\n"
            . "<FilesMatch \"\\.(php|phtml|phar|pht|php[3457]|pgif)$\">\n  SetHandler None\n  Require all denied\n</FilesMatch>\n";
     $new = ($existing !== '' ? rtrim($existing, "\n") . "\n\n" : '') . $block;
-    if (@file_put_contents($ht, $new) === false) return ['ok'=>false, 'msg'=>'could not write .htaccess (permissions)'];
-    @chmod($ht, 0644);
+    // new file created exclusively under a random name, then renamed over the old one: nothing is written or
+    // chmod-ed through the final path
+    $tmp = $rp . '/.htaccess.smpro-tmp-' . bin2hex(random_bytes(6));
+    $th = @fopen($tmp, 'xb'); $wok = $th !== false && @fwrite($th, $new) !== false; if ($th) @fclose($th);
+    if ($wok) { $dst = @stat($rp); if ($dst && !is_link($tmp)) { @chmod($tmp, 0644); @chown($tmp, $dst['uid']); @chgrp($tmp, $dst['gid']); } $wok = !is_link($ht) && @rename($tmp, $ht); }
+    if (!$wok) { @unlink($tmp); return ['ok'=>false, 'msg'=>'could not write .htaccess (permissions)']; }
     if (function_exists('smpro_audit')) smpro_audit('upload_breach_harden_dir', ['dir'=>$rp]);
     return ['ok'=>true, 'msg'=>'PHP execution disabled in ' . $rp . ' — a planted shell can no longer run here. Reversible; any prior .htaccess was backed up.'];
 }

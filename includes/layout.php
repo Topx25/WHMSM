@@ -1025,8 +1025,8 @@ function smpro_layout_footer() {
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function nl2br(s){return esc(s).replace(/\n/g,'<br>');}
   function typeOf(m){m=String(m||'');
-    if(/(✓|✅|success|saved|done|enabled|applied|updated|created|restored|terminated|suspended|reloaded|installed|activated)/i.test(m))return 'ok';
     if(/(✗|✘|❌|⚠|fail|error|denied|invalid|refused|could not|cannot|unable|not found|aborted|required)/i.test(m))return 'err';
+    if(/(✓|✅|success|saved|done|enabled|applied|updated|created|restored|terminated|suspended|reloaded|installed|activated)/i.test(m))return 'ok';
     return 'info';}
   function icon(t){return t==='ok'?'&#10003;':(t==='err'?'&#9888;':'&#8505;');}
   function wrap(){var w=document.getElementById('smToastWrap');if(!w){w=document.createElement('div');w.id='smToastWrap';document.body.appendChild(w);}return w;}

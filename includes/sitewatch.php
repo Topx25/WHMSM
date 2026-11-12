@@ -19,6 +19,7 @@
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
 if (!defined('SMPRO_SW_DIR')) define('SMPRO_SW_DIR', SMPRO_VARLIB . '/sitewatch');
+require_once __DIR__ . '/swdeep.php';   // deep checks: core checksums, cloaking, shell locks, file-manager plugins
 
 /* ============================ storage ============================ */
 function smpro_sw_path(string $f): string { $p = SMPRO_SW_DIR . '/' . $f; @is_dir(dirname($p)) || @mkdir(dirname($p), 0700, true); return $p; }
@@ -182,7 +183,8 @@ function smpro_sw_checks(string $doc): array {
     $exp = array_values(array_unique($exp));
     $c[] = $exp ? ['fail', 'Files that must not be reachable from the web: ' . implode(', ', array_slice($exp, 0, 8)), 'exposed', $exp] : ['ok', 'No .env / .git / dump / backup files in the web root', 'exposed', []];
     $up = $doc . '/wp-content/uploads';
-    if (@is_dir($up)) { $h = (string)@file_get_contents($up . '/.htaccess'); $c[] = preg_match('/(Require all denied|Deny from all|php_flag\s+engine\s+off|SetHandler\s+none)/i', $h) ? ['ok', 'PHP cannot run inside uploads', 'uploads', []] : ['warn', 'PHP can run inside uploads', 'uploads', []]; }
+    if (@is_dir($up)) { $uh = $up . '/.htaccess'; $h = (@is_file($uh) && !@is_link($uh)) ? (string)@file_get_contents($uh, false, null, 0, 262144) : '';   // a pipe or a link here would hang or mislead the round
+        $c[] = preg_match('/(Require all denied|Deny from all|php_flag\s+engine\s+off|SetHandler\s+none)/i', $h) ? ['ok', 'PHP cannot run inside uploads', 'uploads', []] : ['warn', 'PHP can run inside uploads', 'uploads', []]; }
     if (@is_file($doc . '/wp-includes/version.php') && preg_match("/wp_version\s*=\s*'([0-9.]+)'/", (string)@file_get_contents($doc . '/wp-includes/version.php'), $m)) $c[] = ['info', 'WordPress ' . $m[1], 'wpver', [$m[1]]];
     if (@is_file($doc . '/wp-config.php') && ((@fileperms($doc . '/wp-config.php') & 0004) !== 0)) $c[] = ['warn', 'wp-config.php is readable by every account on the server (mode ' . substr(sprintf('%o', @fileperms($doc . '/wp-config.php')), -3) . ')', 'cfgperm', []];
     return $c;
@@ -235,12 +237,13 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
     if (!smpro_sw_doc_ok($doc, $user)) return ['ok' => false, 'msg' => 'the web root is not inside the account home - not checked'];
     $st = smpro_sw_load('sites/' . $dom . '/state.json'); $batch = [];
     $files = smpro_sw_scan_files($doc);
-    $access = null;
+    $access = null; $coreTouched = false;
     if ($files !== null) {
         $prevF = smpro_sw_load('sites/' . $dom . '/files.json');
         $first = !$prevF;
         $new = array_diff_key($files, $prevF); $chg = []; foreach (array_intersect_key($files, $prevF) as $k => $v) if ($prevF[$k] !== $v) $chg[$k] = $v;
         $del = $first ? [] : array_diff_key($prevF, $files);
+        foreach (array_keys($new + $chg) as $rel) if (preg_match('#^(wp-includes/|wp-admin/|[^/]+\.php$)#', (string)$rel)) { $coreTouched = true; break; }
         $flag = [];
         foreach ([[$new, true], [$chg, false]] as [$set, $isNew]) foreach ($set as $rel => $v) { $c = smpro_sw_classify_file((string)$rel, $isNew, (int)explode('|', $v)[0]); if ($c) $flag[$rel] = [$c[0], $c[1], $isNew, (int)explode('|', $v)[1]]; }
         if ($first) { $flag = array_filter($flag, fn($x) => $x[0] === 'critical'); }   // first look: only what is dangerous already
@@ -271,7 +274,9 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
             smpro_sw_save('sites/' . $dom . '/db.json', $snap); $st['db_at'] = time(); $st['admins'] = array_keys($snap['admins']);
         }
     }
-    $st['checks'] = smpro_sw_checks($doc);
+    $prevChecks = (array)($st['checks'] ?? []);
+    $coreDue = $withDb || $coreTouched || !array_filter($prevChecks, fn($c) => ($c[2] ?? '') === 'core');
+    $st['checks'] = array_merge(smpro_sw_checks($doc), smpro_swd_run($dom, $doc, $user, $coreDue, $batch, $prevChecks));
     foreach ($st['checks'] as $c) if ($c[2] === 'exposed') {
         $now = $c[0] === 'fail' ? (array)$c[3] : []; sort($now);
         if ($now && $now !== (array)($st['exposed_told'] ?? [])) smpro_sw_event_add($dom, $batch, 'critical', 'exposed', $c[1], ['path' => 'exposed', 'files' => $now]);
@@ -367,6 +372,7 @@ function smpro_sw_plan(string $dom): array {
         if ($c[2] === 'exposed' && $c[0] === 'fail') foreach ((array)$c[3] as $f) $steps[] = ['action' => 'quarantine', 'arg' => $f, 'label' => 'Move ' . $f . ' out of the web root (original kept)', 'safe' => false, 'event' => ''];
         if ($c[2] === 'cfgperm') $steps[] = ['action' => 'cfg_perm', 'arg' => '', 'label' => 'Protect: make wp-config.php readable by its own account only (600) - only where PHP runs as the account (PHP-FPM / suPHP)', 'safe' => false, 'event' => ''];
     }
+    foreach (smpro_swd_plan($dom, smpro_sw_events($dom, 300), $doc, (string)($st['user'] ?? '')) as $s) if ($s['action'] !== 'quarantine' || !isset($seen['q' . $s['arg']])) $steps[] = $s;
     if (array_filter(smpro_sw_events($dom, 300), fn($e) => $e['kind'] === 'shell_run' && empty($e['resolved'])))
         $steps[] = ['action' => 'advice', 'arg' => '', 'label' => 'By hand: an injected file ran - change the database password and the WordPress salts in wp-config.php', 'safe' => false, 'event' => ''];
     return $steps;
@@ -387,7 +393,11 @@ function smpro_sw_fix(string $dom, string $action, string $arg): array {
         $res = ['ok' => true, 'msg' => 'Moved to quarantine: ' . $arg . ' (kept at ' . $to . ')', 'undo_id' => $id];
     } elseif ($action === 'block_ip') {
         if (!filter_var($arg, FILTER_VALIDATE_IP) || !function_exists('smpro_fw_block_ip')) return ['ok' => false, 'msg' => 'bad address'];
-        $r = smpro_fw_block_ip($arg, 'Site Watch: ran an injected file on ' . $dom);
+        // the same refusals as every automatic block: never this server, never a private/local address, never in dry-run
+        if (function_exists('smpro_is_server_ip') && smpro_is_server_ip($arg)) return ['ok' => false, 'msg' => 'refused: the address of this server'];
+        if (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($arg)) return ['ok' => false, 'msg' => 'refused: private/local address'];
+        if (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) return ['ok' => false, 'msg' => 'dry-run mode: ' . $arg . ' was not blocked'];
+        $r = function_exists('smpro_im_block_ip') ? smpro_im_block_ip($arg, 'Site Watch: ran an injected file on ' . $dom) : smpro_fw_block_ip($arg, 'Site Watch: ran an injected file on ' . $dom);
         $ok = is_array($r) ? !empty($r['ok']) : (bool)$r;
         $res = ['ok' => $ok, 'msg' => ($ok ? 'Blocked ' : 'Could not block ') . $arg . (is_array($r) && !empty($r['msg']) ? ' - ' . $r['msg'] : '')];
     } elseif ($action === 'protect_uploads') {
@@ -425,6 +435,8 @@ function smpro_sw_fix(string $dom, string $action, string $arg): array {
         $res = ['ok' => true, 'msg' => 'Administrator ' . $arg . ' removed; the user and its settings are backed up in ' . $bak];
     } elseif ($action === 'advice') {
         return ['ok' => false, 'msg' => 'This step is done by hand.'];
+    } elseif (($deep = smpro_swd_fix($dom, $doc, $user, $action, $arg)) !== null) {
+        $res = $deep;
     }
     if (!empty($res['ok'])) {
         // the events the step answered are marked resolved

@@ -312,3 +312,15 @@
 - 409: Site Watch: «Check now» بقى يسأل (موقع واحد / المحمية / الكل) — خانة Automatic protection كانت بتتفهم كاختيار للفحص. قاعدة PHP فى uploads بقت wp-content/uploads أو uploads/images فى أول الـ docroot بس (مش wp-includes/plugins/themes)، وindex.php ≤200 بايت متجاهل؛ الأحداث القديمة بالقاعدة الغلط مابتتحسبش (smpro_sw_event_live). أول فحص baseline مايتعدّش «جديد». (14:17، 3cb951d)
 - 410: Site Watch جدول المواقع بقى صفحات (25/50/100، Prev/Next وأرقام). (16:48، c0cd12f)
 - 411: Site Watch تصميم جديد: شريط «Check now» مع progress، إعدادات فى 3 لوحات (Automatic checks / Automatic protection / Instant alerts) بسويتشات وUnsaved changes، الـ KPI بتفلتر، فورم القواعد بعناوين. (18:43، afc7967)
+- 412: مراجعة بجات بوكيلين (19 بج اتأكدت واتصلحت): Site Watch (id الحدث بقى فيه mtime/id، chmod wp-config كمستخدم الحساب ومش تلقائى، docroot لازم جوه home الحساب، listing مقطوع مش baseline، fixed=info، prune يومى، lock للأحداث، remove_admin fatal، ran=نجاح بس، مايحظرش IPs المشغّل، alerts لكل المستويات، exposed يتنبّه لما القايمة تتغير، rule_del)؛ Site Doctor (.user.ini بدون symlink، purge جوه home صاحب الباكب، daily beat)؛ Site Shield بيرجّع الملفات القديمة لو الـ reload اترفض؛ sysupd مايعيدش تخطيط ريبوت اتلغى لنفس السبب؛ cloud mail بيشيل المزوّد المتشال ومابيكتبش الملف من غير تغيير. (19:30، ed4c9f8)
+
+## 2026-11-11 — beta413 Site Watch deep checks (built, not yet published)
+- Incident behind it: a WordPress core file (wp-includes/load.php) served gambling spam to crawlers on "/" only; the
+  nginx page cache stored the crawler's 301-without-Location and every visitor got a blank page; backdoor named
+  wp-cache.php (docroot + wp-includes); account .bashrc replaced by a password lock. All written by the account.
+- includes/swdeep.php: core verified with `wp core verify-checksums` AS THE ACCOUNT (daily round, first check, or
+  when a core file changed; 1800 s budget per round; no wp-cli/checksums = "not verified"); home page fetched on the
+  server as browser vs crawler; shell-start lock; file-manager plugins. Steps: core_restore, quarantine, shell_restore,
+  plugin_off (never automatic), purge_cache. Test t165.
+- .htaccess inside wp-includes/wp-admin is ignored (hardening tools write it); a redirect of ALL visitors to another
+  site is a warning (cPanel Redirects), only crawler-only redirects are cloaking (critical).

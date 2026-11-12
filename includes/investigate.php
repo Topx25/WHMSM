@@ -1472,9 +1472,14 @@ function smpro_inv_fix_permissions($r) {
     $uid = (int)$st['uid']; $gid = (int)$st['gid'];
     if ($uid < 100) return ['ok'=>false,'msg'=>'refused: docroot uid=' . $uid . ' looks like a system account'];
     $excl = '\\( -path "*/wp-content/cache/*" -o -path "*/wp-content/uploads/*" \\) -prune -o';
-    @shell_exec('timeout 90 nice -n 19 ionice -c3 find ' . escapeshellarg($docroot) . ' -maxdepth 8 ' . $excl . ' -type d -exec chmod 755 {} + 2>/dev/null');
-    @shell_exec('timeout 90 nice -n 19 ionice -c3 find ' . escapeshellarg($docroot) . ' -maxdepth 8 ' . $excl . ' -type f \\( -name "*.php" -o -name ".htaccess" -o -name "*.ini" \\) -exec chmod 644 {} + 2>/dev/null');
-    @shell_exec('timeout 90 nice -n 19 ionice -c3 chown -R ' . $uid . ':' . $gid . ' ' . escapeshellarg($docroot) . ' 2>/dev/null');
+    // ownership first, never through a link (-h); then the modes AS THE ACCOUNT: root's chmod follows a link the
+    // account can swap in between find seeing a file and chmod running, the account's own chmod cannot leave its files
+    @shell_exec('timeout 90 nice -n 19 ionice -c3 chown -hR ' . $uid . ':' . $gid . ' ' . escapeshellarg($docroot) . ' 2>/dev/null');
+    $acct = (string)($r['user'] ?? '');
+    if (!preg_match('/^[a-z0-9_-]+$/i', $acct)) return ['ok'=>false,'msg'=>'refused: unknown account'];
+    $asAcct = function (string $c) use ($acct) { @shell_exec('timeout 120 su -s /bin/sh ' . escapeshellarg($acct) . ' -c ' . escapeshellarg($c) . ' 2>/dev/null'); };
+    $asAcct('nice -n 19 find ' . escapeshellarg($docroot) . ' -maxdepth 8 ' . $excl . ' -type d -exec chmod 755 {} + 2>/dev/null');
+    $asAcct('nice -n 19 find ' . escapeshellarg($docroot) . ' -maxdepth 8 ' . $excl . ' -type f \\( -name "*.php" -o -name ".htaccess" -o -name "*.ini" \\) -exec chmod 644 {} + 2>/dev/null');
     smpro_audit('sitedoctor_fix', ['action'=>'fix_permissions','user'=>$r['user'],'uid'=>$uid,'ok'=>true]);
     return ['ok'=>true,'msg'=>'Reset PHP file permissions (dirs=755, PHP files=644) and ownership (uid=' . $uid . ') in the docroot. Excludes cache/uploads. This fixes "Permission denied" errors from wrong-uid or wrong-mode files.'];
 }

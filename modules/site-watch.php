@@ -171,10 +171,10 @@ $doms = array_keys(function_exists('smpro_sdb_targets') ? smpro_sdb_targets() : 
 (function(){
   var S=null,tm=null,PG=1,$=function(i){return document.getElementById(i);};
   function e(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-  function post(d){var f=new URLSearchParams();f.set('smpro_csrf',SW_CSRF);Object.keys(d).forEach(function(k){f.set(k,d[k]);});return fetch('index.cgi?page=site-watch',{method:'POST',body:f,credentials:'same-origin'}).then(function(r){return r.json();});}
+  function post(d){var f=new URLSearchParams();f.set('smpro_csrf',SW_CSRF);Object.keys(d).forEach(function(k){f.set(k,d[k]);});return fetch('index.cgi?page=site-watch',{method:'POST',body:f,credentials:'same-origin'}).then(function(r){return r.json();}).catch(function(){alert('Request failed - the server did not answer. Nothing was confirmed; reload the page and check.');return {ok:false,msg:''};});}
   function pill(r){return {critical:'<span class="pl pr">Critical</span>',warning:'<span class="pl pa">Warning</span>',clean:'<span class="pl pg">Clean</span>',unchecked:'<span class="pl ps">Not checked</span>'}[r]||e(r);}
   function ago(t){if(!t)return '—';var s=Math.round(Date.now()/1000-t);return s<3600?Math.round(s/60)+' min ago':s<86400?Math.round(s/3600)+' h ago':Math.round(s/86400)+' d ago';}
-  function load(){fetch('index.cgi?page=site-watch&sw_state=1',{cache:'no-store',credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){var first=!S;S=j;if(first){fillCfg();vis();}draw();clearTimeout(tm);if(j.job&&j.job.running)tm=setTimeout(load,4000);});}
+  function load(){fetch('index.cgi?page=site-watch&sw_state=1',{cache:'no-store',credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){var first=!S;S=j;if(first){fillCfg();vis();}draw();clearTimeout(tm);if(j.job&&j.job.running)tm=setTimeout(load,4000);}).catch(function(){var jb=$('swJob');if(jb)jb.textContent='Could not load - retrying...';clearTimeout(tm);tm=setTimeout(load,8000);});}
   function fillCfg(){var c=S.cfg;$('swAuto').checked=!!c.auto;$('swScope').value=c.scope;$('swSites').value=(c.sites||[]).join(', ');$('swFiles').value=String(c.files_min);$('swDb').value=String(c.db_min);$('swKeep').value=String(c.keep_days);
     $('swProtOn').checked=(c.protect||[]).length>0;$('swProt').value=(c.protect||[]).join(', ');[].forEach.call(document.querySelectorAll('.swAl'),function(x){x.checked=!!c.alerts[x.value];});}
   function draw(){
