@@ -2162,3 +2162,23 @@ function smpro_acct_copy(string $user, string $from, string $to): bool {
 function smpro_acct_rm(string $user, string $path): bool {
     return smpro_acct_sh($user, 'rm -f -- "$1"', [$path], null, 30)['code'] === 0;
 }
+
+/** Connect to a database named by a site's own configuration. The host comes from a file the account controls, so
+ *  the client never honours a server's request to send local files, and never hangs on a host that does not answer. */
+function smpro_mysqli_connect($host, $user, $pass, $name, $port = 0, $sock = null) {
+    if (!function_exists('mysqli_init')) return false;
+    $my = @mysqli_init(); if (!$my) return false;
+    @mysqli_options($my, MYSQLI_OPT_LOCAL_INFILE, 0);
+    @mysqli_options($my, MYSQLI_OPT_CONNECT_TIMEOUT, 8);
+    return @mysqli_real_connect($my, (string)$host, (string)$user, (string)$pass, (string)$name, (int)$port ?: null, $sock ?: null) ? $my : false;
+}
+/** Where deleted detections are kept. The old place sits under /home, where an ACCOUNT with that very name would own
+ *  it; it is used only while it is root's own plain folder and no such account exists - otherwise the plugin's store. */
+function smpro_detect_backup_root(): string {
+    $old = '/home/backup/detections'; $top = '/home/backup';
+    $safe = !@is_file('/var/cpanel/users/backup') && !@is_link($top) && (!@file_exists($top) || (@is_dir($top) && (int)@fileowner($top) === 0))
+         && !@is_link($old) && (!@file_exists($old) || (@is_dir($old) && (int)@fileowner($old) === 0));
+    if ($safe) return $old;
+    $d = SMPRO_VARLIB . '/detections'; @is_dir($d) || @mkdir($d, 0700, true);
+    return $d;
+}

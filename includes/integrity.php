@@ -26,9 +26,12 @@ function smpro_integrity_critical_files() {
 
 /** Load + signature-verify the manifest. Returns [ok,bool 'files'=>map] or ['skip'=>reason] when absent/blank. */
 function smpro_integrity_load() {
-    if (!is_file(SMPRO_INTEG_MANIFEST)) return ['skip' => 'no_manifest'];
+    // a release always ships its signed manifest: on a packaged copy a missing or emptied one means it was removed
+    // to blind this check, so it is a failure - only a source checkout (no manifest by nature) skips
+    $packaged = defined('SMPRO_PACKAGED') && SMPRO_PACKAGED;
+    if (!is_file(SMPRO_INTEG_MANIFEST)) return $packaged ? ['ok' => false, 'reason' => 'integrity manifest missing', 'critical' => true] : ['skip' => 'no_manifest'];
     $j = json_decode((string)@file_get_contents(SMPRO_INTEG_MANIFEST), true);
-    if (!is_array($j) || empty($j['files']) || empty($j['sig'])) return ['skip' => 'blank_manifest'];
+    if (!is_array($j) || empty($j['files']) || empty($j['sig'])) return $packaged ? ['ok' => false, 'reason' => 'integrity manifest unreadable', 'critical' => true] : ['skip' => 'blank_manifest'];
     if (!function_exists('openssl_verify') || !defined('SMPRO_UPD_PUBKEY')) return ['skip' => 'no_openssl'];
     $files = $j['files']; ksort($files);                           // canonical order must match the builder
     $canon = json_encode($files, JSON_UNESCAPED_SLASHES);

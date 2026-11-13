@@ -113,7 +113,7 @@ function smpro_fw_block_fetch_raw(array $src): array {
     $docs = [];
     if (!empty($src['api']) && function_exists('smpro_lic_api')) {
         $r = smpro_lic_api((string)$src['api'], [], 30);
-        if (is_array($r)) $docs[] = $r;
+        if (is_array($r) && is_array($r[1] ?? null)) $docs[] = $r[1];   // [http code, decoded json, raw body, peer]
     }
     foreach ((array)($src['fetch'] ?? []) as $url) {
         // https only, and only a URL this build carries as a constant - nothing from a request ever reaches here.
@@ -340,7 +340,8 @@ function smpro_fw_block_contribute(): array {
     if (!$rows) return ['ok' => true, 'sent' => 0, 'msg' => 'Nothing to share: nothing blocked here is an illegitimate bot on a datacenter network.'];
     if (!function_exists('smpro_lic_api')) return ['ok' => false, 'sent' => 0, 'msg' => 'The licence transport is unavailable on this server.'];
     $r = smpro_lic_api('/api/blocklist/contribute', ['addresses' => $rows, 'n' => count($rows)], 25);
-    $ok = is_array($r) && !empty($r['ok']);
+    $r = (is_array($r) && is_array($r[1] ?? null)) ? $r[1] : [];   // [http code, decoded json, raw body, peer]
+    $ok = !empty($r['ok']);
     if (function_exists('smpro_audit')) smpro_audit('firewall_blocklist_contribute',
         ['sent' => count($rows), 'ok' => $ok ? 1 : 0, 'actor' => function_exists('smpro_current_actor') ? smpro_current_actor() : 'root']);
     return ['ok' => $ok, 'sent' => $ok ? count($rows) : 0,

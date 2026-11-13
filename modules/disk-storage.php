@@ -350,7 +350,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
         if (!smpro_ds_safe_target($f, 'file') || !is_file($f) || $safe === '') $r = ['ok'=>false,'msg'=>'Refused: only an existing real file under /home/<account>/ (no symlinks).'];
         else {
             $f = $safe;
-            $bdir = '/home/backup/detections/' . $acct; @is_dir($bdir) || @mkdir($bdir, 0700, true);
+            $bdir = smpro_detect_backup_root() . '/' . $acct; @is_dir($bdir) || @mkdir($bdir, 0700, true);
             $bak = $bdir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($f));
             // Prefer rename (same filesystem -> instant, needs NO extra space) - copy-then-unlink doubles the
             // file's footprint first and fails on the ≥95%-full disk this tool exists to rescue. Fall back to

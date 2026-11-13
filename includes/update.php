@@ -349,7 +349,16 @@ function smpro_upd_auto() {
     //    Purpose: move a server off an out-of-order version string (e.g. a legacy beta the new scheme sorts below).
     if (function_exists('smpro_lic_signed_field')) {
         $fv = (string)smpro_lic_signed_field(smpro_lic_state(), 'upd_force', '');
-        if ($fv !== '' && $fv !== (string)($c['upd_force_done'] ?? '')) {
+        // The directive rides the licence verdict (online key). Skipping the downgrade guard is a release decision,
+        // so it must also carry a signature by the OFFLINE release key over this exact directive value.
+        $fs = base64_decode((string)smpro_lic_signed_field(smpro_lic_state(), 'upd_force_sig', ''), true);
+        $fpk = function_exists('openssl_pkey_get_public') ? @openssl_pkey_get_public(SMPRO_UPD_PUBKEY) : false;
+        $fok = $fv !== '' && $fs !== false && $fs !== '' && $fpk && @openssl_verify('smpro-upd-force|' . $fv, $fs, $fpk, OPENSSL_ALGO_SHA256) === 1;
+        if ($fv !== '' && !$fok && $fv !== (string)($c['upd_force_refused'] ?? '')) {
+            $c['upd_force_refused'] = $fv; smpro_upd_cfg_save($c);
+            if (function_exists('smpro_audit')) smpro_audit('update_force_refused', ['directive' => $fv, 'why' => 'no valid release-key signature']);
+        }
+        if ($fok && $fv !== (string)($c['upd_force_done'] ?? '')) {
             $c['upd_force_done'] = $fv; smpro_upd_cfg_save($c);
             $r = smpro_upd_apply('', true);   // '' = the channel's latest signed build; true = bypass version_compare only
             if (function_exists('smpro_audit')) smpro_audit('update_forced', ['directive' => $fv, 'ok' => !empty($r['ok']), 'msg' => (string)($r['message'] ?? '')]);

@@ -126,13 +126,14 @@ function smpro_sdb_fix_wp_core(string $domain): array {
     if (!is_file($doc . '/wp-config.php') || !preg_match('/^[a-z0-9_-]+$/i', $user)) return ['ok' => false, 'msg' => 'not a WordPress web root'];
     $ver = '';
     if (is_file($doc . '/wp-includes/version.php') && preg_match("/wp_version\s*=\s*'([0-9.]+)'/", (string)@file_get_contents($doc . '/wp-includes/version.php'), $m)) $ver = $m[1];
+    if ($ver === '') return ['ok' => false, 'msg' => 'the installed WordPress version could not be read - not replacing the core with a different version'];
     $bak = $home . '/.smpro-bak-wpcore-' . date('Ymd_His') . '.tar.gz';
     $items = array_values(array_filter(array_merge(['wp-admin', 'wp-includes'], array_map('basename', (array)glob($doc . '/*.php'))), fn($x) => $x !== 'wp-config.php' && file_exists($doc . '/' . $x)));
     $as = function (string $cmd) use ($user) { return (string)@shell_exec('timeout 300 su -s /bin/bash ' . escapeshellarg($user) . ' -c ' . escapeshellarg($cmd) . ' 2>&1'); };
     if ($items) { $as('umask 077; tar czf ' . escapeshellarg($bak) . ' -C ' . escapeshellarg($doc) . ' ' . implode(' ', array_map('escapeshellarg', $items)));
         if (!is_file($bak) || filesize($bak) < 1000) return ['ok' => false, 'msg' => 'could not back up the current core files - nothing changed']; }
-    $o = $as('cd ' . escapeshellarg($doc) . ' && ' . escapeshellarg($wp) . ' core download --skip-content --force' . ($ver !== '' ? ' --version=' . escapeshellarg($ver) : '') . ' --path=' . escapeshellarg($doc));
-    $ok = stripos($o, 'Success') !== false;
+    $o = $as('cd / && WP_CLI_CONFIG_PATH=/dev/null WP_CLI_PACKAGES_DIR=/nonexistent ' . escapeshellarg($wp) . ' core download --skip-content --force' . ($ver !== '' ? ' --version=' . escapeshellarg($ver) : '') . ' --path=' . escapeshellarg($doc));
+    $ok = (bool)preg_match('/^Success:/m', $o);   // the tool's own result line, not the word anywhere in its output
     $id = $items ? smpro_inv_manifest_add(['user' => $user, 'domain' => $r['domain'], 'action' => 'restore_wp_core', 'kind' => 'tar', 'from' => $doc, 'backup' => $bak]) : '';
     smpro_audit('sitedoctor_fix', ['action' => 'restore_wp_core', 'user' => $user, 'version' => $ver ?: 'latest', 'ok' => $ok]);
     return ['ok' => $ok, 'msg' => $ok ? ('WordPress core ' . ($ver ?: '(latest)') . ' restored; wp-content and wp-config.php untouched. Previous core files backed up to ' . $bak . '.') : ('wp-cli failed: ' . substr(trim($o), -300)), 'undo_id' => $id];

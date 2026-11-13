@@ -145,7 +145,7 @@ function smpro_sw_db_conn(string $doc) {
     $db = smpro_inv_wp_db($doc); if (!$db || $db['name'] === '') return [null, null];
     $host = $db['host']; $port = 0; $sock = null; if (strpos($host, ':') !== false) { [$host, $p] = explode(':', $host, 2); if (is_numeric($p)) $port = (int)$p; else $sock = $p; }
     mysqli_report(MYSQLI_REPORT_OFF);
-    $my = @mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
+    $my = smpro_mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
     return [$my ?: null, preg_replace('/[^A-Za-z0-9_]/', '', (string)$db['prefix'])];
 }
 /** What matters for security in a WordPress database, as a comparable snapshot. Null for a non-WordPress site. */
@@ -288,8 +288,9 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
     $batch = array_values(array_filter($batch, fn($e) => !isset($seen[$e['id']])));
     smpro_sw_events_write($dom, $batch);
     $st['user'] = $user; $st['docroot'] = $doc; $st['checked_at'] = time();
+    // an open critical finding does not age out of the verdict; everything else counts for a day
     $evs = smpro_sw_events($dom, 200); $cut = time() - 86400; $risk = 'clean';
-    foreach ($evs as $e) if ($e['ts'] >= $cut && smpro_sw_event_live($e)) { if ($e['sev'] === 'critical') { $risk = 'critical'; break; } if ($e['sev'] === 'warning') $risk = 'warning'; }
+    foreach ($evs as $e) if (($e['ts'] >= $cut || ($e['sev'] ?? '') === 'critical') && smpro_sw_event_live($e)) { if ($e['sev'] === 'critical') { $risk = 'critical'; break; } if ($e['sev'] === 'warning') $risk = 'warning'; }
     foreach ($st['checks'] as $c) if ($c[0] === 'fail') $risk = 'critical'; elseif ($c[0] === 'warn' && $risk === 'clean') $risk = 'warning';
     $st['risk'] = $risk;
     smpro_sw_save('sites/' . $dom . '/state.json', $st);

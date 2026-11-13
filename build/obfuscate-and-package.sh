@@ -34,11 +34,15 @@ VER="$(sed -nE "s/.*SMPRO_VERSION',[[:space:]]*'([^']+)'.*/\1/p" "$ROOT/includes
 #  physical production lockout) - it cannot run here on Windows and it cannot run on production, so the gate
 #  ships the source to the lab and runs it there. Hard by default; emergency override is loud + recorded.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
-GATE_HOST="${SMPRO_LAB_HOST:-167.233.29.168}"
-GATE_KEY="${SMPRO_LAB_KEY:-$HOME/.ssh/cpanel_audit_178_63_134_16}"
+# The lab address and the key that reaches it are local settings, never part of the repository:
+# ~/.smpro-build.env sets SMPRO_LAB_HOST and SMPRO_LAB_KEY (and SMPRO_LIC_HOST / SMPRO_LIC_KEY for publishing).
+[ -f "$HOME/.smpro-build.env" ] && . "$HOME/.smpro-build.env"
+GATE_HOST="${SMPRO_LAB_HOST:-}"
+GATE_KEY="${SMPRO_LAB_KEY:-}"
 GATE_PORT="${SMPRO_LAB_PORT:-22}"
 GATE_SRC="${SMPRO_LAB_SRC:-/opt/smpro-testlab/src}"
 GATE_PHP="${SMPRO_LAB_PHP:-/opt/cpanel/ea-php82/root/usr/bin/php}"
+if [ -z "$GATE_HOST" ] || [ -z "$GATE_KEY" ]; then echo "ERROR: set SMPRO_LAB_HOST and SMPRO_LAB_KEY (in ~/.smpro-build.env) - the test lab is not named in the repository."; exit 8; fi
 GATE_SSH=(ssh -i "$GATE_KEY" -p "$GATE_PORT" -o StrictHostKeyChecking=no -o ConnectTimeout=15)
 GATE_SUMMARY=""; GATE_STATE=""
 
@@ -138,6 +142,11 @@ cp -r "$ROOT/index.php" "$ROOT/includes" "$ROOT/modules" "$ROOT/bin" "$SRC/"
 # release genuinely did not contain Safety Lock, so installing it would have removed working protection. The
 # edition guard that refused those installs was right; the package was what was wrong.
 [ -d "$ROOT/cpuser" ] && cp -r "$ROOT/cpuser" "$SRC/"
+
+# 1b. mark the staged copy as a packaged release (the source tree keeps false: a checkout has no manifest).
+#     A packaged copy without its signed manifest then counts as tampered instead of being skipped.
+perl -0777 -i -pe "s/define\('SMPRO_PACKAGED',\s*false\);/define('SMPRO_PACKAGED',    true);/" "$SRC/includes/defines.php"
+grep -q "define('SMPRO_PACKAGED',    true);" "$SRC/includes/defines.php" || { echo "ERROR: could not mark the staged copy as packaged"; exit 2; }
 
 # 2. obfuscate (creates $STAGE/yakpro-po mirroring $SRC)
 # memory_limit raised: the PHP-Parser AST for the largest modules (spam-phishing.php etc.) exceeds the 128M default.

@@ -151,7 +151,7 @@ function smpro_inv_wp($docroot, $domain) {
     if (!function_exists('mysqli_connect')) { $out['db']['error'] = 'mysqli not available'; return $out; }
     $host = $db['host']; $port = 0; $sock = null;
     if (strpos($host, ':') !== false) { [$host, $p] = explode(':', $host, 2); if (is_numeric($p)) $port = (int)$p; else $sock = $p; }
-    $my = @mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
+    $my = smpro_mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
     if (!$my) { $out['db']['error'] = mysqli_connect_error() ?: 'connection failed'; return $out; }
     $out['db']['connected'] = true; $out['theme'] = '';
     $t = preg_replace('/[^A-Za-z0-9_]/', '', $db['prefix']) . 'options';
@@ -174,7 +174,7 @@ function smpro_inv_fix_wp_url($r) {
     if (!function_exists('mysqli_connect')) return ['ok'=>false,'msg'=>'mysqli unavailable'];
     $host = $db['host']; $port = 0; $sock = null;
     if (strpos($host, ':') !== false) { [$host, $p] = explode(':', $host, 2); if (is_numeric($p)) $port = (int)$p; else $sock = $p; }
-    $my = @mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
+    $my = smpro_mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
     if (!$my) return ['ok'=>false,'msg'=>'DB connect failed: ' . (mysqli_connect_error() ?: '')];
     $t = preg_replace('/[^A-Za-z0-9_]/', '', $db['prefix']) . 'options';
     $want = 'https://' . $r['domain'] . ($r['subpath'] !== '' ? '/' . trim($r['subpath'], '/') : '');
@@ -500,7 +500,7 @@ function smpro_inv_speed($target) {
     if ($db && ($db['name'] ?? '') !== '' && function_exists('mysqli_connect')) {
         $h = $db['host']; $port = 0; $sock = null;
         if (strpos($h, ':') !== false) { [$h, $pp] = explode(':', $h, 2); if (is_numeric($pp)) $port = (int)$pp; else $sock = $pp; }
-        $my = @mysqli_connect($h, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
+        $my = smpro_mysqli_connect($h, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock);
         if ($my) {
             $tbl = preg_replace('/[^A-Za-z0-9_]/', '', $db['prefix']) . 'options';
             if ($res = @mysqli_query($my, "SELECT ROUND(SUM(LENGTH(option_value))/1024) kb, COUNT(*) n FROM `$tbl` WHERE autoload='yes'")) {
@@ -1596,7 +1596,10 @@ function smpro_inv_unharden_base($res) {
     $home = (string)($res['home'] ?? dirname($d));
     $targets = [$d.'/.htaccess', $d.'/wp-config.php', $home.'/wp-config.php', $d.'/wp-content/.htaccess', $d.'/wp-content/uploads/.htaccess', $d.'/wp-content', $d.'/wp-content/plugins'];
     $n = 0;
-    foreach ($targets as $t) { if (!is_link($t) && file_exists($t) && smpro_inv_imm($t)) { @shell_exec('chattr -i ' . escapeshellarg($t) . ' 2>/dev/null'); $n++; } }
+    // a path another product of the suite locked stays locked: its own lock list (the shared bridge) is the authority
+    $held = [];
+    if (function_exists('smpro_hg_locks_others') && !empty($res['user'])) foreach ((array)smpro_hg_locks_others((string)$res['user']) as $paths) foreach ((array)$paths as $hp) $held[rtrim((string)$hp, '/')] = 1;
+    foreach ($targets as $t) { if (isset($held[rtrim($t, '/')])) continue; if (!is_link($t) && file_exists($t) && smpro_inv_imm($t)) { @shell_exec('chattr -i ' . escapeshellarg($t) . ' 2>/dev/null'); $n++; } }
     if ($n) smpro_audit('sitedoctor_unharden_base', ['cleared'=>$n,'docroot'=>$d]);
     return $n;
 }
@@ -1813,7 +1816,7 @@ function smpro_inv_undo($id) {
     if (($e['kind'] ?? '') === 'wpurl') {   // restore WordPress siteurl/home in the DB
         $db = smpro_inv_wp_db($e['from']); if (!$db || !function_exists('mysqli_connect')) return ['ok'=>false,'msg'=>'cannot reach DB'];
         $host = $db['host']; $port = 0; $sock = null; if (strpos($host, ':') !== false) { [$host, $p] = explode(':', $host, 2); if (is_numeric($p)) $port = (int)$p; else $sock = $p; }
-        $my = @mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock); if (!$my) return ['ok'=>false,'msg'=>'DB connect failed'];
+        $my = smpro_mysqli_connect($host, $db['user'], $db['pass'], $db['name'], $port ?: 0, $sock); if (!$my) return ['ok'=>false,'msg'=>'DB connect failed'];
         $t = preg_replace('/[^A-Za-z0-9_]/', '', $db['prefix']) . 'options';
         foreach (($e['old'] ?? []) as $k => $v) { $ke = mysqli_real_escape_string($my, $k); $ve = mysqli_real_escape_string($my, $v); @mysqli_query($my, "UPDATE `$t` SET option_value='$ve' WHERE option_name='$ke'"); }
         @mysqli_close($my);

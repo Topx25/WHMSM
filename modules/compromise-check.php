@@ -51,7 +51,7 @@ if (isset($_GET['csv'])) {
     $scan = smpro_cc_scan_accounts($days, 50);
     header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="compromise-check-' . date('Ymd-Hi') . '.csv"');
     $fh = fopen('php://output', 'w'); fputcsv($fh, ['account', 'domain', 'kind', 'finding', 'when', 'detail', 'flagged']);
-    foreach ($scan['rows'] as $r) foreach ($r['findings'] as $f) fputcsv($fh, [$r['user'], $r['domain'], $f['kind'], $f['label'], $f['when'] ? date('Y-m-d H:i', $f['when']) : '', $f['detail'], $f['flag'] ? 'yes' : '']);
+    foreach ($scan['rows'] as $r) foreach ($r['findings'] as $f) smpro_fputcsv($fh, [$r['user'], $r['domain'], $f['kind'], $f['label'], $f['when'] ? date('Y-m-d H:i', $f['when']) : '', $f['detail'], $f['flag'] ? 'yes' : '']);
     fclose($fh); exit;
 }
 

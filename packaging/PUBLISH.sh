@@ -46,8 +46,10 @@ CHANNEL="beta"
 [ "$PUBLISH_STABLE" -eq 1 ] && CHANNEL="beta+STABLE"
 
 
-KEY="${SMPRO_LIC_KEY:-$HOME/.ssh/cpanel_audit_178_63_134_16}"
-HOST="${SMPRO_LIC_HOST:-136.243.211.154}"
+[ -f "$HOME/.smpro-build.env" ] && . "$HOME/.smpro-build.env"   # local settings: the release host and its key are not in the repository
+KEY="${SMPRO_LIC_KEY:-}"
+HOST="${SMPRO_LIC_HOST:-}"
+if [ -z "$HOST" ] || [ -z "$KEY" ]; then echo "ERROR: set SMPRO_LIC_HOST and SMPRO_LIC_KEY (in ~/.smpro-build.env)."; exit 2; fi
 DIR="/opt/aitech-license-server/releases"
 
 TGZ="smpro-$VER.tar.gz"

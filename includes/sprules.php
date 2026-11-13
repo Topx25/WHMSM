@@ -148,7 +148,8 @@ function smpro_spr_login_ip($user, $withinHours = 24, $sessionLog = '/usr/local/
     foreach ($files($loginLog) as $f) {
         if (!@is_readable($f)) continue;
         foreach (smpro_spr_grep_lines($f, ' ' . $user . ' ') as $line) {
-            if (stripos($line, 'success') === false) continue;
+            // the result word, outside the quoted request: a failed attempt whose URL contains the word is not a login
+            if (!preg_match('/\bSUCCESS\b/i', (string)preg_replace('/"[^"]*"/', '""', $line)) || preg_match('/\bFAILED\b/i', $line)) continue;
             if (!preg_match('/\b' . preg_quote($user, '/') . '\b/', $line)) continue;
             if (!preg_match('/\b(\d{1,3}(?:\.\d{1,3}){3})\b/', $line, $m)) continue;
             $t = 0;

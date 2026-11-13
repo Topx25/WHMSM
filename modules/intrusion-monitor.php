@@ -439,7 +439,7 @@ if (($_GET['im_attack'] ?? '') === 'csv') {
     $aa = smpro_im_attack_analysis(smpro_im_parse_modsec(SMPRO_IM_PAGE_BYTES, SMPRO_IM_CAP, time() - $mins * 60));
     header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="attack_report.csv"');
     $fh = fopen('php://output', 'w');
-    fputcsv($fh, ['== ATTACK PHASES ==']); fputcsv($fh, ['phase','events']); foreach ($aa['phases'] as $p => $n) fputcsv($fh, [$p, $n]);
+    fputcsv($fh, ['== ATTACK PHASES ==']); fputcsv($fh, ['phase','events']); foreach ($aa['phases'] as $p => $n) smpro_fputcsv($fh, [$p, $n]);
     fputcsv($fh, []); fputcsv($fh, ['== TARGETED PATHS ==']); fputcsv($fh, ['path','requests','uniq_ips']); foreach ($aa['paths'] as $p) smpro_fputcsv($fh, [$p['path'], $p['n'], $p['uniq_ips']]);
     fputcsv($fh, []); fputcsv($fh, ['== COORDINATED CAMPAIGNS (/24) ==']); fputcsv($fh, ['subnet','attacker_ips','requests']); foreach ($aa['campaigns'] as $s) fputcsv($fh, [$s['subnet'], $s['uniq_ips'], $s['n']]);
     fputcsv($fh, []); fputcsv($fh, ['== TOP SOURCE IPs ==']); fputcsv($fh, ['rank','ip','country','provider','requests','main_target','user_agents']);

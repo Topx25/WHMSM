@@ -718,19 +718,44 @@ function smpro_lic_is_valid() {
  * license clears the clock and everything resumes automatically. (Tamper has its own separate 24h->uninstall path.)
  */
 function smpro_lic_dormant_file() { return SMPRO_LIC_DIR . '/.invalid_since'; }
-function smpro_lic_dormant_clear() { $f = smpro_lic_dormant_file(); if (is_file($f)) @unlink($f); }
+function smpro_lic_dormant_clear() {
+    $f = smpro_lic_dormant_file(); if (is_file($f)) @unlink($f);
+    if (is_file(SMPRO_LIC_STATE) && strpos((string)@file_get_contents(SMPRO_LIC_STATE), '"inv_since"') !== false) {
+        $d = json_decode((string)@file_get_contents(SMPRO_LIC_STATE), true);
+        if (is_array($d) && isset($d['inv_since'])) { unset($d['inv_since']); smpro_lic_state_save($d); }
+    }
+}
+/**
+ * When the licence stopped being valid, for the 48h after which every background function goes quiet.
+ * Read from what cannot be edited first: a signed verdict that is still on disk says when it ran out (its signed
+ * expiry, or its signed issue time plus the outage ceiling). Only when no signed verdict is left does the local
+ * marker count - and it is kept in two places, the earliest wins, so removing one file does not restart the clock.
+ */
+function smpro_lic_invalid_since() {
+    $now = smpro_lic_now(); $c = [];
+    $s = smpro_lic_state();
+    [$sigOk, $expiry] = smpro_lic_verify_state($s);
+    if ($sigOk) {
+        $ts = smpro_lic_signed_ts($s); if ($ts > 0) $c[] = $ts + SMPRO_LIC_GRACE_OUTAGE;
+        $ex = trim((string)$expiry); $ex = ($ex === '' || $ex === '0') ? 0 : (is_numeric($ex) ? (int)$ex : (int)strtotime($ex)); if ($ex > 0) $c[] = $ex;
+        $c = array_values(array_filter($c, fn($t) => $t <= $now));       // a moment that has not come yet is not why it is invalid
+    }
+    $f = smpro_lic_dormant_file();
+    $file = is_file($f) ? (int)trim((string)@file_get_contents($f)) : 0;
+    $mir  = (int)($s['inv_since'] ?? 0);
+    foreach ([$file, $mir] as $t) if ($t > 0 && $t <= $now) $c[] = $t;
+    $since = $c ? min($c) : 0;
+    if ($since <= 0) $since = $now;
+    if ($file !== $since) { @is_dir(SMPRO_LIC_DIR) || @mkdir(SMPRO_LIC_DIR, 0700, true); @file_put_contents($f, (string)$since); @chmod($f, 0600); }
+    if ($mir !== $since && !empty($s['key'])) smpro_lic_touch_state(['inv_since' => $since]);
+    return $since;
+}
 function smpro_lic_dormant() {
     if (defined('SMPRO_LIC_ENFORCE') && !SMPRO_LIC_ENFORCE) return false;   // dev-mode: never dormant
     if (smpro_lic_is_valid()) return false;                                 // valid (also clears the clock) -> active
-    // NOTE: short transport outages are already covered - is_valid() stays TRUE through the 48h outage grace
-    // (measured from the SIGNED issued_at), so we only reach here for a REAL stop OR a prolonged outage/blackhole past the
-    // ceiling. Both should go dormant. (Blackholing the license domain can no longer keep it running forever.)
     // a CONFIRMED TAMPER has its own separate 24h->uninstall path - leave it to that, don't dormancy-stop it
     if (function_exists('smpro_lic_tamper_at') && smpro_lic_tamper_at() > 0) return false;
-    $f = smpro_lic_dormant_file();
-    $since = is_file($f) ? (int)trim((string)@file_get_contents($f)) : 0;
-    if ($since <= 0) { $since = smpro_lic_now(); @is_dir(SMPRO_LIC_DIR) || @mkdir(SMPRO_LIC_DIR, 0700, true); @file_put_contents($f, (string)$since); @chmod($f, 0600); return false; }   // m1: monotonic clock, matches the compare below
-    return (smpro_lic_now() - $since) >= SMPRO_LIC_DORMANT_GRACE;
+    return (smpro_lic_now() - smpro_lic_invalid_since()) >= SMPRO_LIC_DORMANT_GRACE;
 }
 /** True when validity failed ONLY because we could not reach the server (vs. a real invalid/expired/tampered license). */
 function smpro_lic_is_unreachable() {
@@ -901,7 +926,9 @@ function smpro_lic_require_authorized($action) {
     if (!empty($s['ok']) && function_exists('smpro_lic_verify_state')) {
         $v = smpro_lic_verify_state($s); $valid = is_array($v) ? !empty($v[0]) : (bool)$v;
         $grace = defined('SMPRO_LIC_GRACE') ? SMPRO_LIC_GRACE : 600;
-        if ($valid && (time() - (int)($s['last_check'] ?? 0)) < $grace) {
+        // measured from the last AUTHORITATIVE answer (last_ok), never from the last attempt: a blocked licence host
+        // keeps "last attempt" fresh for ever, which would turn this courtesy into a standing pass
+        if ($valid && (time() - (int)($s['last_ok'] ?? 0)) < 3 * $grace) {
             if (function_exists('smpro_audit')) smpro_audit('license_action_grace', ['action' => (string)$action]);
             return;
         }

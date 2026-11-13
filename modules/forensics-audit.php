@@ -358,7 +358,7 @@ function smpro_fa_restore($id) {
     if (($e['kind'] ?? '') === 'delete') {
         $file = (string)($e['file'] ?? ''); $bak = (string)($e['backup'] ?? '');
         if (!preg_match('#^/home/[^/]+/#', $file)) return ['ok'=>false,'msg'=>'Refused: target outside /home.'];
-        if ($bak === '' || strpos($bak, '/home/backup/detections/') !== 0 || !is_file($bak)) return ['ok'=>false,'msg'=>'Backup copy missing.'];
+        if ($bak === '' || (strpos($bak, '/home/backup/detections/') !== 0 && strpos($bak, SMPRO_VARLIB . '/detections/') !== 0) || is_link($bak) || !is_file($bak)) return ['ok'=>false,'msg'=>'Backup copy missing.'];
         if (is_file($file)) return ['ok'=>false,'msg'=>'A file already exists at the original path — not overwriting.'];
         @is_dir(dirname($file)) || @mkdir(dirname($file), 0755, true);
         if (!@copy($bak, $file)) return ['ok'=>false,'msg'=>'Restore copy failed (permissions?).'];
@@ -942,8 +942,8 @@ if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'delete_malware') {
     if ($safe === '') { echo json_encode(['ok'=>false,'msg'=>'Refused: target is a symlink or resolves outside the account.']); exit; }
     $file = $safe;
     // back the file up OUTSIDE the customer folder, in /home/backup/detections/<account>/
-    $bdir = '/home/backup/detections/' . $acct;
-    @is_dir($bdir) || @mkdir($bdir, 0700, true); @chmod('/home/backup/detections', 0700);
+    $bdir = smpro_detect_backup_root() . '/' . $acct;
+    @is_dir($bdir) || @mkdir($bdir, 0700, true); @chmod(smpro_detect_backup_root(), 0700);
     $sha = @hash_file('sha256', $file) ?: '';
     $bak = $bdir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($file));
     if (!@copy($file, $bak)) { echo json_encode(['ok'=>false,'msg'=>'Could not back up the file — aborting (nothing deleted).']); exit; }

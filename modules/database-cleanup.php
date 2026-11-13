@@ -11,7 +11,7 @@
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
-define('SMPRO_DBC_BACKUP', '/home/backup/detections/db');
+define('SMPRO_DBC_BACKUP', (function_exists('smpro_detect_backup_root') ? smpro_detect_backup_root() : '/home/backup/detections') . '/db');
 define('SMPRO_DBC_REPORTS', SMPRO_VARLIB . '/reports/db_cleanup');
 define('SMPRO_DBC_STATUS',  SMPRO_VARLIB . '/cache/db_status.json');
 
