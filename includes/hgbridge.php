@@ -237,7 +237,9 @@ function smpro_hg_events_ingest() {
             $rs = function_exists('smpro_im_region_status') ? smpro_im_region_status($ip) : 'normal';
             $allowed = function_exists('smpro_im_allowlisted') ? smpro_im_allowlisted($ip) : false;
             $mail = function_exists('smpro_fw_never_block') ? smpro_fw_never_block($ip) : '';
-            if ($rs === 'core_protected' || $allowed || $mail !== '' || (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip))) {
+            $self = (function_exists('smpro_is_server_ip') && smpro_is_server_ip($ip)) || (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($ip));
+            if ($self) { $decision = 'declined'; $n['declined']++; }   // this server's own or a private/local address: refused like every automatic block
+            elseif ($rs === 'core_protected' || $allowed || $mail !== '' || (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip))) {
                 $decision = 'declined'; $n['declined']++;
                 smpro_hg_event_emit('block_declined', ['ip' => $ip, 'to' => $e['product'], 'why' => $allowed ? 'on the allow-list' : ($rs === 'core_protected' ? 'residential address in a home region (a customer)' : ($mail !== '' ? 'mail provider (' . $mail . ')' : 'infrastructure address')), 'in_reply_to' => $e['file']]);
             } elseif (!empty($c['auto_block']) && empty($c['auto_block_dryrun']) && function_exists('smpro_im_csf_block')) {

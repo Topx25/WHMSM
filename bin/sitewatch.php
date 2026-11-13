@@ -6,7 +6,7 @@
  */
 define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);
-foreach (['defines', 'mmdb', 'helpers', 'secret', 'license', 'notify', 'domains', 'investigate', 'sdbulk', 'fileaudit', 'sitewatch'] as $m) {
+foreach (['defines', 'mmdb', 'helpers', 'secret', 'license', 'intrusion', 'fwallow', 'geowall', 'notify', 'domains', 'investigate', 'sdbulk', 'fileaudit', 'sitewatch'] as $m) {
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require_once $f;
 }

@@ -250,7 +250,7 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
         if ($flag) $access = smpro_sw_access($dom);
         $i = 0;
         foreach ($flag as $rel => [$sev, $why, $isNew, $mt]) {
-            if (++$i > 60) break;
+            if (++$i > 60) { unset($files[$rel]); continue; }   // over the per-round limit: left out of the baseline, so the next round reports it
             $abs = $doc . '/' . $rel;
             $who = $first ? ['door' => 'before Site Watch', 'ip' => '', 'login' => '', 'how' => 'found on the first check'] : smpro_sw_who($user, $abs, $mt, $access, $sub);
             $ran = smpro_sw_is_php($rel) ? smpro_sw_ran($rel, $access, $sub) : ['runs' => 0, 'ips' => []];
@@ -275,7 +275,7 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
         }
     }
     $prevChecks = (array)($st['checks'] ?? []);
-    $coreDue = $withDb || $coreTouched || !array_filter($prevChecks, fn($c) => ($c[2] ?? '') === 'core');
+    $coreDue = $withDb || $coreTouched || !array_filter($prevChecks, fn($c) => ($c[2] ?? '') === 'core' && ($c[0] ?? '') !== 'info');   // a real verdict, not a "not verified" note
     $st['checks'] = array_merge(smpro_sw_checks($doc), smpro_swd_run($dom, $doc, $user, $coreDue, $batch, $prevChecks));
     foreach ($st['checks'] as $c) if ($c[2] === 'exposed') {
         $now = $c[0] === 'fail' ? (array)$c[3] : []; sort($now);
@@ -283,7 +283,8 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
         $st['exposed_told'] = $now;
     }
     // the same event (same id) is recorded once
-    $seen = array_flip(array_column(smpro_sw_events($dom, 500), 'id'));
+    // ...unless it was closed because it was no longer found: the same thing coming back is a new event
+    $seen = array_flip(array_column(array_filter(smpro_sw_events($dom, 500), fn($e) => ($e['resolved_by'] ?? '') !== 'no longer found'), 'id'));
     $batch = array_values(array_filter($batch, fn($e) => !isset($seen[$e['id']])));
     smpro_sw_events_write($dom, $batch);
     $st['user'] = $user; $st['docroot'] = $doc; $st['checked_at'] = time();
@@ -397,7 +398,9 @@ function smpro_sw_fix(string $dom, string $action, string $arg): array {
         if (function_exists('smpro_is_server_ip') && smpro_is_server_ip($arg)) return ['ok' => false, 'msg' => 'refused: the address of this server'];
         if (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($arg)) return ['ok' => false, 'msg' => 'refused: private/local address'];
         if (function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) return ['ok' => false, 'msg' => 'dry-run mode: ' . $arg . ' was not blocked'];
-        $r = function_exists('smpro_im_block_ip') ? smpro_im_block_ip($arg, 'Site Watch: ran an injected file on ' . $dom) : smpro_fw_block_ip($arg, 'Site Watch: ran an injected file on ' . $dom);
+        // only through the one guarded block function (allow-list, Cloudflare edge, own addresses). Without it: no block.
+        if (!function_exists('smpro_im_block_ip')) return ['ok' => false, 'msg' => 'not blocked: the block guards are not loaded here - block ' . $arg . ' from the Firewall page'];
+        $r = smpro_im_block_ip($arg, 'Site Watch: ran an injected file on ' . $dom);
         $ok = is_array($r) ? !empty($r['ok']) : (bool)$r;
         $res = ['ok' => $ok, 'msg' => ($ok ? 'Blocked ' : 'Could not block ') . $arg . (is_array($r) && !empty($r['msg']) ? ' - ' . $r['msg'] : '')];
     } elseif ($action === 'protect_uploads') {

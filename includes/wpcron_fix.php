@@ -70,7 +70,7 @@ function smpro_wpc_disable(string $docroot, bool $dryRun = false): array {
     if (is_link($file) || $real === false || $homeReal === false || strpos($real, $homeReal . '/') !== 0) return ['ok' => false, 'error' => 'wp-config.php is a link or lies outside the account - refused.'];
     $file = $real;
     if (!is_writable($file))     return ['ok' => false, 'error' => 'wp-config.php cannot be written — check its ownership and permissions.'];
-    $body = (string)@file_get_contents($file);
+    $body = (string)smpro_acct_get($user, $file, 4194304);   // read AS the account: a file swapped for a link is not followed by root
     if ($body === '')            return ['ok' => false, 'error' => 'wp-config.php is empty or unreadable; nothing is being changed.'];
 
     $was = smpro_wpc_state($docroot);
@@ -108,16 +108,16 @@ function smpro_wpc_disable(string $docroot, bool $dryRun = false): array {
     $backup = smpro_wpc_backup($docroot, 'disable_wp_cron');
     if ($backup === '') return ['ok' => false, 'error' => 'wp-config.php could not be copied, so nothing was changed.'];
 
-    if (@file_put_contents($file, $new) === false) return ['ok' => false, 'backup' => $backup, 'error' => 'The file could not be written.'];
+    if (!smpro_acct_put($user, $file, $new)) return ['ok' => false, 'backup' => $backup, 'error' => 'The file could not be written.'];
     clearstatcache();
 
     // Read back what is actually on disk now - not what was meant to be there - and undo it unless PHP agrees it
     // is loadable AND the setting is really in effect.
-    $onDisk = (string)@file_get_contents($file);
+    $onDisk = (string)smpro_acct_get($user, $file, 4194304);
     $after  = smpro_wpc_parses($onDisk);
     $inEffect = smpro_wpc_state($docroot) === true;
     if (empty($after['ok']) || !$inEffect) {
-        @file_put_contents($file, $body);
+        smpro_acct_put($user, $file, $body);
         return ['ok' => false, 'backup' => $backup,
                 'error' => 'The site\'s configuration did not come back as written, so the original was put straight back'
                          . (empty($after['ok']) ? ' (it would not parse: ' . $after['error'] . ')' : '') . '.'];
@@ -160,7 +160,7 @@ function smpro_wpc_undo(string $docroot, string $backupPath): array {
     if (empty($lint['ok'])) return ['ok' => false, 'error' => 'That saved copy does not parse, so restoring it would take the site down: ' . $lint['error']];
     $safety = smpro_wpc_backup($docroot, 'before_undo');
     $file = rtrim($docroot, '/') . '/wp-config.php';
-    if (@file_put_contents($file, $body) === false) return ['ok' => false, 'error' => 'The file could not be written.'];
+    if (!smpro_acct_put($user, $file, $body)) return ['ok' => false, 'error' => 'The file could not be written.'];
     if (function_exists('smpro_audit')) smpro_audit('wp_cron_undo', ['user' => $user, 'from' => $real, 'safety' => $safety]);
     return ['ok' => true, 'restored_from' => $real, 'safety_copy' => $safety, 'error' => ''];
 }

@@ -974,7 +974,7 @@ function smpro_inv_optimize_apply($target, $id, $run = '') {
             smpro_inv_optimize_run_tool($r['user'], 'cwebp -quiet -q 80 ' . $ea . ' -o ' . escapeshellarg($webp), 30);
             if (!is_file($webp) || (int)@filesize($webp) < 32) { @unlink($webp); return ['ok' => false, 'msg' => 'WebP generation failed (or produced an empty file).']; }
             $after = (int)@filesize($webp);
-            smpro_inv_optimize_fix_owner($webp, $acctUid, $acctGid, 0644);
+            // the tool ran as the account, so the new file is already the account's
             $undo = smpro_inv_manifest_add(['user' => $r['user'], 'domain' => $r['domain'], 'action' => 'optimize_webp', 'kind' => 'created', 'from' => $abs, 'to' => $webp, 'run' => $run]);
             smpro_audit('sitedoctor_optimize_apply', ['target' => $target, 'id' => $id, 'ok' => true]);
             return ['ok' => true, 'msg' => 'Created ' . basename($webp) . ' (' . smpro_inv_human($before) . ' → ' . smpro_inv_human($after) . ' WebP).', 'undo_id' => $undo, 'before' => $before, 'after' => $after, 'files' => [$rel]];
@@ -982,8 +982,8 @@ function smpro_inv_optimize_apply($target, $id, $run = '') {
 
         // in-place actions (image recompress, minify) - backup first, validate, swap, keep backup for undo
         $bak = $abs . '.smpro-optbak-' . date('Ymd_His') . '-' . smpro_inv_uniqtag();
-        if (!@copy($abs, $bak)) return ['ok' => false, 'msg' => 'Could not create a backup — aborted (nothing changed).'];
-        @chown($bak, $acctUid !== false ? $acctUid : @fileowner($abs)); @chgrp($bak, $acctGid !== false ? $acctGid : @filegroup($abs));
+        if (!smpro_acct_copy((string)$r['user'], $abs, $bak)) return ['ok' => false, 'msg' => 'Could not create a backup — aborted (nothing changed).'];   // copied AS the account: no root read/write/chown through a path the account can swap
+
 
         if ($sub === 'image') {
             $ran = false;
@@ -994,22 +994,22 @@ function smpro_inv_optimize_apply($target, $id, $run = '') {
             clearstatcache(); $after = (int)@filesize($abs);
             $valid = @getimagesize($abs) !== false;
             if (!$valid || $after <= 0 || $after >= $before) {   // no gain or corrupt -> restore, no manifest
-                @copy($bak, $abs); @unlink($bak); smpro_inv_optimize_fix_owner($abs, $acctUid, $acctGid, $fileMode);
+                smpro_acct_copy((string)$r['user'], $bak, $abs); smpro_acct_rm((string)$r['user'], $bak);
                 return ['ok' => true, 'msg' => $valid ? ('Already optimal — ' . basename($abs) . ' could not be made smaller (left unchanged).') : ('Optimizer produced an invalid image — restored the original.'), 'before' => $before, 'after' => $before, 'files' => [$rel], 'noop' => 1];
             }
-            smpro_inv_optimize_fix_owner($abs, $acctUid, $acctGid, $fileMode);   // FIX: restore ownership (tools may write as root via temp+rename)
+            // the image tool ran as the account: ownership is already right, nothing is chown-ed by path
         } elseif ($sub === 'minify') {
             $tmp = $abs . '.smpro-min-tmp-' . smpro_inv_uniqtag();
             if ($ext === 'css' && $tools['cleancss']) smpro_inv_optimize_run_tool($r['user'], 'cleancss -o ' . escapeshellarg($tmp) . ' ' . $ea, 25);
             elseif ($ext === 'js' && $tools['terser']) smpro_inv_optimize_run_tool($r['user'], 'terser ' . $ea . ' -c -m -o ' . escapeshellarg($tmp), 25);
             elseif ($ext === 'js' && $tools['uglifyjs']) smpro_inv_optimize_run_tool($r['user'], 'uglifyjs ' . $ea . ' -c -m -o ' . escapeshellarg($tmp), 25);
             else { @unlink($bak); return ['ok' => false, 'msg' => 'No minifier available for a ' . strtoupper($ext) . ' file.']; }
-            $min = is_file($tmp) ? (string)@file_get_contents($tmp) : '';
-            @unlink($tmp);
+            $min = (string)smpro_acct_get((string)$r['user'], $tmp, 16777216);
+            smpro_acct_rm((string)$r['user'], $tmp);
             $okMin = $min !== '' && strlen($min) < $before && ($ext !== 'css' || substr_count($min, '{') === substr_count($min, '}'));
             if (!$okMin) { @unlink($bak); return ['ok' => true, 'msg' => 'Minified output failed validation or wasn\'t smaller — left ' . basename($abs) . ' unchanged.', 'before' => $before, 'after' => $before, 'files' => [$rel], 'noop' => 1]; }
-            if (@file_put_contents($abs, $min) === false) { @copy($bak, $abs); @unlink($bak); return ['ok' => false, 'msg' => 'Write failed — restored the original.']; }
-            smpro_inv_optimize_fix_owner($abs, $acctUid, $acctGid, $fileMode);
+            if (!smpro_acct_put((string)$r['user'], $abs, $min)) { smpro_acct_copy((string)$r['user'], $bak, $abs); smpro_acct_rm((string)$r['user'], $bak); return ['ok' => false, 'msg' => 'Write failed — restored the original.']; }
+            // written AS the account, keeping the file's mode
             clearstatcache(); $after = (int)@filesize($abs);
         } else { @unlink($bak); return ['ok' => false, 'msg' => 'Unknown asset action.']; }
 

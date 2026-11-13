@@ -63,6 +63,13 @@ define('SMPRO_SYNC_W2',     3 * 3600);            // stage 2: stronger banner
 define('SMPRO_SYNC_NOTIFY', 6 * 3600);            // stage 3: best-effort notify the customer on their channels
 define('SMPRO_SYNC_STOP',  24 * 3600);            // stage 4: reversible FULL STOP (resumes instantly on a fresh exchange)
 define('SMPRO_SYNC_PURGE', 48 * 3600);            // stage 5: DELETE - ONLY when signed sync_purge=true for this license
+// The gate constant is set only by this plugin's own entry point (offline-signed dev token). A value that is already
+// there AND came with a php.ini auto_prepend_file was planted to switch licensing off without touching a plugin
+// file (so the signed file manifest sees nothing). That is tampering: stop, do not run unlicensed.
+if (defined('SMPRO_LIC_ENFORCE') && !SMPRO_LIC_ENFORCE && trim((string)ini_get('auto_prepend_file')) !== '') {
+    echo "Safety Monitor Pro: the licence gate was overridden from outside the plugin (php.ini auto_prepend_file). Remove it to continue.\n";
+    exit(1);
+}
 if (!defined('SMPRO_LIC_ENFORCE')) define('SMPRO_LIC_ENFORCE', true);  // true = hard-gate: nothing opens without a valid license
 
 // Pinned RSA public key of the license server. The success response is RSA-SHA256

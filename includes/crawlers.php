@@ -359,30 +359,28 @@ function smpro_cr_robots_apply(): array {
     $block = smpro_cr_robots_block(); $r['block'] = $block !== '';
     $t = smpro_cr_robots_targets(); $r['left_alone'] = count($t['none']);
     foreach ($t['have'] as $f => $user) {
-        $cur = (string)@file_get_contents($f);
+        // Everything below happens AS the account. The folder is the account's: a robots.txt, its saved original or a
+        // temporary name swapped for a link must never be read, written or chown-ed by root.
+        $user = (string)$user;
+        $cur = smpro_acct_get($user, $f, 1048576);
+        if ($cur === null) { $r['failed']++; continue; }                 // unreadable, a link, or larger than 1 MB
         $orig = $f . '.smpro-orig';
+        $ob = smpro_acct_get($user, $orig, 1048576);                     // null = no saved original
         // Nothing asked and the original is beside the file: the original comes back byte for byte (the splice
         // normalises the trailing newline, which "byte for byte" must not). The copy is then removed.
-        if ($block === '' && is_file($orig)) {
-            $ob = (string)@file_get_contents($orig);
-            if ($ob === $cur) { @unlink($orig); $r['unchanged']++; continue; }
+        if ($block === '' && $ob !== null) {
+            if ($ob === $cur) { smpro_acct_rm($user, $orig); $r['unchanged']++; continue; }
             $attrs = (string)@shell_exec('lsattr -d ' . escapeshellarg($f) . ' 2>/dev/null');
             if (preg_match('/^\S*[ia]\S*\s/', $attrs)) { $r['locked']++; continue; }
-            $st = @stat($f);
-            if (@file_put_contents($f . '.smpro-tmp', $ob, LOCK_EX) === false) { $r['failed']++; continue; }
-            @chown($f . '.smpro-tmp', (int)($st['uid'] ?? 0)); @chgrp($f . '.smpro-tmp', (int)($st['gid'] ?? 0)); @chmod($f . '.smpro-tmp', ($st['mode'] ?? 0644) & 07777);
-            if (!@rename($f . '.smpro-tmp', $f)) { @unlink($f . '.smpro-tmp'); $r['failed']++; continue; }
-            @unlink($orig); $r['written']++; continue;
+            if (!smpro_acct_put($user, $f, $ob)) { $r['failed']++; continue; }
+            smpro_acct_rm($user, $orig); $r['written']++; continue;
         }
         $new = smpro_cr_robots_splice($cur, $block);
         if ($new === $cur) { $r['unchanged']++; continue; }
         $attrs = (string)@shell_exec('lsattr -d ' . escapeshellarg($f) . ' 2>/dev/null');
         if (preg_match('/^\S*[ia]\S*\s/', $attrs)) { $r['locked']++; continue; }
-        if (!is_file($orig) && strpos($cur, SMPRO_CR_RB_BEGIN) === false) { @copy($f, $orig); @chown($orig, fileowner($f)); @chgrp($orig, filegroup($f)); @chmod($orig, 0644); }
-        $st = @stat($f);
-        if (@file_put_contents($f . '.smpro-tmp', $new, LOCK_EX) === false) { $r['failed']++; continue; }
-        @chown($f . '.smpro-tmp', (int)($st['uid'] ?? 0)); @chgrp($f . '.smpro-tmp', (int)($st['gid'] ?? 0)); @chmod($f . '.smpro-tmp', ($st['mode'] ?? 0644) & 07777);
-        if (!@rename($f . '.smpro-tmp', $f)) { @unlink($f . '.smpro-tmp'); $r['failed']++; continue; }
+        if ($ob === null && strpos($cur, SMPRO_CR_RB_BEGIN) === false) smpro_acct_put($user, $orig, $cur, 0644);
+        if (!smpro_acct_put($user, $f, $new)) { $r['failed']++; continue; }
         $r['written']++;
     }
     $st = smpro_cr_load(SMPRO_CR_STATE); $st['robots'] = $r + ['at' => time()]; smpro_cr_save(SMPRO_CR_STATE, $st);

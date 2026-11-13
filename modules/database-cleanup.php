@@ -653,17 +653,19 @@ function smpro_db_dump_to_home($db, $account) {
     $home = smpro_db_account_home($account);
     if ($home === '') return ['ok'=>false,'msg'=>"Could not locate the home folder for '$account'."];
     $dir = $home . '/smpro_db_backups';
-    @is_dir($dir) || @mkdir($dir, 0700, true);
-    $path = $dir . '/' . $db . '_' . date('Ymd_His') . '.sql.gz';
+    $path = $dir . '/' . $db . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.sql.gz';
+    // The folder is inside the account's home, so the FILE is created by the account itself (the dump still runs as
+    // root and is piped in). A folder or file name the account turned into a link then cannot make root truncate or
+    // hand over a system file.
+    $sink = smpro_acct_cmd((string)$account, 'umask 077; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] && [ ! -L "$1" ] && [ ! -e "$2" ] && [ ! -L "$2" ] && exec cat > "$2"', [$dir, $path]);
+    if ($sink === '') return ['ok'=>false,'msg'=>"Could not act as '$account' to save the backup."];
     $dump = is_executable('/usr/bin/mysqldump') ? '/usr/bin/mysqldump' : 'mysqldump';
-    $cmd = 'timeout 600 ' . $dump . smpro_db_defaults() . ' --single-transaction --quick --skip-lock-tables --default-character-set=binary '
-         . escapeshellarg($db) . ' 2>/dev/null | gzip -c > ' . escapeshellarg($path) . ' 2>/dev/null';
+    $cmd = 'cd / && timeout 600 ' . $dump . smpro_db_defaults() . ' --single-transaction --quick --skip-lock-tables --default-character-set=binary '
+         . escapeshellarg($db) . ' 2>/dev/null | gzip -c | ' . $sink . ' 2>/dev/null';
     @shell_exec($cmd);
-    $bytes = (int)@filesize($path);
-    if ($bytes < 40) { @unlink($path); return ['ok'=>false,'msg'=>'mysqldump produced no output (DB empty or dump failed).']; }
-    // hand ownership to the account so it lives in their space, lock down perms
-    @chmod($path, 0600);
-    @shell_exec('chown ' . escapeshellarg($account . ':' . $account) . ' ' . escapeshellarg($path) . ' 2>/dev/null');
+    clearstatcache(true, $path);
+    $bytes = (!is_link($path) && is_file($path)) ? (int)@filesize($path) : 0;
+    if ($bytes < 40) { smpro_acct_rm((string)$account, $path); return ['ok'=>false,'msg'=>'mysqldump produced no output (DB empty or dump failed).']; }
     return ['ok'=>true,'path'=>$path,'bytes'=>$bytes,'msg'=>'Backup saved'];
 }
 /**

@@ -20,7 +20,7 @@ has($ub, "smpro_im_parse_modsec(4 * 1024 * 1024, 800, (int)\$sinceTs, true)", 'U
 // beta394: the home-region shield lifts automatic blocks set by other tools on residential home-region addresses
 has($src, "function smpro_im_home_shield_run(\$cap = 50) {", 'H1: the shield exists');
 has($src, "if (preg_match('/^[0-9a-fA-F:.]+\\/\\d+/', \$l)) continue;                                   // a network is policy, left alone", 'H2: a CIDR line is never lifted');
-has($src, "if (preg_match('/manual|by hand|\\bkeep\\b|^smpro\\b/i', \$by)) { \$out['kept']++; continue; }", 'H3: a hand-written, pinned, or own block is kept');
+has($src, "if (preg_match('/manual|by hand|\\bkeep\\b|^smpro\\b|SM Pro|Bot Guard:|Site Watch:|SM Hub/i', \$by)) { \$out['kept']++; continue; }", 'H3: a hand-written, pinned, or own block is kept');
 has($src, "if (smpro_im_region_status(\$ip) !== 'core_protected') continue;", 'H4: only residential addresses in a home region');
 has($src, "if (\$d['kind'] === 'temp') @shell_exec('timeout 25 ' . escapeshellarg(\$csf) . ' -tr ' . escapeshellarg(\$ip) . ' 2>&1');", 'H5: temporary denies are lifted too');
 has($src, "if (function_exists('smpro_audit')) smpro_audit('home_shield_lift', \$row);", 'H6: every lift is audited');

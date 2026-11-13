@@ -2117,3 +2117,48 @@ function smpro_log_append(string $file, string $line, int $maxBytes = 20971520, 
     if ($lk) { @flock($lk, LOCK_UN); @fclose($lk); }
     return $ok;
 }
+
+/* ---- Acting inside an account's folders AS the account ------------------------------------------------------------
+ * A folder the account owns can change between a check and the action (a file swapped for a link). Root that follows
+ * the link then writes, reads or hands over a system file. These helpers drop to the account for the action itself,
+ * so the kernel decides what may be touched - not a path check that can be raced. */
+function smpro_acct_cmd(string $user, string $script, array $args = []): string {
+    if (!preg_match('/^[a-z0-9_][a-z0-9_.-]*$/i', $user) || $user === 'root') return '';
+    $uid = function_exists('posix_getpwnam') ? (int)((@posix_getpwnam($user))['uid'] ?? 0) : (int)trim((string)@shell_exec('id -u ' . escapeshellarg($user) . ' 2>/dev/null'));
+    if ($uid <= 0) return '';                                    // unknown account, or one that is root under another name
+    static $ru = null;
+    if ($ru === null) { $ru = ''; foreach (['/usr/sbin/runuser', '/sbin/runuser', '/usr/bin/runuser'] as $b) if (@is_executable($b)) { $ru = $b; break; } }
+    $inner = '/bin/sh -c ' . escapeshellarg($script) . ' sh';
+    foreach ($args as $a) $inner .= ' ' . escapeshellarg((string)$a);
+    return $ru !== '' ? $ru . ' -u ' . escapeshellarg($user) . ' -- ' . $inner : 'su -s /bin/sh ' . escapeshellarg($user) . ' -c ' . escapeshellarg($inner);
+}
+function smpro_acct_tmp(): string { $d = SMPRO_VARLIB . '/tmp'; @is_dir($d) || @mkdir($d, 0700, true); return $d . '/acct-' . bin2hex(random_bytes(8)); }
+/** Run a short shell script as the account. $stdin (optional) is fed from a root-only file. Returns ['code','out']. */
+function smpro_acct_sh(string $user, string $script, array $args = [], ?string $stdin = null, int $timeout = 60): array {
+    $cmd = smpro_acct_cmd($user, $script, $args); if ($cmd === '') return ['code' => 255, 'out' => ''];
+    $in = '/dev/null'; $tmpIn = '';
+    if ($stdin !== null) { $tmpIn = smpro_acct_tmp(); if (@file_put_contents($tmpIn, $stdin) === false) return ['code' => 255, 'out' => '']; @chmod($tmpIn, 0600); $in = $tmpIn; }
+    $outF = smpro_acct_tmp();
+    $rc = trim((string)@shell_exec('cd / && timeout ' . max(5, $timeout) . ' ' . $cmd . ' < ' . escapeshellarg($in) . ' > ' . escapeshellarg($outF) . ' 2>/dev/null; echo $?'));
+    $out = (string)@file_get_contents($outF); @unlink($outF); if ($tmpIn !== '') @unlink($tmpIn);
+    return ['code' => is_numeric($rc) ? (int)$rc : 255, 'out' => $out];
+}
+/** Read a regular file (never a link) as the account. null = not readable, not a plain file, or larger than $max. */
+function smpro_acct_get(string $user, string $path, int $max = 2097152): ?string {
+    $r = smpro_acct_sh($user, '[ -f "$1" ] && [ ! -L "$1" ] && s=$(stat -c %s -- "$1") && [ "$s" -le "$2" ] && exec cat -- "$1"', [$path, $max], null, 30);
+    return $r['code'] === 0 ? $r['out'] : null;
+}
+/** Write a file as the account: new file beside it, then renamed over it. Keeps the old mode unless $mode is given. */
+function smpro_acct_put(string $user, string $path, string $data, int $mode = 0): bool {
+    $s = 'umask 022; [ -L "$1" ] && exit 3; t="$1.smpro-tmp-$3"; rm -f -- "$t"; cat > "$t" || { rm -f -- "$t"; exit 4; }; '
+       . 'if [ -n "$2" ]; then chmod "$2" -- "$t"; elif [ -f "$1" ]; then chmod --reference="$1" -- "$t" 2>/dev/null; fi; '
+       . 'mv -f -- "$t" "$1" || { rm -f -- "$t"; exit 5; }';
+    return smpro_acct_sh($user, $s, [$path, $mode ? decoct($mode & 07777) : '', bin2hex(random_bytes(6))], $data, 60)['code'] === 0;
+}
+/** Copy one regular file to another name as the account (neither end may be a link). */
+function smpro_acct_copy(string $user, string $from, string $to): bool {
+    return smpro_acct_sh($user, '[ -f "$1" ] && [ ! -L "$1" ] && [ ! -L "$2" ] && cp -pf -- "$1" "$2"', [$from, $to], null, 120)['code'] === 0;
+}
+function smpro_acct_rm(string $user, string $path): bool {
+    return smpro_acct_sh($user, 'rm -f -- "$1"', [$path], null, 30)['code'] === 0;
+}

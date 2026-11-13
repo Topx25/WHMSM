@@ -58,7 +58,9 @@ function smpro_swd_core(string $doc, string $user): array {
         $p = $doc . '/' . $f; if (@is_link($p)) return false;
         $rp = @realpath($p); return $rp !== false && $rdoc !== '' && strpos($rp, $rdoc . '/') === 0 && @is_file($rp);
     };
-    $p['modified'] = array_values(array_filter($p['modified'], $inside)); $p['extra'] = array_values(array_filter($p['extra'], $inside));
+    // a core file REPLACED BY A LINK is a changed core file (never read through - only reported)
+    $linked = fn(string $f): bool => $f !== '' && $f[0] !== '/' && strpos($f, '..') === false && @is_link($doc . '/' . $f);
+    $p['modified'] = array_values(array_filter($p['modified'], fn($f) => $inside($f) || $linked($f))); $p['extra'] = array_values(array_filter($p['extra'], $inside));
     // only code counts: a translated readme or a dropped .txt is not an attack
     $code = fn($f) => (bool)preg_match('/\.(php\d?|phtml|phar|js|htaccess)$/i', $f) || basename($f) === '.htaccess';
     $mod = array_values(array_filter($p['modified'], fn($f) => $code($f) && $f !== 'wp-config-sample.php' && $f !== 'wp-includes/version.php'));
@@ -98,7 +100,7 @@ function smpro_swd_fetch(string $dom, string $ua): array {
             CURLOPT_HEADERFUNCTION => function ($c, $l) use (&$hdr) { $hdr .= $l; return strlen($l); }]);
         $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = (string)curl_error($ch); curl_close($ch);
         if ($code > 0) {
-            $loc = preg_match('/^Location:\s*(\S+)/mi', $hdr, $m) ? $m[1] : '';
+            $loc = preg_match('/^Location:[ \t]*(\S+)/mi', $hdr, $m) ? $m[1] : '';
             return ['code' => $code, 'loc' => $loc, 'hdr' => $hdr, 'body' => is_string($body) ? substr($body, 0, 400000) : '', 'scheme' => $sch];
         }
     }
@@ -133,7 +135,8 @@ function smpro_swd_cloak_verdict(string $dom, array $browser, array $bot): array
 function smpro_swd_cloak(string $dom): array {
     $b = smpro_swd_fetch($dom, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36');
     $g = smpro_swd_fetch($dom, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
-    if ((int)($b['code'] ?? 0) === 0 && (int)($g['code'] ?? 0) === 0) return ['ok' => false, 'why' => 'the home page did not answer on this server (' . ($b['err'] ?? '') . ')', 'found' => []];
+    // both fetches must answer: one side missing is "could not compare", never "the same for both"
+    if ((int)($b['code'] ?? 0) === 0 || (int)($g['code'] ?? 0) === 0) return ['ok' => false, 'why' => ((int)($b['code'] ?? 0) === 0 && (int)($g['code'] ?? 0) === 0 ? 'the home page did not answer on this server' : 'the home page answered only one of the two requests (' . ((int)($b['code'] ?? 0) === 0 ? 'visitor' : 'search engine') . ' request failed)') . ' (' . ($b['err'] ?? ($g['err'] ?? '')) . ')', 'found' => []];
     return ['ok' => true, 'found' => smpro_swd_cloak_verdict($dom, $b, $g), 'codes' => [(int)($b['code'] ?? 0), (int)($g['code'] ?? 0)]];
 }
 
@@ -173,24 +176,25 @@ function smpro_swd_run(string $dom, string $doc, string $user, bool $coreDue, ar
     // one verification can take a minute (checksums fetched from wordpress.org); a round with hundreds of sites keeps
     // a time budget and leaves the rest for the next round - said on the card, never shown as clean
     static $spent = 0.0;
-    if ($coreDue && $spent > 1800) { $coreDue = false; $rows[] = ['info', 'WordPress core not verified in this round (time budget used) - next round', 'core', []]; }
+    $keepCore = function () use (&$rows, $prevChecks) { foreach ($prevChecks as $pc) if (($pc[2] ?? '') === 'core' && ($pc[0] ?? '') !== 'info') $rows[] = $pc; };   // the last real verdict stays on the card
+    if ($coreDue && $spent > 1800) { $coreDue = false; $keepCore(); $rows[] = ['info', 'WordPress core not verified in this round (time budget used) - next round', 'core', []]; $budgetNote = true; }
     if ($coreDue) {
         $t0 = microtime(true);
         $c = smpro_swd_core($doc, $user);
         $spent += microtime(true) - $t0;
         if (!empty($c['skip'])) { /* not WordPress */ }
-        elseif (empty($c['ok'])) $rows[] = ['info', (string)$c['why'], 'core', []];   // honest "not verified", not a site problem
+        elseif (empty($c['ok'])) { $keepCore(); $rows[] = ['info', (string)$c['why'], 'core', []]; }   // honest "not verified", not a site problem
         else {
             $ran['core'] = 1;
             foreach ($c['modified'] as $rel) {
-                $hint = smpro_swd_head_hint($doc . '/' . $rel);
+                $hint = @is_link($doc . '/' . $rel) ? 'replaced by a link' : smpro_swd_head_hint($doc . '/' . $rel);
                 smpro_sw_event_add($dom, $batch, 'critical', 'core_mod', 'WordPress core file changed' . ($hint !== '' ? ' (' . $hint . ')' : '') . ': ' . $rel, ['path' => $rel, 'mtime' => (int)@filemtime($doc . '/' . $rel)]);
             }
             foreach ($c['extra'] as $rel) smpro_sw_event_add($dom, $batch, 'critical', 'core_extra', 'File that is not part of WordPress inside its core folders: ' . $rel, ['path' => $rel, 'mtime' => (int)@filemtime($doc . '/' . $rel)]);
             $n = count($c['modified']) + count($c['extra']);
             $rows[] = $n ? ['fail', 'WordPress core: ' . count($c['modified']) . ' changed, ' . count($c['extra']) . ' foreign file(s)', 'core', array_merge($c['modified'], $c['extra'])] : ['ok', 'WordPress core matches the official checksums', 'core', []];
         }
-    } else {
+    } elseif (empty($budgetNote)) {
         foreach ($prevChecks as $pc) if (($pc[2] ?? '') === 'core') $rows[] = $pc;   // keep the last core verdict on the card
     }
     $cl = smpro_swd_cloak($dom);

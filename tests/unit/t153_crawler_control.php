@@ -98,15 +98,16 @@ $new = smpro_cr_robots_splice($cur, $blk); file_put_contents($dr . '/a/robots.tx
 ok(is_file($dr . '/a/robots.txt') && !is_file($dr . '/b/robots.txt'), 'F13: a site without a robots.txt gets none created');
 has($cr, 'if (is_file($f) && !is_link($f)) $have[$f] = $u; else $none[$r] = $u;', 'F14: targets are real files only, never links, never created');
 has($cr, "if (preg_match('/^\\S*[ia]\\S*\\s/', \$attrs)) { \$r['locked']++; continue; }", 'F15: an immutable file is skipped and counted');
-has($cr, 'if (!is_file($orig) && strpos($cur, SMPRO_CR_RB_BEGIN) === false) { @copy($f, $orig);', 'F16: the original is copied once, before the first block');
+has($cr, 'if ($ob === null && strpos($cur, SMPRO_CR_RB_BEGIN) === false) smpro_acct_put($user, $orig, $cur, 0644);', 'F16: the original is copied once, before the first block');
 has($cr, "if (\$a['ok']) smpro_cr_robots_apply();   // a refused family is also asked politely, in every robots.txt", 'F17: a refused family is always in robots.txt');
 has($pg, "elseif (\$act === 'cr_robots')", 'F18: the page switch'); has($pg, 'Ask all AI crawlers to stay out (robots.txt)', 'F19: the one-press AI robots button');
 has($pg, "site(s) have no real robots.txt (WordPress serves a virtual one) and are left alone", 'F20: the page says what was left alone');
 
 // G. beta380: removal restores the kept original byte for byte, whatever its trailing-newline shape
-has($cr, 'if ($block === ' . "''" . ' && is_file($orig)) {', 'G1: nothing asked + original kept = the original comes back');
-has($cr, 'if ($ob === $cur) { @unlink($orig); $r[' . "'unchanged'" . ']++; continue; }', 'G2: ...and the copy is removed when the file already equals it');
-has($cr, '@unlink($orig); $r[' . "'written'" . ']++; continue;', 'G3: ...or after it is written back');
+has($cr, 'if ($block === ' . "''" . ' && $ob !== null) {', 'G1: nothing asked + original kept = the original comes back');
+has($cr, 'if ($ob === $cur) { smpro_acct_rm($user, $orig); $r[' . "'unchanged'" . ']++; continue; }', 'G2: ...and the copy is removed when the file already equals it');
+ok(strpos($cr, "file_put_contents(\$f . '.smpro-tmp'") === false && strpos($cr, '@copy($f, $orig)') === false && strpos($cr, '$cur = smpro_acct_get($user, $f, 1048576);') !== false, 'G3a: robots.txt, its original and the temporary file are handled as the account, never by root');
+has($cr, 'smpro_acct_rm($user, $orig); $r[' . "'written'" . ']++; continue;', 'G3: ...or after it is written back');
 $noNl = "User-agent: *\nDisallow: /tmp/";   // no trailing newline: the splice alone could not give this back
 $spliced = smpro_cr_robots_splice($noNl, smpro_cr_robots_block(['openai']));
 ok(smpro_cr_robots_splice($spliced, '') !== $noNl, 'G4: the splice normalises the end of the file (why the original copy is the source of truth)');

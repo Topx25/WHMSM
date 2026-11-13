@@ -324,3 +324,13 @@
   plugin_off (never automatic), purge_cache. Test t165.
 - .htaccess inside wp-includes/wp-admin is ignored (hardening tools write it); a redirect of ALL visitors to another
   site is a warning (cPanel Redirects), only crawler-only redirects are cloaking (critical).
+- 2026-11-12 14:58: beta413 PUBLISHED to BETA (273c22e pushed); STABLE stays beta412. Added before publish, from a
+  4-angle review: upload-dir hardening refuses a linked .htaccess (tmp+rename), Site Doctor fix-permissions runs chmod
+  as the account + chown -h, Site Watch bounded read of uploads/.htaccess + guarded automatic block, wp-cli run
+  without the account's config and its paths confined to the site, toast error-before-ok, Site Watch page catch.
+  Review backlog NOT fixed: check-then-act root file ops (quarantine move, safe-write chown by path, undo rename),
+  PUBLISH.sh guards that fail open / wrong pointer, self-update not atomic (no journal, lint-only check),
+  uninstall leaves hooks/audit rules/locks, tests/.build stale snapshot (tests old code), spqueue calls module-only
+  functions from cron, 75 boot includes on every poll, no shared UI kit (2284 inline styles, 200 native confirm()).
+
+- 2026-11-13 21:30 fouad (dc1) DOOR FOUND + CLOSED: attacker logged into cPanel with the real password (form login) from 217.217.112.253 (03-23), 23.94.39.29 (03-25), 45.133.168.181 (03-25, 04-13) and CHANGED the cPanel password himself 2026-03-25 10:52 UTC; spam index.php dates from that day. I set a new random password via whmapi1 passwd (kept only in /root/smpro-backups/fouad-lockout-2026-11-13_2130/new-password.txt, 0600). Survey read-only: no ssh keys, no extra FTP, no API tokens, no cron, no forwarders, no sessions, no shell/signature hits, no verification file/DNS TXT left. Open: owner removes attacker from Google Search Console; saydat/app/storage/logs/laravel.log is 14 GB and gets a session file every minute (bot traffic); contact email of the account is empty.

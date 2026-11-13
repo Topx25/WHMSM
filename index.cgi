@@ -39,7 +39,7 @@ cd "$DIR" || exit 0
 # silently at that cap (blank page, nothing logged — measured 2026-09-07). 768M is a ceiling, not an allocation.
 BODY="$(REQUEST_METHOD="${REQUEST_METHOD:-GET}" \
   SCRIPT_FILENAME="$DIR/index.php" \
-  "$PHP_BIN" -d display_errors=0 -d memory_limit=768M -d serialize_precision=-1 -d precision=14 "$DIR/index.php" 2>/dev/null)"
+  "$PHP_BIN" -d auto_prepend_file= -d auto_append_file= -d display_errors=0 -d memory_limit=768M -d serialize_precision=-1 -d precision=14 "$DIR/index.php" 2>/dev/null)"
 
 # JSON API requests: serve raw JSON, no link rewriting.
 case "&${QUERY_STRING:-}&" in

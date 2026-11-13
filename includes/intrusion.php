@@ -724,7 +724,7 @@ function smpro_im_home_shield_run($cap = 50) {
     $out = ['checked' => true, 'lifted' => [], 'kept' => 0, 'why' => '']; $n = 0;
     foreach ($deny as $ip => $d) {
         $by = $d['by'];
-        if (preg_match('/manual|by hand|\bkeep\b|^smpro\b/i', $by)) { $out['kept']++; continue; }          // a person decided, or pinned
+        if (preg_match('/manual|by hand|\bkeep\b|^smpro\b|SM Pro|Bot Guard:|Site Watch:|SM Hub/i', $by)) { $out['kept']++; continue; }          // a person decided, or pinned
         if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) continue;
         if (smpro_im_region_status($ip) !== 'core_protected') continue;                                 // not home, or a datacenter
         if ($n++ >= (int)$cap) break;
