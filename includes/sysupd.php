@@ -401,6 +401,6 @@ function smpro_su_cron_sync(): bool {
     $lockDir = defined('SMPRO_LOCKS') ? SMPRO_LOCKS : (SMPRO_VARLIB . '/locks'); @is_dir($lockDir) || @mkdir($lockDir, 0700, true);
     $flock = is_executable('/usr/bin/flock') ? '/usr/bin/flock' : 'flock';
     $line = "# Safety Monitor Pro - System updates: look every few hours, apply at the chosen hour when the mode is automatic (never reboots)\n"
-          . "*/30 * * * * root " . $flock . " -n " . $lockDir . "/sysupd.lock timeout 3500 " . $php . " " . SMPRO_BASE . "/bin/sysupd_tick.php >/dev/null 2>&1\n";
+          . "*/30 * * * * root " . $flock . " -n " . $lockDir . "/sysupd.lock timeout 14000 " . $php . " " . SMPRO_BASE . "/bin/sysupd_tick.php >/dev/null 2>&1\n";
     return function_exists('smpro_cron_install') ? smpro_cron_install(SMPRO_SU_CRON, $line) : (@file_put_contents(SMPRO_SU_CRON, $line) !== false && @chmod(SMPRO_SU_CRON, 0644));
 }

@@ -244,6 +244,23 @@ function smpro_reboot_cron_sync() {
     if (@is_file($f) && (string)@file_get_contents($f) === $desired) return;
     smpro_cron_install($f, $desired);   // verified write: 0644 + trailing newline, or it reports failure
 }
+/**
+ * Work that must not be cut by a reboot, running right now: a package transaction, a cPanel update, an account
+ * being packaged, the nightly backup, a database upgrade. Names of what was found, or [] - and [] also when the
+ * process list could not be read (the readiness checks still decide then).
+ */
+function smpro_reboot_busy(): array {
+    $found = [];
+    // the bracket keeps the pattern from matching the shell that carries it
+    $pats = ['a package transaction (dnf/yum)' => '-x "(dnf|yum|dnf-automatic)"', 'a package transaction (rpm)' => '-f "[r]pm (-U|-i|-e|--upgrade|--install|--erase)"',
+             'a cPanel update' => '-f "[s]cripts/upcp"', 'an account being packaged' => '-f "[s]cripts/pkgacct"',
+             'the cPanel backup' => '-f "[c]panel/bin/backup"', 'a database upgrade' => '-f "([m]ysql_upgrade|[m]ariadb-upgrade)"'];
+    foreach ($pats as $label => $p) {
+        $o = trim((string)@shell_exec('timeout 10 pgrep ' . $p . ' 2>/dev/null | head -n 1'));
+        if ($o !== '' && ctype_digit($o)) $found[] = $label;
+    }
+    return $found;
+}
 /** The worker body (bin/reboot.php): re-verify, pin kernel if requested, notify, then reboot. Returns nothing. */
 function smpro_reboot_run() {
     $s = smpro_reboot_sched();
@@ -259,6 +276,30 @@ function smpro_reboot_run() {
         if (function_exists('smpro_audit')) @smpro_audit('reboot_aborted', ['fail' => $bad]);
         smpro_reboot_clear(); return;
     }
+    // Restarting in the middle of a package transaction or a backup breaks that work, sometimes the system. The
+    // reboot WAITS: it is tried again every ten minutes for up to two hours (a nightly backup usually runs in
+    // the very window chosen for reboots - giving up at once would mean never restarting). Only after that
+    // is it given up, and said; an automatic one is then planned again for the next window.
+    $busy = smpro_reboot_busy(); $pf = dirname(SMPRO_RB_CFG) . '/reboot_wait.json';
+    if ($busy) {
+        $w = @is_file($pf) ? json_decode((string)@file_get_contents($pf), true) : null; $first = is_array($w) ? (int)($w['first'] ?? 0) : 0;
+        if ($first <= 0 || time() - $first > 6 * 3600) $first = time();
+        if (time() - $first < 7200) {
+            @file_put_contents($pf, json_encode(['first' => $first, 'why' => $busy]), LOCK_EX); @chmod($pf, 0600);
+            $again = smpro_reboot_sched_save(['enabled' => true, 'at' => time() + 600, 'target' => $s['target']]);
+            if (function_exists('smpro_audit')) @smpro_audit('reboot_waiting', ['for' => $busy, 'again_at' => time() + 600, 'ok' => !empty($again['ok'])]);
+            if (!empty($again['ok'])) return;
+        }
+        @unlink($pf);
+        if (function_exists('smpro_notify')) @smpro_notify('reboot_aborted', 'Scheduled reboot NOT performed (work in progress)',
+            'The scheduled reboot of this server was not performed: for two hours this was still running: ' . implode('; ', $busy) . '. Nothing was restarted. A reboot planned by the automatic updates is planned again for the next window; one you scheduled yourself has to be scheduled again.', ['severity' => 'warning'], true);
+        if (function_exists('smpro_audit')) @smpro_audit('reboot_aborted', ['fail' => $busy]);
+        smpro_reboot_clear();
+        if (!function_exists('smpro_su_state')) { $suf = __DIR__ . '/sysupd.php'; if (is_file($suf)) require_once $suf; }
+        if (function_exists('smpro_su_state') && function_exists('smpro_su_state_save')) { $su = smpro_su_state(); if (isset($su['reboot_reason'])) { unset($su['reboot_reason'], $su['reboot_planned_at']); smpro_su_state_save($su); } }
+        return;
+    }
+    @unlink($pf);
     if ($s['target'] === 'current') @shell_exec('timeout 20 grubby --set-default /boot/vmlinuz-' . escapeshellarg(smpro_rb_current()) . ' 2>&1');   // pin known-good kernel
     $bootK = $s['target'] === 'current' ? smpro_rb_current() : ($r['next'] ?? '');
     if (function_exists('smpro_audit')) @smpro_audit('reboot_exec', ['target' => $s['target'], 'kernel' => $bootK]);

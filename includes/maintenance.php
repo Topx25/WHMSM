@@ -1067,7 +1067,9 @@ function smpro_swapcycle_run() {
     // The remembered swap set is re-added entry by entry (swapon -a restores only fstab entries).
     $before = function_exists('smpro_swap_active') ? array_keys((array)smpro_swap_active()) : [];
     $re = ''; foreach ($before as $dev) if ($dev !== '' && @file_exists($dev)) $re .= '; ' . $swon . ' ' . escapeshellarg($dev) . ' >/dev/null 2>&1';
-    @shell_exec('timeout 900 sh -c ' . escapeshellarg($swoff . ' -a; ' . $swon . ' -a' . $re) . ' >/dev/null 2>&1');
+    // The time limit is on swapoff ALONE. Around the whole pair it killed the shell too, so when swapoff ran long
+    // swapon never ran: the server was left with part of its swap gone and the state said "cycled".
+    @shell_exec('sh -c ' . escapeshellarg('timeout 900 ' . $swoff . ' -a; ' . $swon . ' -a' . $re) . ' >/dev/null 2>&1');
     // re-assert a managed swapfile that is live-but-not-persisted (swapon -a restores only fstab entries)
     if (function_exists('smpro_swap_meta_read')) {
         $meta = smpro_swap_meta_read(); $mp = (string)($meta['path'] ?? '');

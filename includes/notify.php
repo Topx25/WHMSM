@@ -747,7 +747,7 @@ function smpro_notify_run_checks($verbose = false) {
     if ($bin) {
         $checked[] = 'malware_active';
         $raw = (string)@shell_exec('timeout 40 ' . $bin . ' malware malicious list --limit 500 --json 2>/dev/null');
-        $j = json_decode($raw, true); $items = is_array($j) ? ($j['items'] ?? []) : [];
+        $j = json_decode($raw, true); $items = is_array($j) ? ($j['items'] ?? []) : [];   $imAsked = is_array($j);   // false = the scanner did not answer: neither "found" nor "clean"
         // Only count files that are STILL malicious RIGHT NOW. Imunify keeps a record in its "malicious
         // list" even after the file has been cleaned/quarantined/deleted from disk, so counting the raw
         // list produces a STALE "currently-malicious" alert naming already-cleaned accounts. Mirror the
@@ -776,7 +776,7 @@ function smpro_notify_run_checks($verbose = false) {
                 "Accounts: " . implode(', ', array_slice($accts, 0, 8))
                 . ($imc['ran'] ? "\nImunify360 was asked to clean " . count($imc['files']) . " other file(s) it had left as found." : '')
                 . "\nThese still need you: open Imunify360 Reports and use Clean with Imunify (keeps the original) or Delete.", ['severity' => 'critical']);
-        } else $maybe('malware_active', 'clear', '', '');
+        } elseif ($imAsked) $maybe('malware_active', 'clear', '', '');
 
         // 1b) database injections (Imunify flagged malicious DB content)
         $checked[] = 'db_injection';
@@ -808,7 +808,7 @@ function smpro_notify_run_checks($verbose = false) {
         sort($names);
         if ($names) $maybe('account_suspended', 'susp:' . md5(implode(',', $names)), count($names) . ' suspended account(s)',
             "Suspended: " . implode(', ', array_slice($names, 0, 15)), ['severity' => 'high']);
-        else $maybe('account_suspended', 'clear', '', '');
+        elseif (is_array($j) && !empty($j['metadata']['result'])) $maybe('account_suspended', 'clear', '', '');   // an API that did not answer is not "none suspended"
     }
 
     // 3) disk usage
@@ -957,7 +957,7 @@ function smpro_notify_run_checks($verbose = false) {
         }
         if ($failed) $maybe('backup_failed', 'bk:' . md5(implode(',', $failed)), count($failed) . ' backup job(s) failed / incomplete',
             "Jobs: " . implode(', ', array_slice($failed, 0, 12)) . "\nOpen Backup Monitor to re-run them.", ['severity' => 'high']);
-        else $maybe('backup_failed', 'clear', '', '');
+        elseif ($list) $maybe('backup_failed', 'clear', '', '');   // no answer from the backup service is not "all jobs fine"
     }
 
     // 7b) server reboot - alert once per boot; classify clean/administrative vs unexpected (crash/power loss).

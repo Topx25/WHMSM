@@ -1580,8 +1580,11 @@ function smpro_im_blocked_forget($ip) {
  */
 function smpro_im_block_in_force(string $ip, int $notedAt): bool {
     if ($notedAt > 0 && time() - $notedAt < 86400) return true;
-    if (function_exists('smpro_csf_denied') && smpro_csf_denied($ip)) return true;
-    $book = smpro_im_blocked_load();
+    // the firewall's list and the block book are read ONCE per run: asked per address, a pass over a few hundred
+    // old notes read the deny list (and ran the firewall tool) a few hundred times
+    static $fw = null, $book = null;
+    if ($fw === null) { $fw = function_exists('smpro_csf_blocked_set') ? (array)smpro_csf_blocked_set() : []; $book = smpro_im_blocked_load(); }
+    if (isset($fw[$ip])) return true;
     return isset($book[$ip]) && strpos((string)($book[$ip]['via'] ?? ''), 'CF:ok') !== false;
 }
 /** Every IP currently considered blocked: the CSF deny list UNION the IPs SM Pro recorded as blocked (incl. Cloudflare). */
