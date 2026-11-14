@@ -41,3 +41,10 @@ $un = is_file(SMPRO_BASE . '/packaging/uninstall.sh') ? $src('packaging/uninstal
 if ($un === '') tap_skip('C3: uninstall --purge keeps what cannot be recreated', 'the uninstall script is not part of this tree');
 else ok(strpos($un, 'for item in quarantine backups detections emergency.json learn php_harden; do') !== false && strpos($un, 'for item in') < strpos($un, 'rm -rf "$DATA" "$LOGDIR"'), 'C3: uninstall --purge moves quarantine and backups aside before deleting');
 has($src('includes/fwblock.php') . $src('includes/fwallow.php'), "smpro_csf_deny_unlock(\$dl);", 'C4: the remaining CSF list rewrites are done under the shared lock');
+
+// beta420: an address sending CRITICAL malicious-upload requests does not wait for the general floor
+$im2 = $src('includes/intrusion.php');
+has($im2, "'auto_block_critical_threshold' => 3,", 'D1: a separate, low floor for critical upload requests');
+has($im2, "if ((\$e['ip'] ?? '') === '' || strtoupper((string)(\$e['severity'] ?? '')) !== 'CRITICAL' || (string)(\$e['kind'] ?? '') !== 'Malicious Upload') continue;", 'D2: only CRITICAL Malicious Upload requests count towards it');
+has($im2, "foreach (\$events as \$e) {   // counted over the whole hour", 'D3: counted over the hour that was read (the real case sent three, ten minutes apart)');
+ok(strpos($im2, 'foreach ($critOf as $cip => $cn)') < strpos($im2, "if (smpro_im_allowlisted(\$ip)) continue;", strpos($im2, 'foreach ($critOf as $cip => $cn)')), 'D4: such an address still passes the allow-list and home-region guards');

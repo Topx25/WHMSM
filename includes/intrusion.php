@@ -43,6 +43,7 @@ function smpro_in_cfg($reset = false) {
         'cf_token' => '', 'cf_account' => '',                 // Cloudflare API (account-level access rules)
         'abuseipdb_key' => '',
         'auto_block' => false, 'auto_block_dryrun' => true,   // auto-response (off by default; dry-run when first enabled)
+        'auto_block_critical_threshold' => 3,                  // floor for CRITICAL malicious-upload / web-shell requests (see the auto-block step)
         'auto_block_threshold' => 30,                          // per-IP attack-count floor for auto-block (non-Arab / datacenter / unknown)
         'protect_arab' => true,                                // home-region residential never auto-blocked; other-Arab residential needs a higher bar
         'ai_block' => false,                                   // let the AI decide which attacker IPs to auto-block
@@ -2450,6 +2451,16 @@ function smpro_im_alert_scan() {
         } else {
             foreach ($offenders as $o) if ($o['hits'] >= $minHits) $toBlock[] = $o['ip'];
         }
+        // A CRITICAL malicious-upload request is someone driving, or trying to plant, a web shell - not routine scanning.
+        // Waiting for the general floor (30) left such an address free for hours on a real case: it made three such
+        // requests and was never blocked. These addresses are taken at a much lower count; every guard below still
+        // applies to them (own and allow-listed addresses, home-region residential, Cloudflare).
+        $critMin = max(1, (int)($cfg['auto_block_critical_threshold'] ?? 3)); $critOf = [];
+        foreach ($events as $e) {   // counted over the whole hour that was read, not only the short alert window: such requests come minutes apart
+            if (($e['ip'] ?? '') === '' || strtoupper((string)($e['severity'] ?? '')) !== 'CRITICAL' || (string)($e['kind'] ?? '') !== 'Malicious Upload') continue;
+            $critOf[$e['ip']] = ($critOf[$e['ip']] ?? 0) + 1;
+        }
+        foreach ($critOf as $cip => $cn) if ($cn >= $critMin && !in_array($cip, $toBlock, true)) { $toBlock[] = $cip; if ($how === 'threshold') $how = 'threshold + critical uploads'; }
         foreach ($toBlock as $ip) {
             if (isset($done[$ip]) || !filter_var($ip, FILTER_VALIDATE_IP)) continue;
             if (function_exists('smpro_ip_is_external') && !smpro_ip_is_external($ip)) continue;
@@ -2460,7 +2471,7 @@ function smpro_im_alert_scan() {
             if (!empty($cfg['protect_arab'])) {
                 $rs = smpro_im_region_status($ip);
                 if ($rs === 'core_protected') continue;
-                if ($rs === 'arab_caution' && ($hitsOf[$ip] ?? 0) < $minHits * 3) continue;
+                if ($rs === 'arab_caution' && ($hitsOf[$ip] ?? 0) < $minHits * 3 && ($critOf[$ip] ?? 0) < $critMin * 3) continue;
             }
             $globalDry = function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run();
             if (empty($cfg['auto_block_dryrun']) && !$globalDry) { $r = smpro_im_block_ip($ip, 'auto/' . $how); if ($r['ok']) { $done[$ip] = time(); $blocked[] = $ip; } }
