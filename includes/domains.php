@@ -377,8 +377,14 @@ function smpro_dom_whois_expiry(string $domain): array {
 function smpro_dom_http(string $domain): array {
     $code = 0; $title = '';
     if (smpro_dom_has('curl')) {
-        $out = smpro_dom_sh('curl -sS -m 6 -L --max-redirs 3 -A ' . escapeshellarg('Mozilla/5.0 SafetyMonitorPro/DomainChecker')
-             . ' -w ' . escapeshellarg('\n__SMHTTP__%{http_code}') . ' ' . escapeshellarg('http://' . $domain), 9);
+        // A customer's domain can point anywhere. One that resolves to this machine itself, a private network or the
+        // link-local range is not fetched by root; and the page is read up to a limit - a huge body used to be held
+        // whole in memory and ended the scan.
+        foreach ((array)(@gethostbynamel($domain) ?: []) as $rip) {
+            if (!filter_var($rip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return ['code' => 0, 'title' => ''];
+        }
+        $out = smpro_dom_sh('sh -c ' . escapeshellarg('curl -sS -m 6 -L --max-redirs 3 --proto =http,https --proto-redir =http,https -A ' . escapeshellarg('Mozilla/5.0 SafetyMonitorPro/DomainChecker')
+             . ' -w ' . escapeshellarg('\n__SMHTTP__%{http_code}') . ' ' . escapeshellarg('http://' . $domain) . ' 2>/dev/null | { head -c 262144; echo; tail -c 24; }'), 9);
         if (preg_match('/__SMHTTP__(\d{3})\s*$/', $out, $m)) $code = (int)$m[1];
         if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $out, $m)) $title = mb_substr(trim(html_entity_decode(strip_tags($m[1]), ENT_QUOTES, 'UTF-8')), 0, 60);
     }
@@ -492,17 +498,34 @@ function smpro_dom_backup(string $user): array {
     foreach (['/usr/local/cpanel/scripts/pkgacct', '/scripts/pkgacct'] as $s) if (is_executable($s)) { $script = $s; break; }
     if ($script === '') return ['ok' => false, 'msg' => 'pkgacct not found — cannot create a backup.'];
     @is_dir('/backup') || @mkdir('/backup', 0700, true);
-    @unlink('/backup/cpmove-' . $user . '.tar.gz');   // drop any STALE archive so "created" can't be a false positive off an old run
-    // pkgacct <user> <dir> -> /backup/cpmove-<user>.tar.gz   (long-running; allow up to 15 min)
-    $out  = smpro_dom_sh(escapeshellarg($script) . ' ' . escapeshellarg($user) . ' /backup 2>&1', 900);
+    // An archive from an earlier run is moved aside, not deleted: it may be the only good copy there is. It comes
+    // back if this run fails, and goes only when a new, verified archive has taken its place.
+    $arc = '/backup/cpmove-' . $user . '.tar.gz'; $aside = '';
+    if (@is_file($arc) && !@is_link($arc)) { $aside = '/backup/earlier-' . date('Ymd-His') . '-cpmove-' . $user . '.tar.gz'; if (!@rename($arc, $aside)) $aside = ''; }
+    if (@file_exists($arc) || @is_link($arc)) @unlink($arc);   // "created" can never be an old file
+    // pkgacct <user> <dir> -> /backup/cpmove-<user>.tar.gz. Its exit code is carried out in a marker line: the file
+    // alone proves nothing - a run killed at the time limit, or one that ran out of disk, leaves a file too.
+    $out  = smpro_dom_sh('sh -c ' . escapeshellarg(escapeshellarg($script) . ' ' . escapeshellarg($user) . ' /backup 2>&1; echo "__SMRC__=$?"'), 3600);
+    $pkgRc = preg_match('/__SMRC__=(\d+)\s*$/', $out, $rcm) ? (int)$rcm[1] : -1;
     $file = '';
     foreach (glob('/backup/cpmove-' . $user . '.tar.gz') ?: [] as $g) { $file = $g; break; }
     // NOTE the dot: 'cpmove-<user>.*' - prevents user "bob" from matching another account's "cpmove-bobby.tar.gz".
     if ($file === '') foreach (glob('/backup/cpmove-' . $user . '.*') ?: [] as $g) { if (is_file($g)) { $file = $g; break; } }
-    $ok = ($file !== '' && is_file($file) && filesize($file) > 1024);
+    $ok = ($pkgRc === 0 && $file !== '' && is_file($file) && filesize($file) > 1024);
+    $why = $pkgRc === 0 ? '' : ($pkgRc === -1 ? 'the packaging run did not finish (time limit) ' : 'the packaging run ended with an error (code ' . $pkgRc . ') ');
+    // the archive is read to its end: a truncated one fails here
+    if ($ok && substr($file, -3) === '.gz') {
+        $gz = smpro_dom_sh('sh -c ' . escapeshellarg('gzip -t ' . escapeshellarg($file) . ' >/dev/null 2>&1; echo "__SMRC__=$?"'), 3600);
+        if (!preg_match('/__SMRC__=0\s*$/', $gz)) { $ok = false; $why = 'the archive is incomplete or damaged '; }
+    }
+    if ($ok) { if ($aside !== '') @unlink($aside); }
+    else {
+        if ($file !== '' && @is_file($file)) @unlink($file);          // never leave a bad archive under the good name
+        if ($aside !== '' && !@file_exists($arc)) @rename($aside, $arc);
+    }
     if (function_exists('smpro_audit')) smpro_audit('domain_backup', ['user' => $user, 'ok' => $ok, 'file' => $file]);
     return $ok ? ['ok' => true, 'file' => $file, 'size' => filesize($file), 'msg' => 'Full backup created: ' . $file]
-               : ['ok' => false, 'msg' => 'Backup failed (pkgacct did not produce an archive). ' . mb_substr(strip_tags($out), -160)];
+               : ['ok' => false, 'msg' => 'Backup failed: ' . ($why !== '' ? $why : 'no archive was produced ') . '- nothing was deleted' . ($aside !== '' ? ' and the earlier archive is back in place' : '') . '. ' . mb_substr(strip_tags((string)preg_replace('/__SMRC__=\d+\s*$/', '', $out)), -160)];
 }
 
 /* ---------------- ACTION: terminate an account (root + DESTRUCTIVE) ----------------
@@ -547,10 +570,14 @@ function smpro_dom_terminate_bg(string $user, bool $backup): array {
         . "BK=$bk\n"
         . 'w(){ printf "{\"id\":\"' . $id . '\",\"user\":\"%s\",\"status\":\"%s\",\"phase\":\"%s\",\"msg\":\"%s\",\"ts\":%s}" "$U" "$1" "$2" "$3" "$(date +%s)" > "$JF"; }' . "\n"
         . 'if [ "$BK" = "1" ]; then w running backup "Creating full backup in /backup ..."; '
-        .   'rm -f /backup/cpmove-"$U".tar.gz >/dev/null 2>&1; '   // drop any STALE archive so the gate below can only pass on a freshly-created one
+        // The account is removed only behind an archive that is known good: the packaging run ended without error AND the
+        // archive reads to its end. The file being there proves nothing - a run that was killed or ran out of disk leaves
+        // one too. An earlier archive is moved aside and put back when this run fails.
+        .   'F=/backup/cpmove-"$U".tar.gz; OLD=""; if [ -f "$F" ] && [ ! -L "$F" ]; then OLD=/backup/earlier-$(date +%Y%m%d-%H%M%S)-cpmove-"$U".tar.gz; mv -f "$F" "$OLD" 2>/dev/null || OLD=""; fi; rm -f "$F" >/dev/null 2>&1; '
         .   'B=""; for s in /usr/local/cpanel/scripts/pkgacct /scripts/pkgacct; do [ -x "$s" ] && B="$s" && break; done; '
-        .   '[ -n "$B" ] && "$B" "$U" /backup >"$JF.log" 2>&1; '
-        .   'if ! ls /backup/cpmove-"$U".tar.gz >/dev/null 2>&1; then w failed backup "Backup failed - account NOT deleted"; exit 1; fi; fi' . "\n"
+        .   'RC=127; if [ -n "$B" ]; then "$B" "$U" /backup >"$JF.log" 2>&1; RC=$?; fi; '
+        .   'if [ "$RC" != "0" ] || [ ! -s "$F" ] || ! gzip -t "$F" >/dev/null 2>&1; then rm -f "$F" >/dev/null 2>&1; [ -n "$OLD" ] && mv -f "$OLD" "$F" 2>/dev/null; w failed backup "Backup failed or incomplete - account NOT deleted"; exit 1; fi; '
+        .   '[ -n "$OLD" ] && rm -f "$OLD" >/dev/null 2>&1; fi' . "\n"
         . 'w running terminate "Removing account ..."' . "\n"
         . 'A=""; for a in /usr/local/cpanel/bin/whmapi1 /usr/bin/whmapi1; do [ -x "$a" ] && A="$a" && break; done' . "\n"
         . '"$A" --output=json removeacct user="$U" keepdns=0 >"$JF.log2" 2>&1' . "\n"

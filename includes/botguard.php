@@ -607,6 +607,12 @@ function smpro_bg_decide(array $scan, array $cfg, array $state, callable $verify
             if ($b['status'] === 'allowed' && $b['attacks'] > 0) $warnAllowed[] = $ip;   // admin-allowed but now attacking: tell, don't override
             $bots[$ip] = $b; continue;
         }
+        // "blocked" is this module's note, not the firewall's state. When the address is attacking again and the
+        // block is no longer in force (rotated out of the deny list, unblocked elsewhere), the note is dropped and
+        // the address is judged like any other - it used to be skipped for good.
+        if ($b['status'] === 'blocked' && $b['attacks'] > 0 && function_exists('smpro_im_block_in_force') && !smpro_im_block_in_force((string)$ip, (int)($b['decided_at'] ?? 0))) {
+            $b['status'] = ''; $b['note'] = 'was blocked earlier; that block is no longer in the firewall';
+        }
         if ($b['status'] === 'blocked') { $bots[$ip] = $b; continue; }   // already blocked by us; keep counting only
         if ($b['attacks'] > 0) {
             if ($b['verified'] && $family !== '') {            // a real Googlebot fetching a hacked link is not an attacker; never auto-block a verified crawler

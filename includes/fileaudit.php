@@ -601,6 +601,18 @@ function smpro_fa_store(array $rec): bool {
     $dir = smpro_fa_dir() . '/' . $rec['account'];
     if (!@is_dir($dir)) { @mkdir($dir, 0700, true); }
     $f = $dir . '/' . gmdate('Y-m-d', $rec['ts']) . '.jsonl';
+    // A loop that creates and deletes files in a home writes one record per change, without end. A day file stops
+    // at 64 MB (several hundred thousand changes); that it stopped is itself written down, once.
+    clearstatcache(true, $f);
+    if ((int)@filesize($f) > 67108864) {
+        static $said = [];
+        if (empty($said[$f]) && !@is_file($f . '.full')) {
+            @file_put_contents($f . '.full', date('c') . "\n"); @chmod($f . '.full', 0600);
+            if (function_exists('smpro_audit')) smpro_audit('fileaudit_day_full', ['account' => (string)$rec['account'], 'day' => gmdate('Y-m-d', $rec['ts'])]);
+        }
+        $said[$f] = 1;
+        return false;
+    }
     return @file_put_contents($f, json_encode($rec, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX) !== false;
 }
 
@@ -666,7 +678,7 @@ function smpro_fa_status(): array {
 function smpro_fa_prune(): int {
     $n = 0; $cut = gmdate('Y-m-d', time() - SMPRO_FA_KEEP_DAYS * 86400);
     foreach (glob(SMPRO_FA_DIR . '/*/????-??-??.jsonl') ?: [] as $f) {
-        if (basename($f, '.jsonl') < $cut && @unlink($f)) $n++;
+        if (basename($f, '.jsonl') < $cut && @unlink($f)) { $n++; @unlink($f . '.full'); }
     }
     return $n;
 }

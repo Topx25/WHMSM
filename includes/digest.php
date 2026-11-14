@@ -87,6 +87,16 @@ function smpro_dg_flush($force = false) {
     $subject = SMPRO_NAME . ' — grouped alerts (' . count($q) . ')';
     $sent = smpro_dg_deliver($subject, $text);
 
+    // Nothing took it (a channel that is down, a wrong token): the held alerts go back to the queue, in front of
+    // whatever arrived meanwhile, instead of being thrown away with the attempt. Bounded, newest kept.
+    if (!$sent) {
+        $now = @is_file(SMPRO_DG_QUEUE) ? json_decode((string)@file_get_contents(SMPRO_DG_QUEUE), true) : [];
+        $back = array_slice(array_merge($q, is_array($now) ? $now : []), -500);
+        if (@file_put_contents(SMPRO_DG_QUEUE . '.back', json_encode($back, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), LOCK_EX) !== false) { @chmod(SMPRO_DG_QUEUE . '.back', 0600); @rename(SMPRO_DG_QUEUE . '.back', SMPRO_DG_QUEUE); }
+        @unlink($taken);
+        if (function_exists('smpro_audit')) smpro_audit('digest_flush', ['n' => count($q), 'channels' => '', 'kept' => count($back)]);
+        return ['ok' => false, 'skip' => 'not delivered', 'kept' => count($back)];
+    }
     @unlink($taken);
     $cfg['last_flush'] = time(); smpro_dg_cfg_save($cfg);
     if (function_exists('smpro_audit')) smpro_audit('digest_flush', ['n' => count($q), 'channels' => implode(',', $sent)]);

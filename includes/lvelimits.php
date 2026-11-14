@@ -101,7 +101,12 @@ function smpro_lv_parse_limits(string $txt): array {
 
 /** The lifted limits for one lift: double, with a floor on entry processes and a ceiling on CPU. Pure. */
 function smpro_lv_lifted(array $cur): array {
-    return ['ep' => max(40, (int)$cur['ep'] * 2), 'pmem_mb' => max(2048, (int)$cur['pmem_mb'] * 2), 'nproc' => max(200, (int)$cur['nproc'] * 2), 'speed' => min(400, max(200, (int)$cur['speed'] * 2))];
+    // 0 is "no limit" for these three, and a CPU figure may already be above the ceiling: a lift used to turn
+    // "unlimited" into 40 / 2048 MB / 200 and 800% into 400% - it lowered what it was asked to raise.
+    $up = fn(int $v, int $floor): int => $v <= 0 ? 0 : max($floor, $v * 2);
+    $sp = (int)$cur['speed'];
+    return ['ep' => $up((int)$cur['ep'], 40), 'pmem_mb' => $up((int)$cur['pmem_mb'], 2048), 'nproc' => $up((int)$cur['nproc'], 200),
+            'speed' => max($sp, min(400, max(200, $sp * 2)))];
 }
 
 /** ps rows of one account: [pid, secs, cpu, rss_mb, cmd, kind]. kind: php | cron | other. Pure given the text. */

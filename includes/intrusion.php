@@ -678,7 +678,7 @@ function smpro_login_guard_run($dryrun = false) {
     $blocked = []; arsort($fails);
     foreach ($fails as $ip => $n) {
         // Qualify on either rule: enough attempts alone, or membership of a network that qualified as a whole.
-        if (($n < $thresh && !isset($netHit[$ip])) || (isset($done[$ip]) && (empty($done[$ip]['failed']) || time() - (int)($done[$ip]['ts'] ?? 0) < 3600)) || in_array($ip, $allow, true)) continue;
+        if (($n < $thresh && !isset($netHit[$ip])) || (isset($done[$ip]) && (empty($done[$ip]['failed']) ? smpro_im_block_in_force((string)$ip, (int)($done[$ip]['ts'] ?? 0)) : time() - (int)($done[$ip]['ts'] ?? 0) < 3600)) || in_array($ip, $allow, true)) continue;   // a note whose block is no longer in the firewall does not protect the address from being blocked again
         $g = smpro_geo_foreign($ip);
         if (empty($g['foreign'])) continue;                 // FOREIGN (non-Arab) only; Arab/local protected
         if (count($blocked) >= $cap) break;
@@ -1569,6 +1569,20 @@ function smpro_im_blocked_forget($ip) {
     $f = smpro_im_blocked_file(); $fp = @fopen($f, 'c+'); if (!$fp) return;
     if (@flock($fp, LOCK_EX)) { $d = json_decode((string)stream_get_contents($fp), true); if (is_array($d) && isset($d[$ip])) { unset($d[$ip]); smpro_im_blocked_write($f, $d); if (false) @fwrite($fp, json_encode($d, JSON_UNESCAPED_SLASHES)); @fflush($fp); } @flock($fp, LOCK_UN); }
     @fclose($fp);
+}
+/**
+ * Is a block a guard made earlier still in force? The guards kept their own note ("done") and never looked again:
+ * an address that left the firewall - the deny list rotated it out at its size limit, or it was unblocked from
+ * Telegram or by hand - was skipped by every guard for good, while the pages still said "blocked".
+ * In force = it is in the firewall's deny list, or the block book says it was placed at Cloudflare (which this
+ * server cannot read back cheaply). A note younger than a day is trusted as it is: an operator who has just
+ * unblocked somebody is not answered with the same block from the same old log lines.
+ */
+function smpro_im_block_in_force(string $ip, int $notedAt): bool {
+    if ($notedAt > 0 && time() - $notedAt < 86400) return true;
+    if (function_exists('smpro_csf_denied') && smpro_csf_denied($ip)) return true;
+    $book = smpro_im_blocked_load();
+    return isset($book[$ip]) && strpos((string)($book[$ip]['via'] ?? ''), 'CF:ok') !== false;
 }
 /** Every IP currently considered blocked: the CSF deny list UNION the IPs SM Pro recorded as blocked (incl. Cloudflare). */
 function smpro_im_blocked_set() {

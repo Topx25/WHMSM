@@ -356,6 +356,13 @@ function smpro_su_reboot_plan(string $why = ''): array {
     // Planned once for this reason and now gone (the operator cancelled it, or the safety check aborted it): do not
     // plan it again by itself - the next update with a new reason (a newer kernel) plans a new one.
     $s = smpro_su_state();
+    // The note belongs to ONE need for a reboot. Once the server has restarted after it was written, that need is
+    // over: the note used to stay for good, and since the reason for a library update is always the same line, no
+    // later reboot was ever planned and nothing said so.
+    $up = (int)floatval((string)@file_get_contents('/proc/uptime'));
+    if (($s['reboot_reason'] ?? '') !== '' && $up > 0 && (int)($s['reboot_planned_at'] ?? 0) > 0 && time() - $up > (int)$s['reboot_planned_at']) {
+        unset($s['reboot_reason'], $s['reboot_planned_at']); smpro_su_state_save($s);
+    }
     if (($s['reboot_reason'] ?? '') === $reason) return ['planned' => false, 'why' => 'a reboot for this was already planned once and cancelled or aborted'];
     $at = smpro_su_reboot_slot($cfg);
     $r = smpro_reboot_sched_save(['enabled' => true, 'at' => $at, 'target' => 'next']);
