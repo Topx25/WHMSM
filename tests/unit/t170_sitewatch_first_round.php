@@ -30,6 +30,16 @@ is_eq($c('storage/2022102601.php'), null, 'H1: a name made of digits only is ord
 is_eq($c('12345678.php'), null, 'H2: ...whatever its length');
 is_eq($c('deadbeef.php'), null, 'H3: letters only is a word, not a random name');
 
+// the second round: compiled-template caches and applications deployed in upload/ or media/
+is_eq($c('storage/framework/views/d30401c4f2391d1d940b8452460bb4ef.php'), null, 'J1: a compiled template under its hash name is ordinary');
+is_eq($c('bootstrap/cache/a1b2c3d4e5f6.php'), null, 'J2: ...in every framework cache folder');
+is_eq($c('app/Http/a3f9c2e1b7d4.php')[0] ?? '', 'critical', 'J3: the same name outside a cache folder is still a disguised name');
+is_eq($c('storage/framework/views/logo.png.php')[0] ?? '', 'critical', 'J4: a double extension is a disguise even inside a cache folder');
+is_eq($c('upload/system/storage/vendor/symfony/validator/Constraints/Existence.php'), null, 'J5: an application deployed in upload/ is not an uploads folder');
+is_eq($c('media/player/index.php'), null, 'J6: ...nor one with its code in media/');
+is_eq($c('upload/shell.php')[0] ?? '', 'critical', 'J7: a PHP file dropped straight into upload/ is still critical');
+is_eq($c('upload/files/x.php')[0] ?? '', 'critical', 'J8: ...and in its data sub-folders');
+is_eq($c('uploads/admin/x.php')[0] ?? '', 'critical', 'J9: "uploads" (plural) is never taken for an application folder');
 $sw = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/sitewatch.php'));
 has($sw, "return (smpro_sw_classify_file((string)\$e['data']['path'], true)[0] ?? '') === 'critical';", 'I1: an event stays open only while its file would still be called critical');
 

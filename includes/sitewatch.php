@@ -85,7 +85,11 @@ function smpro_sw_classify_file(string $rel, bool $isNew, int $size = -1): ?arra
     // happens to be called "files" or "img" inside a plugin, a theme or WordPress itself (wp-includes/.../Files/,
     // plugins/x/assets/img/index.php): those are the software's own code and flagged thousands of false alarms.
     if (smpro_sw_is_php($rel) && !preg_match('#^(wp-includes|wp-admin)/#', $rel) && !preg_match('#(^|/)wp-content/(plugins|themes|mu-plugins)/#', $rel)
-        && preg_match('#^(wp-content/uploads|uploads|images|img|upload|media)/#i', $rel)) {
+        && preg_match('#^(wp-content/uploads|uploads|images|img|upload|media)/#i', $rel)
+        // some applications are DEPLOYED in a folder with one of these names (a shop unpacked into upload/, a
+        // learning platform with its code in media/): a path that goes on into the application's own code folders is
+        // its code, not something a visitor uploaded
+        && !preg_match('#^(upload|media)/(system|catalog|admin|vendor|install|includes?|lib|libraries|classes|src|app|core|player|plugins?|themes?|modules?|extension)/#i', $rel)) {
         if ($b === 'index.php' && $size >= 0 && $size <= 200) return null;   // the "silence is golden" placeholder
         return ['critical', 'PHP file in an uploads/images folder'];
     }
@@ -102,7 +106,10 @@ function smpro_sw_classify_file(string $rel, bool $isNew, int $size = -1): ?arra
     }
     // a random-looking hex name needs letters AND digits: a name made of digits only is a date or a serial number
     // (2022102601.php), which applications write by the hundred
-    if (smpro_sw_is_php($rel) && (preg_match('/\.(jpe?g|png|gif|ico|txt)\.php$/i', $b) || (preg_match('/^[a-f0-9]{8,}\.php$/i', $b) && preg_match('/[a-f]/i', substr($b, 0, -4)) && preg_match('/[0-9]/', $b)))) return ['critical', 'PHP file with a disguised name'];
+    // a framework's compiled templates are written under hash names, by the thousand, in its own cache folder: a hash
+    // name THERE is what the folder is for. (A double extension is a disguise wherever it is.)
+    $tplCache = (bool)preg_match('#(^|/)(storage/framework/(views|cache)|bootstrap/cache|var/cache|system/storage/cache|storage/cache|templates_c|cache/(twig|smarty|blade|views?|compiled?|templates?))/#i', $rel);
+    if (smpro_sw_is_php($rel) && (preg_match('/\.(jpe?g|png|gif|ico|txt)\.php$/i', $b) || (!$tplCache && preg_match('/^[a-f0-9]{8,}\.php$/i', $b) && preg_match('/[a-f]/i', substr($b, 0, -4)) && preg_match('/[0-9]/', $b)))) return ['critical', 'PHP file with a disguised name'];
     if ($b === '.htaccess' || $b === '.user.ini') return ['warning', $b . ' ' . ($isNew ? 'created' : 'changed')];
     if (!$isNew && in_array($b, ['index.php', 'wp-config.php', 'wp-load.php', 'wp-settings.php', 'functions.php'], true)) return ['warning', $b . ' changed'];
     if ($isNew && preg_match('/\.(cgi|pl|sh|phar)$/i', $b)) return ['warning', 'New script file'];
