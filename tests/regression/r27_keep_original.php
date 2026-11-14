@@ -21,7 +21,7 @@ $inv = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/include
 // Releasing php-harden's exec-deny block rewrites the customer's .htaccess, and deletes it outright when the
 // strip leaves it empty. Both branches destroy the file; the copy must be taken before either runs.
 $i = strpos($inv, 'smpro_inv_keep_original($safe, $c,');
-$j = strpos($inv, '@unlink($safe);');
+$j = strpos($inv, 'smpro_acct_rm((string)$user, $safe)');   // the delete is done as the account since beta426
 ok($i !== false, 'R2: the exec-deny release keeps the original');
 ok($j !== false && $i !== false && $i < $j, 'R2: and keeps it BEFORE the delete, not after');
 

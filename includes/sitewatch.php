@@ -320,6 +320,21 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
 /* ============================ reports ============================ */
 /** A rule matches a site when its sites are "*" or list the site. */
 function smpro_sw_rule_match(array $rule, string $dom): bool { $s = $rule['sites'] ?? '*'; return $s === '*' || in_array($dom, (array)$s, true); }
+/** One message for everything critical a check found, when Site Watch has no alert rule of its own. */
+function smpro_sw_default_alert(): array {
+    $q = (array)($GLOBALS['smpro_sw_default_q'] ?? []); $GLOBALS['smpro_sw_default_q'] = [];
+    if (!$q || !function_exists('smpro_notify')) return ['sent' => 0];
+    $sites = array_values(array_unique(array_column($q, 0)));
+    $subject = 'Site Watch: ' . count($q) . ' critical finding(s) on ' . count($sites) . ' site(s)';
+    $body = '';
+    foreach (array_slice($q, 0, 20) as [$d, $t]) $body .= $d . ' - ' . $t . "\n";
+    if (count($q) > 20) $body .= '... and ' . (count($q) - 20) . " more\n";
+    $body .= "\nOpen WHM > Safety Monitor Pro > Site Watch to see who did it and the fix for each.\n"
+           . 'Site Watch has no alert rule of its own, so this went to the general alert channels of this server. Add a rule there to choose who is told, and how.';
+    @smpro_notify('site_watch', $subject, $body, ['severity' => 'critical']);
+    if (function_exists('smpro_audit')) @smpro_audit('sitewatch_default_alert', ['findings' => count($q), 'sites' => count($sites)]);
+    return ['sent' => count($q), 'sites' => count($sites)];
+}
 function smpro_sw_message(string $dom, array $e): string {
     $icon = ['critical' => "\u{1F534}", 'warning' => "\u{1F7E0}", 'info' => "\u{1F535}"][$e['sev']] ?? '';
     $m = $icon . ' ' . $dom . ' - ' . $e['title'] . "\n";
@@ -342,6 +357,16 @@ function smpro_sw_send(string $channel, string $to, string $subject, string $tex
 function smpro_sw_dispatch(string $dom, array $batch): void {
     $c = smpro_sw_cfg(); $sent = smpro_sw_load('sent.json'); $queue = smpro_sw_load('digest.json');
     $alertOn = fn($e) => !isset($c['alerts'][$e['kind']]) || !empty($c['alerts'][$e['kind']]);
+    // No alert rule at all: a server where Site Watch was switched on and nobody was ever told anything - a planted
+    // web shell was logged on its page and that was all. Critical findings then go, once each, into ONE message per
+    // check through the server's general alert channels (sent when the check ends, see smpro_sw_default_alert).
+    if (empty($c['rules'])) {
+        foreach ($batch as $e) {
+            if (($e['sev'] ?? '') !== 'critical' || !$alertOn($e)) continue;
+            $k = $e['id'] . '|default'; if (isset($sent[$k])) continue;
+            $GLOBALS['smpro_sw_default_q'][] = [$dom, (string)$e['title']]; $sent[$k] = time();
+        }
+    }
     foreach ($c['rules'] as $ri => $rule) {
         if (!smpro_sw_rule_match($rule, $dom)) continue;
         $min = smpro_sw_rank((string)($rule['level'] ?? 'critical'));
@@ -513,6 +538,7 @@ function smpro_sw_run_job(): void {
         $j['done']++; $j['beat'] = time(); smpro_sw_save('job.json', $j);
     }
     $j['running'] = false; $j['current'] = ''; $j['finished'] = time(); smpro_sw_save('job.json', $j);
+    smpro_sw_default_alert();   // one message for the whole check when no alert rule is set
 }
 /** The cron tick (every 15 minutes): start what is due, send digests, prune. */
 function smpro_sw_tick(): void {

@@ -27,6 +27,7 @@ function smpro_ntf_types() {
         'sysupd_new'       => ['System updates available', 'New package updates (kernel, PHP, web, mail, security) or a newer cPanel build appeared; the message says what and whether they will be applied automatically.', 'medium'],
         'sysupd_result'    => ['System update applied', 'An automatic update finished: how many packages, and the service check afterwards.', 'info'],
         'sysupd_problem'   => ['System update problem', 'A check or download broke, or a service needed attention after an update: the diagnosis, the repair attempted, and what is left for a person.', 'high'],
+        'site_watch'       => ['Site Watch (critical findings)', 'Site Watch found something critical on a site and no alert rule of its own covers it: one message per check with the sites and findings.', 'critical'],
         'compromise_check' => ['Compromise Check (scheduled scan)', 'The scheduled Compromise Check finished: server checks that are not OK and accounts that gained a door.', 'high'],
         'db_injection'     => ['Database injection detected', 'Imunify360 flagged malicious content injected into a database (spam links, scripts, backdoors).', 'critical'],
         'login_bruteforce' => ['Login brute-force / spike', 'A source IP crossed the failed-login threshold in the window.', 'high'],

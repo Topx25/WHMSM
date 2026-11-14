@@ -1196,18 +1196,20 @@ function smpro_inv_fix_unharden($r) {
         @shell_exec('chattr -i ' . escapeshellarg($safe) . ' 2>/dev/null');
         if ($kind === 'php-harden exec-deny' && is_file($safe) && !is_link($safe)) {
             // strip the deny-exec block so the .htaccess reverts to its original content
-            $c = (string)@file_get_contents($safe);
+            // from here the ACCOUNT reads, rewrites and removes: root keeps only the attribute change above
+            $c = (string)smpro_acct_get((string)$user, $safe, 2097152);
             $new = preg_replace('/\n?# SMPRO_PH_DENY_EXEC_START.*?# SMPRO_PH_DENY_EXEC_END\s*/s', '', $c);
             // Keep the original before either branch - both destroy it: one rewrites the file, the other
             // deletes it outright. The delete is defensible (if the whole file was ours, removing it restores
             // the state before we touched anything) but only while that regex matches exactly what we wrote.
             // It is a CUSTOMER's .htaccess and there is no second copy of it anywhere on the server.
             smpro_inv_keep_original($safe, $c, 'php-harden exec-deny release');
-            if (trim((string)$new) === '') { @unlink($safe); } else { @file_put_contents($safe, rtrim((string)$new) . "\n", LOCK_EX); }
+            if ($c !== '') { if (trim((string)$new) === '') smpro_acct_rm((string)$user, $safe); else smpro_acct_put((string)$user, $safe, rtrim((string)$new) . "\n"); }
         }
         clearstatcache(true, $safe);
-        if (is_file($safe) && !is_link($safe)) { @chmod($safe, 0644); if ($uid) @chown($safe, $uid); if ($gid) @chgrp($safe, $gid); }   // never chown a symlinked target (privesc)
-        elseif (is_dir($safe) && !is_link($safe)) { @chmod($safe, 0755); }
+        // the mode is set BY the account (a file it owns needs no chown; one it does not own is not its to change):
+        // a folder in the path swapped after the check above cannot make root chmod or hand over another file
+        smpro_acct_sh((string)$user, 'if [ -L "$1" ]; then exit 0; elif [ -f "$1" ]; then chmod 644 -- "$1"; elif [ -d "$1" ]; then chmod 755 -- "$1"; fi', [$safe], null, 30);
         $n++; if (count($names) < 8) $names[] = ltrim(str_replace(smpro_user_home($user), '', $safe), '/') . ' (' . $kind . ')';
     }
     // Update the manifest status so the PHP Harden page shows "Unlocked" immediately.
