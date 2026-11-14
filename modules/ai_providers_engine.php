@@ -378,8 +378,10 @@ function mspro_ai304_safe_base(string $url, string $fallback): string
     $p = @parse_url($url);
     if (!is_array($p) || empty($p['scheme']) || empty($p['host'])) return $fallback;
     if (!in_array(strtolower($p['scheme']), ['http', 'https'], true)) return $fallback;
-    $host = $p['host'];
+    $host = trim((string)$p['host'], '[]');   // an IPv6 literal arrives in brackets and used to pass unchecked
+    if (stripos($host, '::ffff:') === 0 && filter_var(substr($host, 7), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $host = substr($host, 7);
     $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (@gethostbynamel($host) ?: []);
+    if (!$ips) return $fallback;              // a name that resolves to nothing is not a provider
     foreach ($ips as $ip) {
         if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return $fallback;
         if (strpos($ip, '169.254.') === 0 || strpos($ip, '127.') === 0 || $ip === '::1') return $fallback;

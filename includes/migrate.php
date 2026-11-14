@@ -36,10 +36,17 @@ function smpro_mig_sources(): array {
 
 /** Run a whmapi1 function. Returns ['ok'=>bool,'data'=>array,'error'=>string]. */
 function smpro_mig_whm(string $fn, array $args = [], int $timeout = 60): array {
-    $cmd = 'whmapi1 ' . escapeshellarg($fn);
-    foreach ($args as $k => $v) $cmd .= ' ' . escapeshellarg($k . '=' . $v);
-    $cmd .= ' --output=json';
-    $raw = smpro_run($cmd, $timeout, ['stderr' => 'discard']);
+    // The arguments go in on standard input, as JSON. As command arguments they were readable by every local user
+    // for as long as the call ran (the process list) - and one of them is the source server's root password.
+    $dir = SMPRO_VARLIB . '/tmp'; if (!is_dir($dir)) @mkdir($dir, 0700, true);
+    $tmp = $dir . '/whm_' . bin2hex(random_bytes(8)) . '.json';
+    $old = umask(0077);
+    $wrote = @file_put_contents($tmp, json_encode((object)array_map('strval', $args), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    umask($old);
+    if ($wrote === false) return ['ok' => false, 'data' => [], 'error' => 'Could not prepare the request (the working folder is not writable).'];
+    $cmd = 'whmapi1 --input=json ' . escapeshellarg($fn) . ' --output=json < ' . escapeshellarg($tmp);
+    $raw = smpro_run('sh -c ' . escapeshellarg($cmd), $timeout, ['stderr' => 'discard']);
+    @unlink($tmp);
     $j = json_decode($raw, true);
     if (!is_array($j)) return ['ok' => false, 'data' => [], 'error' => 'whmapi1 ' . $fn . ' returned no usable reply.'];
     // The envelope's result flag is the ground truth. A populated data block with result=0 is still a failure,

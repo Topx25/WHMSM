@@ -22,10 +22,10 @@ if ($reqMethod === 'POST' && ($_POST['wa_action'] ?? '') !== '') {
         // Keep existing values when a field is submitted blank (so saving from the
         // Notifications card or here never wipes the other's values).
         $w['enabled']  = !empty($_POST['wa_enabled']);
-        $b = rtrim(trim((string)($_POST['base_url'] ?? '')), '/');                       if ($b !== '') $w['base_url'] = $b;
+        $b = rtrim(trim((string)($_POST['base_url'] ?? '')), '/');                       if ($b !== '') { $waMoved = (string)parse_url((string)($w['base_url'] ?? ''), PHP_URL_HOST) !== (string)parse_url($b, PHP_URL_HOST); $w['base_url'] = $b; }
         // clear_key=1 explicitly removes a rotated/compromised key; otherwise keep-if-blank as before.
         if (!empty($_POST['clear_key'])) $w['api_key'] = '';
-        else { $k = trim((string)($_POST['api_key'] ?? ''));                             if ($k !== '') $w['api_key'] = $k; }
+        else { $k = trim((string)($_POST['api_key'] ?? ''));                             if ($k !== '') $w['api_key'] = $k; elseif (!empty($waMoved) && !empty($w['api_key'])) $w['api_key'] = ''; }   // the key belongs to the gateway it was entered for: a new address needs it typed again
         $s = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_POST['session'] ?? ''));   if ($s !== '') $w['session'] = $s;
         $c = trim((string)($_POST['chat_id'] ?? ''));                                    if ($c !== '') $w['chat_id'] = $c;
         $cfg['whatsapp'] = $w; smpro_ntf_save($cfg);

@@ -39,8 +39,8 @@ if ($reqMethod === 'POST' && ($_POST['ntf_action'] ?? '') !== '') {
         // Keep existing values when a field is submitted blank (this card is a secondary
         // editor - never let an empty box wipe what the WhatsApp section saved).
         $cfg['whatsapp']['enabled']  = !empty($_POST['wa_enabled']);
-        $waB = rtrim(trim((string)($_POST['wa_base'] ?? '')), '/');     if ($waB !== '') $cfg['whatsapp']['base_url'] = $waB;
-        $waK = trim((string)($_POST['wa_key'] ?? ''));                  if ($waK !== '') $cfg['whatsapp']['api_key'] = $waK;
+        $waB = rtrim(trim((string)($_POST['wa_base'] ?? '')), '/');     if ($waB !== '') { $waMoved = (string)parse_url((string)($cfg['whatsapp']['base_url'] ?? ''), PHP_URL_HOST) !== (string)parse_url($waB, PHP_URL_HOST); $cfg['whatsapp']['base_url'] = $waB; }
+        $waK = trim((string)($_POST['wa_key'] ?? ''));                  if ($waK !== '') $cfg['whatsapp']['api_key'] = $waK; elseif (!empty($waMoved) && !empty($cfg['whatsapp']['api_key'])) $cfg['whatsapp']['api_key'] = '';
         $waS = preg_replace('/[^a-zA-Z0-9._-]/', '', (string)($_POST['wa_session'] ?? '')); if ($waS !== '') $cfg['whatsapp']['session'] = $waS;
         $waC = trim((string)($_POST['wa_chat'] ?? ''));                 if ($waC !== '') $cfg['whatsapp']['chat_id'] = $waC;
         foreach (array_keys(smpro_ntf_types()) as $k) {

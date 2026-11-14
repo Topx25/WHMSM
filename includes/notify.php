@@ -222,7 +222,7 @@ function smpro_ntf_send_smtp($smtp, $from, array $to, $subject, $body) {
 function smpro_ntf_send_pushbullet($token, $title, $body) {
     $token = trim((string)$token);
     if ($token === '') return [false, 'access token missing'];
-    $payload = json_encode(['type' => 'note', 'title' => mb_substr($title, 0, 250), 'body' => mb_substr($body, 0, 2000)], JSON_UNESCAPED_UNICODE);
+    $payload = json_encode(['type' => 'note', 'title' => mb_substr($title, 0, 250), 'body' => mb_substr($body, 0, 2000)], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     $res = smpro_http('https://api.pushbullet.com/v2/pushes', ['method' => 'POST', 'timeout' => 15, 'body' => $payload,
         'headers' => ['Access-Token: ' . $token, 'Content-Type: application/json']]);   // token stays in-process (not in argv)
     $j = json_decode($res['body'], true);
@@ -281,7 +281,7 @@ function smpro_ntf_wa_request($base, $key, $method, $path, $body = null, $timeou
     if ($why = smpro_ntf_url_unsafe($base)) return [0, null, 'WhatsApp base URL rejected: ' . $why];
     $headers = ['X-API-Key: ' . trim((string)$key), 'Accept: application/json'];   // API key stays in-process (not in argv)
     $payload = null;
-    if ($body !== null) { $headers[] = 'Content-Type: application/json'; $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); }
+    if ($body !== null) { $headers[] = 'Content-Type: application/json'; $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); }   // one bad byte in a file name must not lose the alert
     $res = smpro_http($base . $path, ['method' => $method, 'timeout' => (int)$timeout, 'headers' => $headers, 'body' => $payload]);
     return [$res['code'], json_decode($res['body'], true), $res['body']];
 }
@@ -402,7 +402,7 @@ function smpro_ntf_telegram_chats($token) {
 function smpro_ntf_log($type, $subject, $channels, $results) {
     @is_dir(SMPRO_NTF_DIR) || @mkdir(SMPRO_NTF_DIR, 0700, true);
     $row = ['ts' => time(), 'at' => date('c'), 'type' => $type, 'subject' => $subject, 'channels' => $channels, 'results' => $results];
-    @file_put_contents(SMPRO_NTF_LOG, json_encode($row, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+    @file_put_contents(SMPRO_NTF_LOG, json_encode($row, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . "\n", FILE_APPEND | LOCK_EX);
     // keep the log bounded
     if (@filesize(SMPRO_NTF_LOG) > 512 * 1024) { $lines = @file(SMPRO_NTF_LOG, FILE_IGNORE_NEW_LINES) ?: []; @file_put_contents(SMPRO_NTF_LOG, implode("\n", array_slice($lines, -400)) . "\n", LOCK_EX); }
 }
@@ -471,7 +471,10 @@ function smpro_notify($type, $subject, $body, array $meta = [], $force = false) 
         $channels[] = 'whatsapp'; $results['whatsapp'] = ['ok' => $ok, 'detail' => $d];
     }
     if ($channels) smpro_ntf_log($type, $subject, $channels, $results);
-    smpro_ntf_undelivered_note($type, $subject, $channels);
+    // "Delivered" is a send that WORKED. The red bar used to be cleared by an attempt: with a wrong token or a
+    // gateway that is down every alert failed and the bar never showed.
+    $went = []; foreach ($results as $ch => $rr) if (!empty($rr['ok'])) $went[] = $ch;
+    smpro_ntf_undelivered_note($type, $subject, $went);
     if (function_exists('smpro_audit')) smpro_audit('notify', ['type' => $type, 'channels' => implode(',', $channels)]);
     return $results ?: ['skipped' => 'no channel enabled for this type'];
 }

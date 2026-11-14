@@ -63,6 +63,11 @@ function smpro_mig_da_extract_meta(string $archive, string $dest, int $timeout =
          . ' --wildcards ' . escapeshellarg('backup/*');
     [$rc, $out] = smpro_run_rc($cmd, $timeout, ['stderr' => 'merge']);
     if (!is_dir($dest . '/backup')) return ['ok' => false, 'error' => 'No backup/ directory came out of the archive: ' . trim($out)];
+    // The settings tree is READ by root afterwards (the crontab, the password file, zones, certificates and keys)
+    // and what is read is packed into the converted account. A member that is a link - crontab.conf pointing at
+    // the server's own password file, or at a private key - would hand that file to the account's owner. Nothing
+    // in this tree has a reason to be anything but a plain file or a folder: everything else is removed.
+    smpro_run('find ' . escapeshellarg($dest . '/backup') . ' -mindepth 1 ! -type f ! -type d -delete', 600, ['stderr' => 'discard']);
     return ['ok' => true, 'error' => '', 'rc' => $rc];
 }
 

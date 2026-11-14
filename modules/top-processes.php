@@ -26,7 +26,11 @@ function smpro_tp_kill($pid, $doit) {
     $comm = trim((string)@file_get_contents("/proc/$pid/comm"));
     $st = @stat("/proc/$pid"); $uid = (int)($st['uid'] ?? 0);
     $crit = ['systemd','init','httpd','apache','nginx','lshttpd','litespeed','mysqld','mariadbd','mysqld_safe','named','exim','dovecot','sshd','lfd','csf','cpsrvd','cphulkd','tailwatchd','queueprocd','pure-ftpd','proftpd','crond','rsyslogd','journal','dbus','chronyd','imunify','defence360','clamd','spamd'];
-    foreach ($crit as $c) if ($comm !== '' && stripos($comm, $c) !== false) return ['ok'=>false,'msg'=>'Refused: critical service "' . $comm . '" is never killed.'];
+    // The name is chosen by the process. One owned by a hosting account is never a system service, whatever it
+    // calls itself: a miner named "httpd" used to be refused as critical.
+    $pwn = function_exists('posix_getpwuid') ? (string)(posix_getpwuid($uid)['name'] ?? '') : '';
+    $isAcct = $uid > 0 && $pwn !== '' && @is_file('/var/cpanel/users/' . $pwn);
+    if (!$isAcct) foreach ($crit as $c) if ($comm !== '' && stripos($comm, $c) !== false) return ['ok'=>false,'msg'=>'Refused: critical service "' . $comm . '" is never killed.'];
     if (function_exists('smpro_is_trusted_system_proc') && smpro_is_trusted_system_proc($comm)) return ['ok'=>false,'msg'=>'Refused: "' . $comm . '" is a trusted security/hosting daemon (e.g. Imunify/CloudLinux) — never killed.'];
     if ($uid === 0)                                        return ['ok'=>false,'msg'=>'Refused: root-owned process "' . $comm . '" — kill from shell if you are certain.'];
     $owner = function_exists('posix_getpwuid') ? (posix_getpwuid($uid)['name'] ?? (string)$uid) : (string)$uid;

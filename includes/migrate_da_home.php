@@ -46,6 +46,26 @@ function smpro_mig_da_space_check(string $archive, string $workRoot, float $fact
  * $log is called with a short human line per step so the job card can show progress on a long extraction.
  * Returns ['ok','error','warnings','steps'].
  */
+/**
+ * Make sure nothing on the way from the staged home to $dst is a link, $dst included.
+ *
+ * The home files come out of the customer's own archive and may hold links (DirectAdmin itself ships one for
+ * public_html). Content is then moved INTO that tree by root: a link named like a folder that is about to be
+ * filled - pointing at a system folder - made the copy write there. A link in the way is removed; it lives in the
+ * staging tree only, so removing it touches nothing else. Returns how many were removed.
+ */
+function smpro_mig_da_clear_links(string $home, string $dst): int {
+    $home = rtrim($home, '/'); $n = 0;
+    if (strpos($dst, $home . '/') !== 0) return 0;
+    $cur = $home;
+    foreach (explode('/', substr($dst, strlen($home) + 1)) as $seg) {
+        if ($seg === '' || $seg === '.' || $seg === '..') continue;
+        $cur .= '/' . $seg;
+        if (is_link($cur)) { @unlink($cur); $n++; }
+    }
+    return $n;
+}
+
 function smpro_mig_da_build_home(string $archive, string $cpmoveRoot, string $user, string $mainDomain, ?callable $log = null): array {
     $say = function ($m) use ($log) { if ($log) $log($m); };
     $warn = []; $steps = 0;
@@ -89,6 +109,7 @@ function smpro_mig_da_build_home(string $archive, string $cpmoveRoot, string $us
             if ($name === 'public_html' && $dom === $mainDomain) $dst = $home . '/public_html';
             elseif ($dom === $mainDomain)                        $dst = $home . '/' . $name;
             else                                                 $dst = $home . '/' . $dom . '/' . $name;
+            if (smpro_mig_da_clear_links($home, $dst)) $warn[] = 'A link in the backup stood where ' . ($dom === $mainDomain ? $name : $dom . '/' . $name) . ' belongs; it was removed and the real files were put there.';
             if (!is_dir(dirname($dst))) @mkdir(dirname($dst), 0755, true);
             if (@rename($sub, $dst)) { $moved++; continue; }
             // rename fails across filesystems; copy rather than silently skipping a whole site.
@@ -110,6 +131,7 @@ function smpro_mig_da_build_home(string $archive, string $cpmoveRoot, string $us
             $box = basename($bDir);
             $src = is_dir($bDir . '/Maildir') ? $bDir . '/Maildir' : $bDir;
             $dst = $home . '/mail/' . $dom . '/' . $box;
+            if (smpro_mig_da_clear_links($home, $dst)) $warn[] = 'A link in the backup stood where the mailbox ' . $box . '@' . $dom . ' belongs; it was removed.';
             if (!is_dir(dirname($dst))) @mkdir(dirname($dst), 0751, true);
             if (@rename($src, $dst)) { $boxes++; continue; }
             [$rc3] = smpro_run_rc('cp -a ' . escapeshellarg($src) . ' ' . escapeshellarg($dst), 3600, ['stderr' => 'discard']);
