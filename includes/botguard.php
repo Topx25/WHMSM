@@ -273,13 +273,28 @@ function smpro_bg_aggregate(array &$ips, array $r, string $domain, int $cutoff):
     // WordPress answers a sign-in that WORKED with a redirect and a wrong password with the form again (200). A
     // redirect is a person who signed in - an agency with thirty sites was counted as thirty guesses and blocked.
     if ($cat === 'bruteforce' && in_array((int)$r['status'], [301, 302, 303], true) && stripos((string)$r['uri'], '/wp-login.php') !== false) $cat = '';
+    // xmlrpc.php is WordPress's own remote door: Jetpack, the WordPress phone apps and other WordPress sites use it
+    // all day. Asking it something with GET is nothing. A POST is a possible password guess - but from a client that
+    // names itself as one of those it is counted only past a volume no real one reaches (the name can be faked,
+    // so it is a higher bar, not a pass).
+    $weak = false; $mU = strtoupper((string)$r['method']);
+    if (($cat === 'probe' || $cat === 'bruteforce') && preg_match('#/xmlrpc\.php(?:$|\?)#i', (string)$r['uri'])) {
+        if ($mU !== 'POST') $cat = '';
+        else { $cat = 'bruteforce'; $weak = (bool)preg_match('#^(?:Jetpack by WordPress\.com|WordPress/[\d.]+; https?://|wp-(?:android|iphone)/)#i', (string)$r['ua']); }
+    }
     $bot = smpro_bg_is_botlike($r['ua']);
     if ($cat === '' && !$bot) return;                      // an ordinary visitor: not tracked at all
     $ip = $r['ip'];
-    if (!isset($ips[$ip])) $ips[$ip] = ['ip' => $ip, 'hits' => 0, 'attacks' => 0, 'cats' => [], 'uas' => [], 'domains' => [], 'first' => 0, 'last' => 0, 'sample' => '', 'botlike' => false, 'urls' => [], 'statuses' => []];
+    if (!isset($ips[$ip])) $ips[$ip] = ['ip' => $ip, 'hits' => 0, 'attacks' => 0, 'cats' => [], 'uas' => [], 'domains' => [], 'first' => 0, 'last' => 0, 'sample' => '', 'botlike' => false, 'urls' => [], 'statuses' => [], 'weak' => 0, 'atk_nonget' => 0, 'atk_domains' => [], 'atk_hours' => []];
     $a =& $ips[$ip];
     $a['hits']++;
     if ($bot) $a['botlike'] = true;
+    if ($cat !== '' && $weak) { $a['weak'] = (int)($a['weak'] ?? 0) + 1; if ($a['weak'] <= 300) $cat = ''; }
+    if ($cat !== '') {      // what the decision needs besides the number: could a web page have made a browser send this?
+        if ($mU !== 'GET' && $mU !== 'HEAD') $a['atk_nonget'] = (int)($a['atk_nonget'] ?? 0) + 1;
+        if ($domain !== '' && count((array)($a['atk_domains'] ?? [])) < 40) $a['atk_domains'][$domain] = 1;
+        if ($r['ts'] > 0 && count((array)($a['atk_hours'] ?? [])) < 72) $a['atk_hours'][intdiv((int)$r['ts'], 3600)] = 1;
+    }
     if ($cat !== '') { $a['attacks']++; $a['cats'][$cat] = ($a['cats'][$cat] ?? 0) + 1; if ($a['sample'] === '' || $cat === 'exploit') $a['sample'] = substr($r['method'] . ' ' . $r['uri'], 0, 160); }
     $ua = substr((string)$r['ua'], 0, 160); if (count($a['uas']) < 6 || isset($a['uas'][$ua])) $a['uas'][$ua] = ($a['uas'][$ua] ?? 0) + 1;
     if ($domain !== '' && (isset($a['domains'][$domain]) || count($a['domains']) < 40)) $a['domains'][$domain] = ($a['domains'][$domain] ?? 0) + 1;
@@ -311,7 +326,7 @@ function smpro_bg_scan(array $cfg): array {
     if (function_exists('smpro_in_history')) {
         foreach (smpro_in_history($cutoff, 20000) as $row) {
             $ip = (string)($row['ip'] ?? ''); if (!filter_var($ip, FILTER_VALIDATE_IP)) continue;
-            if (!isset($ips[$ip])) $ips[$ip] = ['ip' => $ip, 'hits' => 0, 'attacks' => 0, 'cats' => [], 'uas' => [], 'domains' => [], 'first' => 0, 'last' => 0, 'sample' => '', 'botlike' => false, 'urls' => [], 'statuses' => []];
+            if (!isset($ips[$ip])) $ips[$ip] = ['ip' => $ip, 'hits' => 0, 'attacks' => 0, 'cats' => [], 'uas' => [], 'domains' => [], 'first' => 0, 'last' => 0, 'sample' => '', 'botlike' => false, 'urls' => [], 'statuses' => [], 'weak' => 0, 'atk_nonget' => 0, 'atk_domains' => [], 'atk_hours' => []];
             $ips[$ip]['attacks']++; $ips[$ip]['hits']++; $ips[$ip]['cats']['waf'] = ($ips[$ip]['cats']['waf'] ?? 0) + 1; $waf++;
             if (($row['domain'] ?? '') !== '' && count($ips[$ip]['domains']) < 40) $ips[$ip]['domains'][(string)$row['domain']] = 1;
             $ts = (int)($row['ts'] ?? 0); if ($ts) { $ips[$ip]['first'] = $ips[$ip]['first'] ? min($ips[$ip]['first'], $ts) : $ts; $ips[$ip]['last'] = max($ips[$ip]['last'], $ts); }
@@ -532,6 +547,29 @@ function smpro_bg_never_autoblock(string $ip): bool {
     if (function_exists('smpro_im_region_status') && smpro_im_region_status($ip) === 'core_protected') return true;
     return false;
 }
+/**
+ * Over the threshold, but is the count something only this address could have produced? '' = yes, block it.
+ * Otherwise the reason it is held for the operator instead.
+ *
+ * A web page can make every visitor's browser fetch any address (a hidden picture is enough), and a chat service
+ * fetches whatever link somebody posts. Twenty-five such fetches of a secret-looking path used to get the visitor -
+ * an office, the operator - or the preview service blocked on the whole server, by anyone who wanted that. What a
+ * page cannot easily produce: a POST, a script's own signature, a sweep over several sites, hours of persistence,
+ * or an event from the server's own rule engine. One of those and the block stands.
+ */
+function smpro_bg_hold_reason(array $a, array $b, string $family, array $catalog, array $cfg): string {
+    if (!array_key_exists('atk_nonget', $a)) return '';                                  // a record without the detail: decided as before
+    if (!empty($a['atk_nonget'])) return '';                                             // a POST is not what a picture tag sends
+    if (isset($a['cats']['waf']) || isset($a['cats']['scanner'])) return '';             // the rule engine saw it / a named attack tool
+    $thr = max(1, (int)$cfg['gray_threshold']); $n = (int)$b['attacks'];
+    if ($family !== '' && ($catalog[$family]['kind'] ?? '') === 'social' && empty($b['verified'])) {
+        if ($n >= 4 * $thr) return '';                                                   // the name can be faked: a higher bar, not a pass
+        return 'over the threshold (' . $n . ' in ' . (int)$cfg['window_hours'] . 'h) but every request was a plain fetch by a link-preview service, which fetches any link somebody posts in a chat — held for your decision (blocked automatically at ' . (4 * $thr) . ')';
+    }
+    if (!empty($a['botlike'])) return '';                                                // a script, by its own signature
+    if (count((array)($a['atk_domains'] ?? [])) >= 3 || count((array)($a['atk_hours'] ?? [])) >= 3) return '';   // a sweep, or persistence
+    return 'over the threshold (' . $n . ' in ' . (int)$cfg['window_hours'] . 'h) but only plain GET requests with a browser signature, on fewer than 3 sites and within a short time — a page somebody opened can make a browser send exactly these, so it is held for your decision';
+}
 function smpro_bg_decide(array $scan, array $cfg, array $state, callable $verify, int $now = 0): array {
     $now = $now ?: time(); $bots = $state['bots']; $cat = smpro_bg_catalog();
     $toBlock = []; $newPending = []; $newGray = []; $warnAllowed = []; $review = [];
@@ -581,6 +619,9 @@ function smpro_bg_decide(array $scan, array $cfg, array $state, callable $verify
                 if (($prev['status'] ?? '') !== 'gray' || strpos((string)($prev['note'] ?? ''), 'never auto-blocked') === false) $review[] = $ip;
                 $b['status'] = 'gray'; $b['decided_by'] = 'auto';
                 $b['note'] = 'over the threshold (' . $b['attacks'] . ' in ' . $cfg['window_hours'] . 'h) but a home-region residential / allow-listed address is never auto-blocked — your decision';
+            } elseif ($b['attacks'] >= $cfg['gray_threshold'] && ($hold = smpro_bg_hold_reason($a, $b, $family, $cat, $cfg)) !== '') {
+                if (($prev['status'] ?? '') !== 'gray') $newGray[] = $ip;
+                $b['status'] = 'gray'; $b['decided_by'] = 'auto'; $b['note'] = $hold;
             } elseif ($b['attacks'] >= $cfg['gray_threshold']) {
                 $b['status'] = 'block'; $b['decided_by'] = 'auto'; $b['decided_at'] = $now;
                 $toBlock[$ip] = $b['attacks'] . ' attack-signature requests in ' . $cfg['window_hours'] . 'h (' . implode(', ', array_keys($b['cats'])) . ')';

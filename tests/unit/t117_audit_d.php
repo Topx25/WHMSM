@@ -80,7 +80,7 @@ has($sv, "if (!empty(\$s['all_units']) && \$units) {", 'R2: every version must r
 has($sv, "if (\$chains === '0') { \$active = false; \$state = 'rules_gone'; }", 'R3: lfd with no rules loaded is not up');
 has($sv, "function smpro_svcmon_repair(\$key, array \$svc) {", 'R4: the repair pass exists');
 has($sv, "if (stripos(\$log, 'already listen') !== false || stripos(\$log, 'Address already in use') !== false) {", 'R5: stale FPM socket is a known cause');
-has($sv, "@copy('/etc/csf/csf.conf', '/etc/csf/csf.conf.smpro-' . date('Ymd-His'));", 'R6: csf.conf is copied before TESTING is cleared');
+ok(strpos($sv, "@file_put_contents('/etc/csf/csf.conf'") === false, 'R6: the monitor never rewrites csf.conf (TESTING mode is reported, not cleared)');
 has($sv, "@smpro_notify('service_repaired', 'Service repaired: ' . \$svc['label']", 'R7: the monitor says what it fixed and why');
 has($sv, "if (!\$down) \$down = \$svc['units'];", 'R8: only the dead PHP versions are started');
 

@@ -347,10 +347,13 @@ function smpro_svcmon_repair($key, array $svc) {
         if (!smpro_svc_cmd_exists('csf') || !@is_file('/etc/csf/csf.conf')) return $r;
         $did = []; $cause = '';
         $conf = (string)@file_get_contents('/etc/csf/csf.conf');
+        // CSF in TESTING mode is an operator's safety net while the rules are being set up: its own cron clears the
+        // rules every few minutes so a wrong rule cannot lock anybody out. Taking a server out of it is that
+        // operator's decision - it used to be done here, automatically, which made a half-configured rule set
+        // permanent. It is reported with the reason and nothing is changed.
         if (preg_match('/^\s*TESTING\s*=\s*"1"/m', $conf)) {
-            @copy('/etc/csf/csf.conf', '/etc/csf/csf.conf.smpro-' . date('Ymd-His'));
-            @file_put_contents('/etc/csf/csf.conf', preg_replace('/^(\s*TESTING\s*=\s*)"1"/m', '${1}"0"', $conf, 1), LOCK_EX);
-            $did[] = 'took CSF out of TESTING mode (csf.conf copied first)'; $cause = 'CSF was in TESTING mode: its own cron flushes the rules every few minutes';
+            return ['tried' => false, 'did' => '',
+                    'cause' => 'CSF is in TESTING mode, and lfd does not run in it. Not changed: when the rules are known to let you in, set TESTING = "0" in /etc/csf/csf.conf and run csf -r'];
         }
         $pidf = '/var/run/lfd.pid'; $pid = (int)@file_get_contents($pidf);
         if ($pid > 0 && !$alive($pid)) { @unlink($pidf); $did[] = 'removed a stale lfd.pid'; if ($cause === '') $cause = 'a stale pid file pointed at a dead lfd'; }

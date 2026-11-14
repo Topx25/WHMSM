@@ -383,6 +383,12 @@ function smpro_fa_collect(int $budgetSec = 40): array {
             $os = @stat($old);
             if ($os && (int)$os['ino'] === (int)$st['inode']) { $files[] = [$old, (int)$st['offset']]; break; }
         }
+        // The file being read is no longer among the rotated ones: what it held after the last position was never
+        // read and cannot be. That used to pass in silence - the evidence simply had a hole. It is said.
+        if (!$files) {
+            $gap = 'the audit log was rotated away before it was read to the end: file changes between ' . date('Y-m-d H:i', (int)$st['last_run']) . ' and now may be missing';
+            if (function_exists('smpro_audit')) smpro_audit('fileaudit_gap', ['since' => (int)$st['last_run']]);
+        }
         $files[] = [SMPRO_FA_AUDITLOG, 0];
     } else {
         $off = (int)$st['inode'] === (int)$cur['ino'] ? (int)$st['offset'] : 0;
@@ -424,7 +430,7 @@ function smpro_fa_collect(int $budgetSec = 40): array {
     }
     $flush();
     $st['records'] = (int)$st['records'] + $n;
-    $st['blind'] = $blind;
+    $st['blind'] = $blind !== '' ? $blind : (string)($gap ?? '');
     smpro_fa_state_save($st);
     return ['ok' => true, 'records' => $n, 'why' => $blind];
 }

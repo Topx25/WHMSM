@@ -127,8 +127,18 @@ function smpro_tg_poll(): void {
         $isPrivate = ((string)($msg['chat']['type'] ?? '') === 'private') || ($chat !== '' && $chat === $from);
         $authorized = in_array($from, $cfg['allowed'], true) || ($isPrivate && in_array($chat, $cfg['allowed'], true));
         if (!$authorized) {
-            smpro_tg_send($cfg['token'], $chat, '⛔ Unauthorized. This bot only responds to the configured admin.');
-            if (function_exists('smpro_audit')) smpro_audit('tgbot_denied', ['chat' => $chat, 'from' => $from]);
+            // One answer an hour per stranger, and the position is saved first. Every message used to get a reply
+            // (a network call each) with the position saved only at the end: a stream of messages from anyone who
+            // found the bot kept each poll busy until it was killed, and the admin's own commands waited behind it.
+            smpro_tg_state_save(['offset' => $offset]); $cfg['offset'] = $offset;
+            $den = (array)(smpro_tg_state()['denied'] ?? []); $dk = $from !== '' ? $from : $chat; $tnow = time();
+            if ($tnow - (int)($den[$dk] ?? 0) >= 3600) {
+                $den[$dk] = $tnow;
+                $den = array_filter($den, fn($t) => $tnow - (int)$t < 86400); if (count($den) > 500) $den = array_slice($den, -500, 500, true);
+                smpro_tg_state_save(['denied' => $den]);
+                smpro_tg_send($cfg['token'], $chat, '⛔ Unauthorized. This bot only responds to the configured admin.');
+                if (function_exists('smpro_audit')) smpro_audit('tgbot_denied', ['chat' => $chat, 'from' => $from]);
+            }
             continue;
         }
         if (preg_match('#^/(mailallow|cloudmail)(@\S+)?\s*$#i', $text)) { smpro_tg_send_markup($cfg['token'], $chat, '📧 Which mail provider cannot sign in? Its mail servers will pass the country lock.', smpro_tg_mail_buttons()); smpro_tg_state_save(['offset' => $offset]); $cfg['offset'] = $offset; continue; }
