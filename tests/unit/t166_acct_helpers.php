@@ -44,6 +44,20 @@ if (!$real) {
     ok(smpro_acct_rm('nobody', $d . '/copy') && !file_exists($d . '/copy'), 'B15: and a plain removal');
     $r = smpro_acct_sh('nobody', 'id -u');
     is_eq(trim($r['out']), (string)$pw['uid'], 'B16: the script really runs as the account');
+    // putting a file from root's store back into the account folder
+    $store = sys_get_temp_dir() . '/smpro-acct-store-' . bin2hex(random_bytes(5)); file_put_contents($store, "kept copy\n"); chmod($store, 0600);
+    ok(smpro_acct_restore('nobody', $store, $d . '/back.php', 0640, 1700000000) && file_get_contents($d . '/back.php') === "kept copy\n", 'R1: a kept file goes back into the account folder');
+    clearstatcache(); $rs = stat($d . '/back.php'); ok($rs['uid'] === $pw['uid'] && ($rs['mode'] & 0777) === 0640 && $rs['mtime'] === 1700000000, 'R2: owned by the account, with the mode and time asked for');
+    ok(!smpro_acct_restore('nobody', $store, $d . '/back.php', 0644), 'R3: an existing file is not overwritten unless asked');
+    ok(smpro_acct_restore('nobody', $store, $d . '/back.php', 0644, 0, true), 'R4: ...and is when asked');
+    $target = sys_get_temp_dir() . '/smpro-acct-created-' . bin2hex(random_bytes(5));
+    symlink($target, $d . '/freed.php');                                  // a DANGLING link at the freed name
+    ok(!file_exists($d . '/freed.php') && !smpro_acct_restore('nobody', $store, $d . '/freed.php', 0644), 'R5: a dangling link at the old name is refused (a root copy would have created its target)');
+    ok(!file_exists($target), 'R6: ...and nothing was created where it points');
+    ok(!smpro_acct_restore('nobody', $d . '/freed.php', $d . '/x.php'), 'R7: the kept copy itself must be a plain file');
+    ok(smpro_acct_restore('nobody', $store, $d . '/new/deep/file.php', 0644) && is_file($d . '/new/deep/file.php'), 'R8: missing folders are made by the account');
+    is_eq(smpro_acct_of_path('/etc/passwd'), '', 'R9: a path outside a home has no account');
+    @unlink($store); @unlink($d . '/back.php'); @unlink($d . '/freed.php'); @unlink($d . '/new/deep/file.php'); @rmdir($d . '/new/deep'); @rmdir($d . '/new');
     @unlink($d . '/robots.txt.smpro-orig'); @unlink($d . '/big'); @unlink($f); @rmdir($d); @unlink($victim);
 }
 $cr = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/investigate.php'));

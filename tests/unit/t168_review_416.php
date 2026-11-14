@@ -32,3 +32,9 @@ $hp = $src('includes/helpers.php');
 ok(strpos($hp, '$dl = function_exists(\'smpro_csf_deny_lock\') ? smpro_csf_deny_lock() : null;') !== false && strpos($hp, 'smpro_csf_deny_unlock($dl);') !== false, 'F1: unblock rewrites the deny list under the shared lock');
 ok(strpos($hp, 'function smpro_fw_unblock_engines(string $ip): array {') !== false && strpos($hp, "smpro_fw_unblock_engines(\$ip) : [];") !== false, 'F2: unblock looks in every engine a block can land in');
 is_eq(smpro_fw_unblock_engines('not-an-ip'), [], 'F3: ...and refuses anything that is not an address');
+
+// the permanent-release engine must be reachable from cron (it used to live in the page file, which cron cannot load)
+require_once SMPRO_BASE . '/includes/phstack.php'; require_once SMPRO_BASE . '/includes/phlock.php';
+ok(function_exists('smpro_ph_force_unprotect') && function_exists('smpro_ph_profile') && function_exists('smpro_ph_load') && function_exists('smpro_ph_remove_htaccess') && defined('SMPRO_PH_STATE'), 'G1: the release engine is available with the includes alone (no page module loaded)');
+ok(strpos($src('modules/php-harden.php'), 'function smpro_ph_force_unprotect(') === false, 'G2: ...and is not defined a second time in the page file');
+ok(strpos((string)file_get_contents(SMPRO_BASE . '/bin/sp_queue.php'), "'phlock'") !== false, 'G3: the queue worker loads the file that holds it');

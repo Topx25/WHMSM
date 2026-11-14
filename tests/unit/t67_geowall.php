@@ -123,7 +123,7 @@ $hp = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes
 has($hp, "if (defined('SMPRO_TEST_SRC')) return true;", 'U9: the shared cron writer refuses to write during a test');
 $i = strpos($hp, 'function smpro_cron_install');
 $j = strpos($hp, "if (defined('SMPRO_TEST_SRC')) return true;", $i);
-$k = strpos($hp, '@file_put_contents($path, $content', $i);
+$k = strpos($hp, '@file_put_contents($tmpc, $content', $i);
 ok($i !== false && $j !== false && $k !== false && $j < $k, 'U9: and refuses BEFORE it writes, not after');
 
 /* ---------- U10: THE SERVER MUST BE ABLE TO REACH ITSELF ---------- */

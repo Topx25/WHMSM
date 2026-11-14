@@ -31,7 +31,7 @@ if ($reqMethod === 'POST' && $act !== '') {
             foreach ((array)($F0['findings'] ?? []) as $f0) {
                 $exact = false; foreach ((array)$f0['lessons'] as $lid) if (($L0[$lid]['type'] ?? '') === 'hash' && ($L0[$lid]['source'] ?? '') !== 'shared' && !empty($L0[$lid]['incidents'])) $exact = true;
                 if (!$exact) continue;
-                $r = smpro_lr_quarantine((string)$f0['path'], 'operator: all exact-file matches'); if (!empty($r['ok'])) $n++; else $bad++;
+                $r = smpro_lr_quarantine((string)$f0['path'], 'operator: all exact-file matches', (string)($f0['sha'] ?? '')); if (!empty($r['ok'])) $n++; else $bad++;
             }
             $msg = $n . ' exact-file match(es) moved to the store' . ($bad ? ', ' . $bad . ' refused (see the audit)' : '') . '.'; $ok = $bad === 0; break;
         case 'quarantine_many':

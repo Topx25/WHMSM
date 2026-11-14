@@ -252,14 +252,16 @@ function smpro_fw_block_undo(string $key): array {
     if (!$src) return ['ok' => false, 'msg' => 'Unknown block-list.'];
     if (!@is_file(SMPRO_FWB_DENY) || !@is_writable(SMPRO_FWB_DENY)) return ['ok' => false, 'msg' => 'csf.deny is not writable.'];
     $marker = smpro_fw_block_marker($key);
+    $dl = function_exists('smpro_csf_deny_lock') ? smpro_csf_deny_lock() : null;   // read and rewrite as one step: a line another writer adds in between is not lost
     $lines = file(SMPRO_FWB_DENY, FILE_IGNORE_NEW_LINES) ?: [];
     $keep = []; $ours = [];
     foreach ($lines as $l) {
         if (strpos($l, $marker) !== false && preg_match('/^\s*([0-9a-fA-F:.]+)/', $l, $m)) { $ours[] = $m[1]; continue; }
         $keep[] = $l;
     }
+    if ($ours) @file_put_contents(SMPRO_FWB_DENY, implode("\n", $keep) . "\n", LOCK_EX);
+    if (function_exists('smpro_csf_deny_unlock')) smpro_csf_deny_unlock($dl);
     if (!$ours) return ['ok' => true, 'removed' => 0, 'msg' => $src['name'] . ': nothing of ours is in csf.deny.'];
-    @file_put_contents(SMPRO_FWB_DENY, implode("\n", $keep) . "\n", LOCK_EX);
     $csf = function_exists('smpro_csf_bin') ? smpro_csf_bin() : '';
     if ($csf !== '') @shell_exec('timeout 60 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');
     clearstatcache();

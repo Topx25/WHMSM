@@ -32,7 +32,7 @@ hasnt($ln, "'The file could not be removed (immutable or permissions).'", 'C6: t
 is_eq(smpro_lr_attrs('/definitely/not/here'), '', 'C7: no attrs for a path that is not there');
 
 // D. restore through a locked folder, the same way
-has($ln, "\$dir = dirname(\$hit['orig']); \$flags = smpro_lr_attrs(\$dir);\n    if (\$flags !== '') @exec('chattr -i -a ' . escapeshellarg(\$dir) . ' 2>/dev/null');\n    \$wrote = @copy(\$kept, \$hit['orig']);\n    if (\$flags !== '') @exec('chattr +' . \$flags . ' ' . escapeshellarg(\$dir) . ' 2>/dev/null');", 'D1: restore lifts the parent lock for the write and puts it back');
+has($ln, "\$dir = dirname(\$hit['orig']); \$flags = smpro_lr_attrs(\$dir);\n    if (\$flags !== '') @exec('chattr -i -a ' . escapeshellarg(\$dir) . ' 2>/dev/null');\n    // written back AS the account (never a root copy + chown by name: a link left at the freed name would be followed)\n    \$wrote = function_exists('smpro_acct_restore') && smpro_acct_restore((string)\$m[1], \$kept, (string)\$hit['orig'], ((int)(\$hit['mode'] ?? 0) ?: 0644) & 07777, (int)(\$hit['mtime'] ?? 0));\n    if (\$flags !== '') @exec('chattr +' . \$flags . ' ' . escapeshellarg(\$dir) . ' 2>/dev/null');", 'D1: restore lifts the parent lock for the write and puts it back');
 has($ln, "is locked (chattr +' . \$flags . ') and could not be unlocked", 'D2: a failed write names the folder and the flag');
 hasnt($ln, "return ['ok' => false, 'msg' => 'Could not write the file back.'];", 'D3: the old blind message is gone');
 

@@ -32,6 +32,12 @@ rm -f /etc/cron.d/${PLUGIN}-* 2>/dev/null && ok "Removed crons" || true
 
 if [ "$PURGE" = "1" ]; then
   say "Purging data + logs"
+  # what cannot be recreated is moved aside first: the only copies of quarantined customer files, the backups
+  # taken before a fix, and the book that says how to undo an emergency clean-up
+  KEEP="/var/lib/${PLUGIN}-keep"; STAMP="$(date +%Y%m%d_%H%M%S)"
+  for item in quarantine backups detections emergency.json learn php_harden; do
+    if [ -e "$DATA/$item" ]; then mkdir -p "$KEEP" && chmod 700 "$KEEP" && mv "$DATA/$item" "$KEEP/${item}.${STAMP}" 2>/dev/null && echo "    kept: $KEEP/${item}.${STAMP}"; fi
+  done
   rm -rf "$DATA" "$LOGDIR" && ok "Removed ${DATA} and ${LOGDIR}"
   echo "    (Detection backups under /home/backup/detections were KEPT for safety.)"
 else

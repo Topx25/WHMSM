@@ -1465,8 +1465,11 @@ function smpro_cron_install(string $path, string $content): bool {
     if (defined('SMPRO_TEST_SRC')) return true;
     if (substr($content, -1) !== "\n") $content .= "\n";
     if (@is_file($path) && (string)@file_get_contents($path) === $content) { @chmod($path, 0644); return true; }
-    if (@file_put_contents($path, $content, LOCK_EX) === false) return false;
-    @chmod($path, 0644);
+    // written beside it under a dot name (cron ignores dot files) and renamed in: cron never reads a half-written file
+    $tmpc = dirname($path) . '/.' . basename($path) . '.tmp';
+    if (@file_put_contents($tmpc, $content, LOCK_EX) !== strlen($content)) { @unlink($tmpc); return false; }
+    @chmod($tmpc, 0644);
+    if (!@rename($tmpc, $path)) { @unlink($tmpc); return false; }
     return @is_file($path) && (string)@file_get_contents($path) === $content;
 }
 
@@ -2232,4 +2235,25 @@ function smpro_fw_unblock_engines(string $ip): array {
         if ($n) $done[] = 'nftables';
     }
     return $done;
+}
+
+/** The account a path under a home belongs to ('' when it is not inside an account's home). */
+function smpro_acct_of_path(string $path): string {
+    if (!preg_match('#^/home[0-9]*/([a-z0-9][a-z0-9._-]{0,63})/#i', $path, $m)) return '';
+    return @is_file('/var/cpanel/users/' . $m[1]) ? $m[1] : '';
+}
+/** Put a file that root keeps in its own store back into an account folder, AS the account. The freed name may by now
+ *  be a link the account planted (a dangling one passes every "does a file exist" test and is then followed by a
+ *  root copy): the account's own shell refuses a link and can only write where the account may write. */
+function smpro_acct_restore(string $user, string $storeFile, string $dest, int $mode = 0644, int $mtime = 0, bool $overwrite = false): bool {
+    clearstatcache(true, $storeFile);
+    if (is_link($storeFile) || !is_file($storeFile)) return false;
+    $s = 'umask 022; [ -L "$1" ] && exit 3; if [ -e "$1" ] && [ "$4" != "1" ]; then exit 6; fi; '
+       . 'd=$(dirname -- "$1"); [ -d "$d" ] || mkdir -p -- "$d" || exit 7; '
+       . 't="$1.smpro-tmp-$3"; rm -f -- "$t"; cat > "$t" || { rm -f -- "$t"; exit 4; }; chmod "$2" -- "$t"; '
+       . 'if [ "$5" -gt 0 ] 2>/dev/null; then touch -d "@$5" -- "$t" 2>/dev/null; fi; '
+       . 'mv -f -- "$t" "$1" || { rm -f -- "$t"; exit 5; }';
+    $cmd = smpro_acct_cmd($user, $s, [$dest, decoct(($mode ?: 0644) & 07777), bin2hex(random_bytes(6)), $overwrite ? '1' : '0', (string)max(0, $mtime)]);
+    if ($cmd === '') return false;
+    return trim((string)@shell_exec('cd / && timeout 300 ' . $cmd . ' < ' . escapeshellarg($storeFile) . ' >/dev/null 2>&1; echo $?')) === '0';
 }

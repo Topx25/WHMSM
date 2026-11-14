@@ -89,6 +89,12 @@ function smpro_upd_apply($version = '', $force = false) {
     // fresh inode I2 at the same path, so B and C each hold a lock on a DIFFERENT inode and both extract over the
     // live dir at once. Leaving the 0600 lock file in place (persistent) makes fopen('c')+flock single-flight sound.
     $cleanup = function () use ($lockFp) { @flock($lockFp, LOCK_UN); @fclose($lockFp); };
+    // An update copies the tree twice (backup + new files). On a full disk a copy ends as an empty file, the syntax
+    // check passes on an empty file, and the put-back makes it worse - so it does not start without room.
+    foreach ([dirname(rtrim(SMPRO_BASE, '/')), SMPRO_UPD_DIR, SMPRO_VARLIB] as $__d) {
+        $__free = @disk_free_space($__d);
+        if ($__free !== false && $__free < 300 * 1048576) { $cleanup(); return ['ok' => false, 'message' => 'Not updating: less than 300 MB free on ' . $__d . '. Free some space first.']; }
+    }
 
     $tgz = SMPRO_UPD_DIR . '/pkg.tgz'; $hdr = SMPRO_UPD_DIR . '/h.txt';
     @unlink($tgz); @unlink($hdr);

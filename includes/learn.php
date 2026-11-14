@@ -392,7 +392,7 @@ function smpro_lr_hunt(int $budget = 500): array {
     if ($partial) { smpro_lr_save('cursor', ['at' => time(), 'lessons' => count($on), 'done' => $doneRoots, 'found' => array_values($found)]); @touch(smpro_lr_dir() . '/hunt_wanted'); }
     else @unlink(smpro_lr_dir() . '/cursor.json');
     if ($cfg['auto'] === 'quarantine_exact' && !(function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) && !(function_exists('smpro_ctl_disabled') && smpro_ctl_disabled())) {
-        foreach ($res['findings'] as $f) foreach ($f['lessons'] as $lid) if (($L[$lid]['type'] ?? '') === 'hash' && ($L[$lid]['source'] ?? '') !== 'shared' && !empty($L[$lid]['incidents'])) { smpro_lr_quarantine($f['path'], 'auto: exact file of a confirmed incident'); break; }
+        foreach ($res['findings'] as $f) foreach ($f['lessons'] as $lid) if (($L[$lid]['type'] ?? '') === 'hash' && ($L[$lid]['source'] ?? '') !== 'shared' && !empty($L[$lid]['incidents'])) { smpro_lr_quarantine($f['path'], 'auto: exact file of a confirmed incident', (string)($f['sha'] ?? '')); break; }
     }
     return $res;
 }
@@ -420,7 +420,7 @@ function smpro_lr_unlink_locked(string $file): array {
     @exec('chattr +' . $flags . ' ' . escapeshellarg($dir) . ' 2>/dev/null');   // put the lock back exactly as it was
     return ['ok' => $ok, 'why' => $ok ? '' : 'the folder ' . $dir . ' is locked (chattr +' . $flags . ') and could not be unlocked - lift the lock in Safety Lock / WP Guard, then quarantine again', 'relocked' => true];
 }
-function smpro_lr_quarantine(string $path, string $source): array {
+function smpro_lr_quarantine(string $path, string $source, string $expectSha = ''): array {
     if (!preg_match('#^/home[0-9]*/([^/]+)/#', $path, $m)) return ['ok' => false, 'msg' => 'Only files inside an account home.'];
     $user = $m[1];
     if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($path)) return ['ok' => false, 'msg' => 'Refused: this is WP Guard\'s own file.'];
@@ -429,7 +429,10 @@ function smpro_lr_quarantine(string $path, string $source): array {
     $safe = function_exists('smpro_path_safe') ? (string)smpro_path_safe($path, [(string)smpro_user_home($user)]) : '';
     if ($safe === '' || !is_file($safe) || is_link($path)) return ['ok' => false, 'msg' => 'Refused: not a regular file inside that account home.'];
     $st = @stat($safe); $sha = (string)@hash_file('sha256', $safe);
-    $qd = smpro_lr_dir('quarantine/' . $user); $q = $qd . '/' . date('Ymd-His') . '-' . substr($sha, 0, 12) . '-' . preg_replace('/[^A-Za-z0-9._-]/', '_', basename($safe));
+    // a finding can be a day old: the customer may have cleaned or reinstalled the file since. Only the file that was
+    // reported is taken out - a different file under the same name is left alone.
+    if ($expectSha !== '' && !hash_equals($expectSha, $sha)) return ['ok' => false, 'msg' => 'Not quarantined: the file changed since it was reported. Run the hunt again.'];
+    $qd = smpro_lr_dir('quarantine/' . $user); $q = $qd . '/' . date('Ymd-His') . '-' . substr($sha, 0, 12) . '-' . bin2hex(random_bytes(3)) . '-' . preg_replace('/[^A-Za-z0-9._-]/', '_', basename($safe));   // a name of its own: identical copies taken out in the same second must not share one kept file
     if (!@copy($safe, $q)) return ['ok' => false, 'msg' => 'Could not keep a copy — nothing was moved.'];
     @chmod($q, 0600);
     $rm = smpro_lr_unlink_locked($safe);
@@ -570,10 +573,10 @@ function smpro_lr_restore(string $kept, bool $force = false): array {
     // lift the flag for the one write and put it back as it was, the same way the quarantine did
     $dir = dirname($hit['orig']); $flags = smpro_lr_attrs($dir);
     if ($flags !== '') @exec('chattr -i -a ' . escapeshellarg($dir) . ' 2>/dev/null');
-    $wrote = @copy($kept, $hit['orig']);
+    // written back AS the account (never a root copy + chown by name: a link left at the freed name would be followed)
+    $wrote = function_exists('smpro_acct_restore') && smpro_acct_restore((string)$m[1], $kept, (string)$hit['orig'], ((int)($hit['mode'] ?? 0) ?: 0644) & 07777, (int)($hit['mtime'] ?? 0));
     if ($flags !== '') @exec('chattr +' . $flags . ' ' . escapeshellarg($dir) . ' 2>/dev/null');
     if (!$wrote) return ['ok' => false, 'msg' => 'Could not write the file back' . ($flags !== '' ? ' - the folder ' . $dir . ' is locked (chattr +' . $flags . ') and could not be unlocked' : ' - the folder ' . $dir . ' is not writable by root') . '.'];
-    @chown($hit['orig'], $hit['uid']); @chgrp($hit['orig'], $hit['gid']); @chmod($hit['orig'], $hit['mode'] ?: 0644); @touch($hit['orig'], $hit['mtime'] ?: time());
     $against = $v['verdict'] !== 'clean';
     $out = [];
     foreach ($all as $l) { $r = json_decode($l, true); if (is_array($r) && ($r['kept'] ?? '') === $kept && empty($r['restored'])) { $r['restored'] = time(); $r['verdict'] = $v; if ($against) $r['restored_against'] = $v['verdict']; } $out[] = is_array($r) ? json_encode($r, JSON_UNESCAPED_SLASHES) : $l; }

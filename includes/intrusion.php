@@ -2273,7 +2273,15 @@ function smpro_im_emergency_undo($id) {
         $done = true;
         foreach (($e['actions'] ?? []) as $a) {
             $p = $a['path'] ?? '';
-            if ($a['type'] === 'lock' && $p) { if (is_link($p)) continue; if (smpro_im_has_chattr()) @shell_exec('chattr -i ' . escapeshellarg($p) . ' 2>/dev/null'); @chmod($p, ($a['perm'] ?? 0644) ?: 0644); }
+            // everything put back inside the account's folder is done AS the account; root keeps only the attribute change
+            $pu = ($p && function_exists('smpro_acct_of_path')) ? smpro_acct_of_path((string)$p) : '';
+            // a path outside every account home is not account-controlled: there root may act on it directly
+            $rootOk = $pu === '' && $p && !preg_match('#^/home[0-9]*/#', (string)$p);
+            $xget = fn($f) => $pu !== '' ? (string)smpro_acct_get($pu, (string)$f, 1048576) : ($rootOk ? (string)@file_get_contents($f) : '');
+            $xrm  = function ($f) use ($pu, $rootOk) { if ($pu !== '') smpro_acct_rm($pu, (string)$f); elseif ($rootOk) @unlink($f); };
+            $xput = function ($f, $c) use ($pu, $rootOk) { if ($pu !== '') smpro_acct_put($pu, (string)$f, $c, 0644); elseif ($rootOk) { @file_put_contents($f, $c); @chmod($f, 0644); } };
+            $xmv  = function ($from, $to) use ($pu, $rootOk) { if ($pu !== '') smpro_acct_sh($pu, '[ ! -L "$1" ] && [ ! -L "$2" ] && mv -f -- "$1" "$2"', [(string)$from, (string)$to]); elseif ($rootOk) @rename($from, $to); };
+            if ($a['type'] === 'lock' && $p) { if (is_link($p)) continue; if (smpro_im_has_chattr()) @shell_exec('chattr -i ' . escapeshellarg($p) . ' 2>/dev/null'); if ($pu !== '') smpro_acct_sh($pu, '[ ! -L "$1" ] && chmod "$2" -- "$1"', [(string)$p, decoct(((int)($a['perm'] ?? 0644) ?: 0644) & 07777)]); elseif ($rootOk) @chmod($p, ($a['perm'] ?? 0644) ?: 0644); }
             elseif ($a['type'] === 'php_off' && $p) {
                 if (smpro_im_has_chattr()) @shell_exec('chattr -i ' . escapeshellarg($p) . ' 2>/dev/null');
                 $bk = (string)($a['bak'] ?? '');
@@ -2281,21 +2289,30 @@ function smpro_im_emergency_undo($id) {
                     $cands = glob($p . '.smprobak-*') ?: []; usort($cands, fn($x, $y) => (int)@filemtime($y) <=> (int)@filemtime($x));
                     $bk = $cands[0] ?? ($p . '.smprobak');
                 }
-                if (!empty($a['had']) && is_file($bk) && !is_link($bk) && dirname($bk) === dirname($p)) { @rename($bk, $p); }   // restore the owner's original
-                elseif (is_file($p)) {
+                if (!empty($a['had']) && is_file($bk) && !is_link($bk) && dirname($bk) === dirname($p)) { $xmv($bk, $p); }   // restore the owner's original
+                elseif (($pu !== '' || $rootOk) && is_file($p)) {
                     // m4 FIX - we CREATED this file (had=false). Only delete it if it is still EXACTLY our block; if the
                     // owner appended their own rules after ours, strip just our prefix and KEEP theirs (never delete owner content).
-                    $cur = (string)@file_get_contents($p); $rule = smpro_im_harden_rule();
-                    if (trim($cur) === trim($rule)) { @unlink($p); }
-                    elseif (strpos($cur, $rule) === 0) { $rest = substr($cur, strlen($rule)); if (trim($rest) === '') { @unlink($p); } else { @file_put_contents($p, $rest); @chmod($p, 0644); } }
+                    $cur = $xget($p); $rule = smpro_im_harden_rule();
+                    if (trim($cur) === trim($rule)) { $xrm($p); }
+                    elseif (strpos($cur, $rule) === 0) { $rest = substr($cur, strlen($rule)); if (trim($rest) === '') { $xrm($p); } else { $xput($p, $rest); } }
                     // else: file no longer begins with our block (owner rewrote it entirely) -> leave it untouched
                 }
             }
             elseif ($a['type'] === 'quarantine' && $p) {
                 if (smpro_im_has_chattr()) @shell_exec('chattr -i ' . escapeshellarg($p) . ' 2>/dev/null');
-                if (!empty($a['stored']) && is_file($a['stored'])) { @rename($a['stored'], $p); }      // moved copy -> back to original
-                elseif (!empty($a['backup']) && is_file($a['backup'])) { @copy($a['backup'], $p); }     // fallback: restore from the .bak copy
-                @chmod($p, 0644);
+                if ($pu === '') {
+                    if ($rootOk) { if (!empty($a['stored']) && is_file($a['stored'])) @rename($a['stored'], $p); elseif (!empty($a['backup']) && is_file($a['backup'])) @copy($a['backup'], $p); @chmod($p, 0644); }
+                    continue;
+                }
+                if (!empty($a['stored']) && is_file($a['stored']) && !is_link($a['stored'])) {            // moved copy -> back to original
+                    if (smpro_acct_of_path((string)$a['stored']) === $pu) smpro_acct_sh($pu, '[ ! -L "$2" ] && mv -f -- "$1" "$2"', [(string)$a['stored'], (string)$p]);
+                    elseif (smpro_acct_restore($pu, (string)$a['stored'], (string)$p, 0644, 0, true)) @unlink($a['stored']);
+                }
+                elseif (!empty($a['backup']) && is_file($a['backup']) && !is_link($a['backup'])) {         // fallback: restore from the .bak copy
+                    if (smpro_acct_of_path((string)$a['backup']) === $pu) smpro_acct_copy($pu, (string)$a['backup'], (string)$p);
+                    else smpro_acct_restore($pu, (string)$a['backup'], (string)$p, 0644, 0, true);
+                }
             }
         }
     }

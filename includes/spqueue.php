@@ -292,9 +292,10 @@ function smpro_spq_answer($home, $id, array $result) {
     }
     foreach ([$base, $dir] as $d) {
         if (!is_dir($d)) {
-            if (!@mkdir($d, 0700, true)) return false;
-            // Give it to whoever owns the home directory it sits in.
-            if ($owner) { @chown($d, $owner['uid']); @chgrp($d, $owner['gid']); }
+            // Made BY whoever owns the home it sits in. Root making it and then handing it over by name left a moment
+            // in which the account could swap the new folder for a link, and the hand-over would follow it.
+            $un = ($owner && function_exists('posix_getpwuid')) ? (string)((@posix_getpwuid($owner['uid']))['name'] ?? '') : '';
+            if ($un === '' || !function_exists('smpro_acct_sh') || smpro_acct_sh($un, 'umask 077; mkdir -p -- "$1"', [$d])['code'] !== 0) return false;
         }
     }
     // The directories belong to the account, which can swap one for a link at any moment: write only when the real

@@ -351,11 +351,12 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
         else {
             $f = $safe;
             $bdir = smpro_detect_backup_root() . '/' . $acct; @is_dir($bdir) || @mkdir($bdir, 0700, true);
-            $bak = $bdir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($f));
+            $bak = $bdir . '/' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '_' . preg_replace('/[^a-zA-Z0-9._-]/','_',basename($f));   // two files of one name in the same second no longer overwrite each other's backup
             // Prefer rename (same filesystem -> instant, needs NO extra space) - copy-then-unlink doubles the
             // file's footprint first and fails on the ≥95%-full disk this tool exists to rescue. Fall back to
             // copy for a cross-filesystem backup dir.
             $moved = @rename($f, $bak) || (@copy($f, $bak) && @unlink($f));
+            if ($moved && function_exists('smpro_audit')) smpro_audit('disk_del_file', ['from' => $f, 'backup' => $bak, 'account' => $acct]);   // the original place, kept on the server (it used to exist only in the browser's report)
             if ($moved) { @chmod($bak,0600); $r = ['ok'=>true,'msg'=>'Deleted (backed up → ' . basename($bak) . ', restorable).']; }
             else $r = ['ok'=>false,'msg'=>'Backup/delete failed (permissions?).'];
         }
@@ -376,7 +377,8 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
         if (!smpro_ds_safe_target($d, 'cache') || !is_dir($d)) $r = ['ok'=>false,'msg'=>'Refused: only known cache directories under /home/<account>/.'];
         else {
             $before = (int)trim((string)@shell_exec('du -sb ' . escapeshellarg($d) . ' 2>/dev/null | cut -f1'));
-            @shell_exec(smpro_ds_wrap('find ' . escapeshellarg($d) . " -mindepth 1 -not -name '.gitignore' -not -name 'index.php' -delete 2>/dev/null", 90));
+            // emptied BY the account: a folder in the path swapped for a link cannot turn this into a root delete elsewhere
+            if (($cu = function_exists('smpro_acct_of_path') ? smpro_acct_of_path($d) : '') !== '') smpro_acct_sh($cu, 'find "$1" -mindepth 1 -not -name .gitignore -not -name index.php -delete 2>/dev/null; true', [$d], null, 120);
             $after = (int)trim((string)@shell_exec('du -sb ' . escapeshellarg($d) . ' 2>/dev/null | cut -f1'));
             $r = ['ok'=>true,'msg'=>'Cache cleared — freed ' . smpro_ds_humb(max(0,$before-$after)) . '.'];
         }

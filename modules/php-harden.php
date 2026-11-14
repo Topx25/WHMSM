@@ -15,9 +15,9 @@
  */
 if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 
-define('SMPRO_PH_STATE',  SMPRO_VARLIB . '/php_harden');
-define('SMPRO_PH_BACKUP', SMPRO_VARLIB . '/php_harden/backups');
-define('SMPRO_PH_AUDIT',  SMPRO_VARLIB . '/php_harden/audit.log');
+/* SMPRO_PH_STATE / SMPRO_PH_BACKUP / SMPRO_PH_AUDIT and the functions a cron worker needs to release an account
+   (profile, manifest load/save, audit log, remove_htaccess, force_unprotect) live in includes/phlock.php: the
+   Safety Lock queue worker grants a permanent release from cron, and a page module cannot be loaded there. */
 
 /* ---------------- low-level helpers ---------------- */
 function smpro_ph_valid_user($u) {
@@ -40,19 +40,6 @@ function smpro_ph_actor() { $a = function_exists('smpro_current_actor') ? smpro_
 /* ---------------- stack detection ---------------- */
 /* Stack detection (read_head / de / fe / php_count / detect / standard_files / upload_dirs) moved to
    includes/phstack.php - the account-side plugin needs the same answer and a second copy would drift. */
-function smpro_ph_profile($u) {
-    $profile = [];
-    foreach (smpro_ph_roots($u) as $row) {
-        $det = smpro_ph_detect($row['root']);
-        $profile[] = [
-            'domain' => $row['domain'], 'root' => $row['root'],
-            'det' => $det,
-            'files' => smpro_ph_standard_files($row['root'], $det['key']),
-            'dirs' => smpro_ph_upload_dirs($row['root'], $det['key']),
-        ];
-    }
-    return $profile;
-}
 
 /* ---------------- custom browser tree (navigable, one level at a time) ---------------- */
 /** List a single directory $dir (must be inside the account & under $root). */
@@ -118,23 +105,11 @@ function smpro_ph_browser_rows(array $rows) {
 }
 
 /* ---------------- manifest + backups + audit ---------------- */
-function smpro_ph_manifest_path($u) { return SMPRO_PH_STATE . '/' . preg_replace('/[^a-zA-Z0-9._-]/', '', $u) . '.json'; }
-function smpro_ph_load($u) { $p = smpro_ph_manifest_path($u); if (!is_file($p)) return null; $j = json_decode((string)@file_get_contents($p), true); return is_array($j) ? $j : null; }
-function smpro_ph_save($u, $m) {
-    @is_dir(SMPRO_PH_STATE) || @mkdir(SMPRO_PH_STATE, 0700, true);
-    $m['updated_at'] = date('c');
-    $tmp = smpro_ph_manifest_path($u) . '.tmp'; if (@file_put_contents($tmp, json_encode($m, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX) === false) return false;
-    @chmod($tmp, 0600); return @rename($tmp, smpro_ph_manifest_path($u));
-}
 function smpro_ph_backup($src, $dir) {
     @is_dir($dir) || @mkdir($dir, 0700, true);
     $dst = $dir . '/' . sha1($src) . '_' . preg_replace('/[^a-zA-Z0-9._-]+/', '_', basename($src));
     if (is_file($src) && !is_link($src)) { @copy($src, $dst); @chmod($dst, 0600); }   // a link is never copied: its target is not the account's file
     return $dst;
-}
-function smpro_ph_audit_log($u, $action, $message, $extra = []) {
-    @is_dir(SMPRO_PH_STATE) || @mkdir(SMPRO_PH_STATE, 0700, true);
-    @file_put_contents(SMPRO_PH_AUDIT, json_encode(['time' => date('c'), 'user' => $u, 'action' => $action, 'message' => $message, 'extra' => $extra], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
 }
 function smpro_ph_audit_rows($u, $limit = 40) {
     if (!is_file(SMPRO_PH_AUDIT)) return [];
@@ -185,21 +160,6 @@ function smpro_ph_apply_htaccess($dir, array $exts, $backupDir) {
     if (!$ok) { @unlink($tmp); return ['dir' => $dir, 'htaccess' => $ht, 'backup' => $backup, 'extensions' => smpro_ph_allowed_exts($exts), 'lock_rc' => 1, 'lock_output' => 'write failed']; }
     [$rc, $out] = smpro_ph_chattr('+i', $ht);
     return ['dir' => $dir, 'htaccess' => $ht, 'backup' => $backup, 'extensions' => smpro_ph_allowed_exts($exts), 'lock_rc' => $rc, 'lock_output' => $out];
-}
-function smpro_ph_remove_htaccess($dir) {
-    $ht = rtrim($dir, '/') . '/.htaccess';
-    if (is_link($ht)) return false;                                          // not ours to touch (see smpro_ph_apply_htaccess)
-    if (!is_file($ht)) return true;
-    smpro_ph_chattr('-i', $ht);
-    $content = (string)@file_get_contents($ht);
-    $new = preg_replace('/\n?# SMPRO_PH_DENY_EXEC_START.*?# SMPRO_PH_DENY_EXEC_END\s*/s', '', $content);
-    if (trim((string)$new) === '') { @unlink($ht); return true; }
-    $uid = @fileowner($ht); $gid = @filegroup($ht);
-    $tmp = $ht . '.smpro-' . bin2hex(random_bytes(6)); $fh = @fopen($tmp, 'xb');
-    $ok = $fh !== false && @fwrite($fh, rtrim((string)$new) . "\n") !== false; if ($fh) @fclose($fh);
-    if ($ok) { @chmod($tmp, 0644); if ($uid !== false) { @chown($tmp, $uid); @chgrp($tmp, $gid); } $ok = !is_link($ht) && @rename($tmp, $ht); }
-    if (!$ok) @unlink($tmp);
-    return (bool)$ok;
 }
 
 /* ---------------- apply / unlock ---------------- */
@@ -322,91 +282,6 @@ function smpro_ph_unlock($u, array $postFiles, array $postDirs, $until = 0) {
     return ['ok' => true, 'count' => $done, 'temporary' => $until > 0, 'until' => $until > 0 ? date('Y-m-d H:i', $until) : '', 'held' => array_map('count', $held)];
 }
 
-/**
- * Remove EVERY protection this plugin holds over an account, and record that it must stay removed.
- *
- * The ordinary unlock only touches the paths the browser posted, which is right when an operator is unlocking a
- * few files by hand. It is wrong as a way out of trouble: the caller has to already know what is locked, and a
- * path that was locked but is no longer listed stays locked forever with nothing pointing at it. This takes the
- * opposite approach - it unlocks the union of everything recorded in the manifest and everything the live scan
- * can still see locked, and then reports what it could NOT clear rather than reporting a total.
- *
- * That last part is the point. A file with the immutable bit set on a filesystem that has since been remounted
- * read-only cannot be unlocked, and saying "unprotected" when one file is still locked would send the operator
- * to look somewhere else for a problem that is right here.
- */
-function smpro_ph_force_unprotect($u, array $profile, $reason, $by, $scope = 'all') {
-    $files = []; $dirs = [];
-
-    // Everything the manifest remembers locking - authoritative, and the only record of paths the current scan
-    // no longer proposes (a stack that changed, a folder that was renamed).
-    $m = smpro_ph_load($u) ?: [];
-    // smpro_ph_apply writes these as protected_files[].path and deny_php_dirs[].dir. Reading 'files'/'dirs'
-    // instead would find nothing and still report success - the exact failure this function exists to avoid.
-    foreach ((array)($m['protected_files'] ?? []) as $f) { $p = is_array($f) ? (string)($f['path'] ?? '') : (string)$f; if ($p !== '') $files[] = $p; }
-    foreach ((array)($m['deny_php_dirs']   ?? []) as $d) { $p = is_array($d) ? (string)($d['dir']  ?? '') : (string)$d; if ($p !== '') $dirs[]  = $p; }
-    // A locked document root is cleared with the files: chattr treats a directory the same way, and leaving one
-    // set would mean the account still cannot create a file while being told it was released.
-    foreach ((array)($m['locked_roots'] ?? []) as $d) { $p = is_array($d) ? (string)($d['dir'] ?? '') : (string)$d; if ($p !== '') $files[] = $p; }
-    $pr = $m['pending_relock'] ?? null;
-    if (is_array($pr)) {
-        foreach ((array)($pr['files'] ?? []) as $p) $files[] = (string)$p;
-        foreach ((array)($pr['dirs']  ?? []) as $p) $dirs[]  = (string)$p;
-    }
-    // Plus whatever the live profile still proposes, so a lock applied by an older build is not missed.
-    foreach ($profile as $prof) {
-        foreach ((array)($prof['files'] ?? []) as $f) $files[] = (string)$f['path'];
-        foreach ((array)($prof['dirs']  ?? []) as $d) $dirs[]  = (string)$d['path'];
-    }
-
-    $files = array_values(array_unique(array_filter($files, fn($p) => $p !== '' && smpro_ph_inside($u, $p))));
-    $dirs  = array_values(array_unique(array_filter($dirs,  fn($p) => $p !== '' && smpro_ph_inside($u, $p))));
-
-    $r = smpro_ph_chattr_many('-i', $files);   // one batch: gone, symlinked and already-clear paths cost nothing
-    // "cleared" used to add the paths that were ALREADY clear, so an account with nothing locked reported
-    // "12 item(s) cleared" and read as if something had re-protected it. Only real changes count now, and the
-    // message says how many were already clear.
-    $unlocked = count($r['changed']); $already = count($r['already']); $guards = 0; $stuck = array_keys($r['failed']);
-    foreach ($dirs as $d) {
-        if (!is_dir($d) || is_link($d)) continue;
-        $ht = rtrim($d, '/') . '/.htaccess';
-        $had = is_file($ht) && strpos((string)@file_get_contents($ht), 'SMPRO_PH_DENY_EXEC_START') !== false;
-        smpro_ph_remove_htaccess($d);
-        // The guard is gone when the file is gone, or when the marked block is no longer inside it.
-        $left = is_file($ht) ? (string)@file_get_contents($ht) : '';
-        if ($left !== '' && strpos($left, 'SMPRO_PH_DENY_EXEC_START') !== false) $stuck[] = $ht; elseif ($had) $guards++;
-    }
-    // Then everything this product did NOT set: another product's lockdown, a hand-run chattr, a folder left
-    // immutable. "Force" means the account comes back able to manage its own files, whoever locked them.
-    $sw = function_exists('smpro_ph_sweep_attrs') ? smpro_ph_sweep_attrs($u) : ['found' => [], 'cleared' => [], 'failed' => [], 'root_owned' => 0, 'root_owned_sample' => [], 'complete' => false];
-    $others = count($sw['cleared']); foreach (array_keys($sw['failed']) as $sp) $stuck[] = $sp;
-    // Paths another HostGuard product listed as its own: cleared (Force means freed), and that product is asked in
-    // writing to release and not re-lock while the account stays excluded.
-    if (function_exists('smpro_hg_lock_owner') && $sw['cleared']) {
-        $owners = []; foreach ($sw['cleared'] as $cp) { $ow = smpro_hg_lock_owner($u, $cp); if ($ow !== '') $owners[$ow] = 1; }
-        if ($owners) { smpro_hg_release_request($u, 'Force unprotect by ' . $by . ': ' . $reason, array_keys($owners)); smpro_hg_event_emit('lock_released', ['account' => $u, 'products' => array_keys($owners), 'paths' => array_slice($sw['cleared'], 0, 20)]); }
-    }
-    if (function_exists('smpro_hg_event_emit')) smpro_hg_event_emit('account_excluded', ['account' => $u, 'scope' => $scope, 'reason' => mb_substr((string)$reason, 0, 160)]);
-    if (function_exists('smpro_hg_locks_write')) smpro_hg_locks_write($u, []);
-    $cleared = $unlocked + $guards + $others;
-
-    $m = $m ?: ['version' => 'smpro.ph1', 'user' => $u, 'created_at' => date('c')];
-    $m['status'] = 'unlocked';
-    $m['unlock_until'] = '';
-    unset($m['pending_relock']);
-    $m['force_unprotected_at'] = date('c');
-    smpro_ph_save($u, $m);
-
-    $listed = smpro_ph_ign_add($u, $reason, $by, $scope);
-
-    smpro_ph_audit_log($u, 'php_harden_force_unprotect',
-        'Force unprotect — ' . ($cleared ? ($unlocked . ' lock(s) removed' . ($guards ? ', ' . $guards . ' PHP guard(s) removed' : '') . ($others ? ', ' . $others . ' lock(s) set outside this product removed (' . implode(', ', array_map('basename', array_slice($sw['cleared'], 0, 3))) . (count($sw['cleared']) > 3 ? ', ...' : '') . ')' : '')) : 'nothing was locked') . ($already ? ' · ' . $already . ' path(s) were already clear' : '') . (!$sw['complete'] ? ' · the sweep for other locks did not finish (deep tree); run again' : '') . ($sw['root_owned'] ? ' · ' . $sw['root_owned'] . ' root-owned item(s) inside the web root (the account cannot edit them; e.g. ' . basename((string)$sw['root_owned_sample'][0]) . ')' : '') . ($stuck ? ', ' . count($stuck) . ' could NOT be cleared' : '')
-        . ($listed ? ' · added to the ignore list' : ' · COULD NOT be added to the ignore list'),
-        ['reason' => $reason, 'by' => $by, 'scope' => $scope, 'stuck' => array_slice($stuck, 0, 20), 'other_locks' => array_slice($sw['cleared'], 0, 50), 'root_owned' => $sw['root_owned'], 'root_owned_sample' => $sw['root_owned_sample']]);
-    smpro_audit('php_harden_force_unprotect', ['user' => $u, 'cleared' => $cleared, 'already_clear' => $already, 'stuck' => count($stuck), 'listed' => $listed ? 1 : 0]);
-
-    return ['ok' => empty($stuck) && $listed, 'cleared' => $cleared, 'already' => $already, 'stuck' => $stuck, 'listed' => $listed, 'other_locks' => $sw['cleared'], 'root_owned' => $sw['root_owned']];
-}
 
 /**
  * Enforce expired temporary unlocks: any manifest in `temporary_unlock` whose `pending_relock.until`

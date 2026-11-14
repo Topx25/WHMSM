@@ -315,9 +315,11 @@ function smpro_fw_allow_undo($key) {
     $pv = smpro_fw_allow_providers()[$key] ?? null; if (!$pv) return ['ok'=>false,'msg'=>'Unknown provider.'];
     $csf = smpro_fw_allow_csf_bin(); $marker = smpro_fw_allow_marker($key);
     if (!is_file(SMPRO_FWA_ALLOW) || !is_writable(SMPRO_FWA_ALLOW)) return ['ok'=>false,'msg'=>'csf.allow is not writable.'];
+    $dl = function_exists('smpro_csf_deny_lock') ? smpro_csf_deny_lock() : null;   // read and rewrite as one step
     $lines = file(SMPRO_FWA_ALLOW, FILE_IGNORE_NEW_LINES) ?: []; $keep = []; $removed = 0;
     foreach ($lines as $l) { $t = trim($l); if ($t !== '' && $t[0] !== '#' && strpos($t, $marker) !== false) { $removed++; continue; } $keep[] = $l; }
     if ($removed > 0) { @copy(SMPRO_FWA_ALLOW, SMPRO_FWA_ALLOW . '.smpro.bak'); @file_put_contents(SMPRO_FWA_ALLOW, implode("\n", $keep) . "\n", LOCK_EX); if ($csf !== '') @shell_exec('timeout 60 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1'); }
+    if (function_exists('smpro_csf_deny_unlock')) smpro_csf_deny_unlock($dl);
     if (function_exists('smpro_audit')) smpro_audit('firewall_allow_provider', ['provider'=>$key, 'op'=>'remove', 'removed'=>$removed, 'actor'=>function_exists('smpro_current_actor')?smpro_current_actor():'root']);
     return ['ok'=>true, 'msg'=>$pv['name'] . ': removed ' . $removed . ' allow-list range(s). CSF reloaded.'];
 }
@@ -337,12 +339,14 @@ function smpro_fw_allow_reconcile($key) {
     // halved its network: nothing is removed on its evidence
     $prevN = count(smpro_fw_allow_ranges($key)); $partial = $prevN >= 10 && count($live) < (int)($prevN * 0.5);
     if (!$partial && is_file(SMPRO_FWA_ALLOW) && is_writable(SMPRO_FWA_ALLOW)) {
+        $dl = function_exists('smpro_csf_deny_lock') ? smpro_csf_deny_lock() : null;
         $lines = file(SMPRO_FWA_ALLOW, FILE_IGNORE_NEW_LINES) ?: []; $keep = [];
         foreach ($lines as $l) { $t = trim($l);
             if ($t !== '' && $t[0] !== '#' && strpos($t, $marker) !== false) { $ip = preg_split('/\s+/', $t)[0]; if (!isset($liveSet[$ip])) { $removed++; continue; } }
             $keep[] = $l;
         }
         if ($removed > 0) { @copy(SMPRO_FWA_ALLOW, SMPRO_FWA_ALLOW . '.smpro.bak'); @file_put_contents(SMPRO_FWA_ALLOW, implode("\n", $keep) . "\n", LOCK_EX); }
+        if (function_exists('smpro_csf_deny_unlock')) smpro_csf_deny_unlock($dl);
     }
     if ($added || $removed) @shell_exec('timeout 60 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');
     return ['added'=>$added, 'removed'=>$removed] + ($partial ? ['err' => 'the feed returned ' . count($live) . ' ranges against ' . $prevN . ' last time - treated as a partial download, nothing removed'] : []);

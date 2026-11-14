@@ -12,7 +12,7 @@ require __DIR__ . '/../support/bootstrap.php';
  * Locked here: the WHM page dispatches ask_decide and rules_save, renders the pending-requests panel, and its
  * JavaScript sends the decision - all in the copy that is actually built.
  */
-$mod = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+$mod = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php') . (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
 
 /* ---------- U1: the actions are dispatched ---------- */
 has($mod, "'ask_decide', 'rules_save'], true)", 'U1: ask_decide and rules_save are accepted by the page');
@@ -87,21 +87,21 @@ $w = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/bin/sp_qu
 has($w, 'smpro_spq_retry_pending()', 'U13: the minute worker runs it');
 
 /* ---------- U15: country presets on the rules card (the operator chooses; nothing is a default) ---------- */
-$ph = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+$ph = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php') . (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
 has($ph, 'class="tp-btn rlPreset"', 'U15: preset buttons exist');
 has($ph, 'data-cc="EG, SA, AE, KW, QA, BH, OM, JO, LB, SY, IQ, PS, YE, LY, TN, DZ, MA, SD, MR, SO, DJ, KM"', 'U15: the Arab League preset carries all 22 members');
 $sr = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/sprules.php'));
 hasnt($sr, "'countries'      => ['EG'", 'U15: the shipped DEFAULT stays empty - a preset is a click, never a built-in market');
 
 /* ---------- U16: Force unprotect reports what it changed, not what it looked at ---------- */
-$ph16 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+$ph16 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php') . (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
 has($ph16, "\$unlocked = count(\$r['changed']); \$already = count(\$r['already']);", 'U16: locks removed and already-clear paths are counted apart');
 has($ph16, "'nothing was locked'", 'U16: an account with nothing locked says so');
 hasnt($ph16, "\$cleared = (int)\$r['done'];", 'U16: the old count (changed + already clear) is gone');
 
 // beta390: Force unprotect sweeps locks this product did not set, and says what it found
 $pl = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
-$ph = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+$ph = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php') . (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
 has($pl, "function smpro_ph_sweep_attrs(\$u, \$maxDepth = 4, \$seconds = 20) {", 'X1: the sweep exists');
 has($pl, "if (strpos(\$flags, 'i') === false && strpos(\$flags, 'a') === false) continue;", 'X2: immutable and append-only flags, nothing else');
 has($pl, "if (is_link(\$path) || !smpro_ph_inside(\$u, \$path)) continue;", 'X3: never a symlink, never outside the account');
@@ -120,7 +120,7 @@ has($sq, "smpro_ph_audit_log(\$u, 'php_harden_kept_free', \$msg,", 'Y4: ...and w
 has($sqb, "\$kept = function_exists('smpro_spq_keep_free') ? smpro_spq_keep_free() : 0;", 'Y5: the worker runs it every minute (a few accounts per tick)');
 
 // beta392: several accounts at once, protected here or not
-$ph2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+$ph2 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php') . (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
 has($ph2, "if (\$act === 'force_unprotect_bulk') {", 'Z1: the bulk action exists');
 has($ph2, "if (\$t !== '' && smpro_ph_valid_user(\$t) && !in_array(\$t, \$targets, true)) \$targets[] = \$t;", 'Z2: every target is a real account, once');
 has($ph2, "\$r = smpro_ph_force_unprotect(\$t, smpro_ph_profile(\$t), \$reason, \$by, \$scope);", 'Z3: ...released with the same Force unprotect (sweeps foreign locks too)');
@@ -129,7 +129,7 @@ has($ph2, "f.set('ph_action','force_unprotect_bulk');f.set('smpro_csrf',CSRF);",
 has($ph2, "if(!reason){alert('Give a reason first", 'Z6: a reason is required');
 
 // beta397: the bridge agreement with WP Guard, and the answer writer that never touches a name twice
-$ph3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php'));
+$ph3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/php-harden.php') . (string)file_get_contents(SMPRO_BASE . '/includes/phlock.php'));
 $sq3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/spqueue.php'));
 $in3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/intrusion.php'));
 $hp3 = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/helpers.php'));

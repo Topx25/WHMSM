@@ -132,6 +132,7 @@ function hm_rsync_progress($cmd, $totalBytes, $label, $lo, $hi) {
     global $JOB;
     $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
     $proc = @proc_open($cmd, $desc, $pipes);
+    $GLOBALS['hm_rsync_rc'] = -1;
     if (!is_resource($proc)) { hm_sh($cmd, 0); return; }          // fallback: plain run, no progress
     @stream_set_blocking($pipes[1], false); @stream_set_blocking($pipes[2], false);
     $buf = ''; $lastUi = 0; $startedPass = time();
@@ -195,6 +196,8 @@ function hm_rsync_progress($cmd, $totalBytes, $label, $lo, $hi) {
         if (empty($st['running'])) break;
         usleep(400000);
     }
+    // the exit status is read from the last status call: proc_close() returns -1 once the status has been collected
+    $GLOBALS['hm_rsync_rc'] = (isset($st) && empty($st['running'])) ? (int)($st['exitcode'] ?? -1) : -1;
     @fclose($pipes[1]); @fclose($pipes[2]); @proc_close($proc);
     // Final flush - a fast pass can finish between two UI ticks, which previously left the file list empty
     // even though thousands of files had been counted.
@@ -308,6 +311,14 @@ if ($mode === 'move') {
         jp('delta', 55, 'Syncing final changes for ' . $user . ' (delta pass)…');
         hm_rsync_progress($RS . '--delete ' . escapeshellarg($src . '/') . ' ' . escapeshellarg($dst . '/'),
             $total, 'Final delta for ' . $user, 55, 68);
+        // The copy must have FINISHED before the account is pointed at it. A full target disk or a killed rsync used to
+        // go unseen: the account was switched onto a partial copy, the job said "Moved", and Reclaim then deleted
+        // the only complete one. 0 = done; 24 = some files vanished while copying (a live site), which is normal.
+        $rrc = (int)($GLOBALS['hm_rsync_rc'] ?? -1);
+        if (!in_array($rrc, [0, 24], true)) {
+            jdone(false, 'The copy to ' . $troot . ' did not finish (rsync exit ' . $rrc . ($rrc === -1 ? ', status unknown' : '') . ') - ' . $user . ' was NOT switched and still runs from ' . $src . '. Free space on the target and start the move again; it resumes where it stopped.');
+            exit(1);
+        }
     } else {
         jp('rebuild', 78, 'Resuming the switch for ' . $user . ' (data already copied)…');
     }

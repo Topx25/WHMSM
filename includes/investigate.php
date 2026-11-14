@@ -1144,7 +1144,7 @@ function smpro_inv_fix_muplugin($r, $path) {
     if ($pImm) @shell_exec('chattr -i ' . escapeshellarg($parent) . ' 2>/dev/null');
     if ($tImm) @shell_exec('chattr -i ' . escapeshellarg($path) . ' 2>/dev/null');
     $to = $path . '.smpro-disabled-' . date('Ymd_His');
-    $ok = @rename($path, $to);
+    $ok = smpro_acct_sh((string)$r['user'], '[ ! -L "$1" ] && mv -- "$1" "$2"', [$path, $to], null, 60)['code'] === 0;   // moved BY the account: a linked wp-content cannot make root rename someone else's files
     if ($pImm) @shell_exec('chattr +i ' . escapeshellarg($parent) . ' 2>/dev/null');
     if (!$ok) { if ($tImm) @shell_exec('chattr +i ' . escapeshellarg($path) . ' 2>/dev/null'); return ['ok'=>false,'msg'=>'rename failed (permissions/lock)']; }
     $id = smpro_inv_manifest_add(['user'=>$r['user'],'domain'=>$r['domain'],'action'=>'disable_muplugin','from'=>$path,'to'=>$to,'hardened'=>$tImm ? 1 : 0]);
@@ -1247,7 +1247,7 @@ function smpro_inv_fix($action, $target, $path) {
     if ($pImm) @shell_exec('chattr -i ' . escapeshellarg($parent) . ' 2>/dev/null');
     if ($tImm) @shell_exec('chattr -R -i ' . escapeshellarg($path) . ' 2>/dev/null');
     $to = $path . '.smpro-disabled-' . date('Ymd_His');
-    $ok = @rename($path, $to);
+    $ok = smpro_acct_sh((string)$r['user'], '[ ! -L "$1" ] && mv -- "$1" "$2"', [$path, $to], null, 60)['code'] === 0;   // moved BY the account: a linked wp-content cannot make root rename someone else's files
     if ($pImm) @shell_exec('chattr +i ' . escapeshellarg($parent) . ' 2>/dev/null');   // re-harden parent
     if (!$ok) { if ($tImm) @shell_exec('chattr -R +i ' . escapeshellarg($path) . ' 2>/dev/null'); return ['ok'=>false,'msg'=>'rename failed even after clearing hardening — check ownership/permissions']; }
     $id = smpro_inv_manifest_add(['user'=>$user,'domain'=>$r['domain'],'action'=>$action,'from'=>$path,'to'=>$to,'hardened'=>$tImm ? 1 : 0]);
@@ -1434,7 +1434,7 @@ function smpro_inv_fix_disable_dropin($r, $path) {
     if (!is_file($path)) return ['ok'=>false,'msg'=>'not found: ' . $base];
     $imm = smpro_inv_imm($path); if ($imm) @shell_exec('chattr -i ' . escapeshellarg($path) . ' 2>/dev/null');
     $to = $path . '.smpro-disabled-' . date('Ymd_His');
-    $ok = @rename($path, $to);
+    $ok = smpro_acct_sh((string)$r['user'], '[ ! -L "$1" ] && mv -- "$1" "$2"', [$path, $to], null, 60)['code'] === 0;   // moved BY the account: a linked wp-content cannot make root rename someone else's files
     if (!$ok) { if ($imm) @shell_exec('chattr +i ' . escapeshellarg($path) . ' 2>/dev/null'); return ['ok'=>false,'msg'=>'rename failed']; }
     $id = smpro_inv_manifest_add(['user'=>$r['user'],'domain'=>$r['domain'],'action'=>'disable_dropin','from'=>$path,'to'=>$to,'hardened'=>$imm ? 1 : 0]);
     smpro_audit('sitedoctor_fix', ['action'=>'disable_dropin','target'=>$base,'user'=>$r['user'],'ok'=>true]);
@@ -1504,7 +1504,8 @@ function smpro_inv_fix_laravel_cache($r, $cacheDir = '') {
     if (!$files) return ['ok'=>false,'msg'=>'bootstrap/cache is already empty (no stale files)'];
     $bak = SMPRO_VARLIB . '/quarantine/sitedoctor/laravel_' . preg_replace('/[^a-z0-9_]/', '', strtolower($r['user'])) . '_' . date('Ymd_His');
     @mkdir($bak, 0700, true);
-    $n = 0; foreach ($files as $f) { if (@copy($f, $bak . '/' . basename($f)) && @unlink($f)) $n++; }
+    // read and removed AS the account; the copy is kept in the plugin's store
+    $n = 0; foreach ($files as $f) { $c = smpro_acct_get((string)$r['user'], $f, 16777216); if ($c === null) continue; if (@file_put_contents($bak . '/' . basename($f), $c) !== false && smpro_acct_rm((string)$r['user'], $f)) $n++; }
     if (!$n) return ['ok'=>false,'msg'=>'Could not clear cache files (permissions?)'];
     smpro_audit('sitedoctor_fix', ['action'=>'clear_laravel_cache','user'=>$r['user'],'cleared'=>$n,'ok'=>true]);
     return ['ok'=>true,'msg'=>'Cleared ' . $n . ' stale Laravel cache file(s) from bootstrap/cache. Laravel will regenerate them on the next request.'];
@@ -1887,6 +1888,10 @@ function smpro_inv_undo($id) {
     $uUser = (string)($e['user'] ?? ''); $uHome = ($uUser !== '' && function_exists('smpro_user_home')) ? rtrim((string)smpro_user_home($uUser), '/') : '';
     if ($uHome !== '' && function_exists('smpro_acct_sh') && strpos((string)$e['to'], $uHome . '/') === 0 && strpos((string)$e['from'], $uHome . '/') === 0)
         $ok = smpro_acct_sh($uUser, '[ ! -e "$2" ] && mv -- "$1" "$2"', [(string)$e['to'], (string)$e['from']], null, 120)['code'] === 0;
+    elseif ($uUser !== '' && function_exists('smpro_acct_restore') && is_file((string)$e['to']) && !is_link((string)$e['to'])) {
+        // a single file kept in the plugin's store goes back AS the account: a root rename would follow a link left at the old name
+        $ok = smpro_acct_restore($uUser, (string)$e['to'], (string)$e['from'], 0644, 0, false); if ($ok) @unlink((string)$e['to']);
+    }
     else $ok = @rename($e['to'], $e['from']);
     if ($pImm) @shell_exec('chattr +i ' . escapeshellarg($parent) . ' 2>/dev/null');
     if (!$ok) return ['ok'=>false,'msg'=>'restore rename failed'];

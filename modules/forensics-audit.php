@@ -359,9 +359,11 @@ function smpro_fa_restore($id) {
         $file = (string)($e['file'] ?? ''); $bak = (string)($e['backup'] ?? '');
         if (!preg_match('#^/home/[^/]+/#', $file)) return ['ok'=>false,'msg'=>'Refused: target outside /home.'];
         if ($bak === '' || (strpos($bak, '/home/backup/detections/') !== 0 && strpos($bak, SMPRO_VARLIB . '/detections/') !== 0) || is_link($bak) || !is_file($bak)) return ['ok'=>false,'msg'=>'Backup copy missing.'];
-        if (is_file($file)) return ['ok'=>false,'msg'=>'A file already exists at the original path — not overwriting.'];
-        @is_dir(dirname($file)) || @mkdir(dirname($file), 0755, true);
-        if (!@copy($bak, $file)) return ['ok'=>false,'msg'=>'Restore copy failed (permissions?).'];
+        // put back AS the account: the name was freed by the delete, so the account may have left a link there -
+        // a dangling one passes "no file exists" and a root copy would then create whatever it points at
+        $ru = function_exists('smpro_acct_of_path') ? smpro_acct_of_path($file) : '';
+        if ($ru === '') return ['ok'=>false,'msg'=>'Refused: the account that path belongs to was not found.'];
+        if (!smpro_acct_restore($ru, $bak, $file, 0644)) return ['ok'=>false,'msg'=>'Not restored: a file or a link already exists at the original path, or the account cannot write that folder.'];
         $m[$id]['status'] = 'restored'; $m[$id]['restored_ts'] = time(); smpro_fa_json_save(SMPRO_FA_MANIFEST, $m);
         return ['ok'=>true,'msg'=>'Deleted file restored from backup to ' . $file];
     }

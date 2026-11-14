@@ -220,7 +220,11 @@ function smpro_cx_apply(string $op, array $args, string $actor = ''): array {
                 foreach ($lines as $l) { $t = trim($l); if ($t !== '' && $t[0] !== '#' && smpro_cx_cron_suspicious($t, $a['user'])) { $n++; continue; } $keep[] = $l; }
                 if ($n === 0) { $r = ['ok' => false, 'msg' => 'no fetch/decode line found now - nothing changed']; break; }
                 $bk = smpro_cx_backup($cf); if ($bk === '') { $r = ['ok' => false, 'msg' => 'could not back up the crontab - nothing changed']; break; }
-                $tmp = tempnam(sys_get_temp_dir(), 'smprocron'); @file_put_contents($tmp, implode("\n", $keep) . ($keep ? "\n" : ''));
+                $body = implode("\n", $keep) . ($keep ? "\n" : '');
+                $tmp = tempnam(sys_get_temp_dir(), 'smprocron');
+                // a full disk leaves a short or empty file: installing that would wipe the account's whole crontab
+                clearstatcache(true, (string)$tmp);
+                if ($tmp === false || @file_put_contents($tmp, $body) !== strlen($body) || (string)@file_get_contents($tmp) !== $body) { if ($tmp) @unlink($tmp); $r = ['ok' => false, 'msg' => 'the new crontab could not be written in full - nothing changed', 'backup' => $bk]; break; }
                 smpro_cx_run('crontab -u ' . escapeshellarg($a['user']) . ' ' . escapeshellarg($tmp) . ' 2>&1', 20); @unlink($tmp);
                 $r = ['ok' => true, 'msg' => $n . ' cron line(s) removed for ' . $a['user'], 'backup' => $bk];
                 break;
@@ -233,7 +237,8 @@ function smpro_cx_apply(string $op, array $args, string $actor = ''): array {
                 $kf = (string)$pw['dir'] . '/.ssh/authorized_keys';
                 if (($why = smpro_cx_account_file_ok($kf, (int)$pw['uid'])) !== '') { $r = ['ok' => false, 'msg' => 'authorized_keys is ' . $why . ' - inspect the account by hand']; break; }
                 $bk = smpro_cx_backup($kf); if ($bk === '') { $r = ['ok' => false, 'msg' => 'no key file, or the backup could not be kept - nothing changed']; break; }
-                @file_put_contents($kf, '', LOCK_EX); @chown($kf, (int)$pw['uid']); @chgrp($kf, (int)$pw['gid']); @chmod($kf, 0600);
+                // emptied BY the account: a key file swapped for a link after the check is not written or chown-ed by root
+                if (!smpro_acct_put((string)$a['user'], $kf, '', 0600)) { $r = ['ok' => false, 'msg' => 'the key file could not be emptied as the account - nothing changed', 'backup' => $bk]; break; }
                 $r = ['ok' => true, 'msg' => 'all authorised keys of ' . $a['user'] . ' removed', 'backup' => $bk];
                 break;
             case 'token_disable':
@@ -265,12 +270,13 @@ function smpro_cx_apply(string $op, array $args, string $actor = ''): array {
                 foreach (['.bashrc', '.bash_profile', '.profile'] as $rc) {
                     $p = (string)$pw['dir'] . '/' . $rc;
                     if (smpro_cx_account_file_ok($p, (int)$pw['uid']) !== '') continue;   // a link or a foreign owner is never written through
-                    $lines = @file($p, FILE_IGNORE_NEW_LINES); if (!is_array($lines)) continue;
+                    $body = smpro_acct_get((string)$a['user'], $p, 1048576); if ($body === null) continue;   // read AS the account
+                    $lines = explode("\n", rtrim(str_replace("\r", '', $body), "\n"));
                     $keep = []; $k = 0;
                     foreach ($lines as $l) { $t = trim($l); if ($t !== '' && $t[0] !== '#' && preg_match(smpro_cx_rc_pattern(), $t)) { $k++; continue; } $keep[] = $l; }
                     if (!$k) continue;
                     $bk = smpro_cx_backup($p); if ($bk === '') continue;
-                    @file_put_contents($p, implode("\n", $keep) . "\n", LOCK_EX); @chown($p, (int)$pw['uid']); @chgrp($p, (int)$pw['gid']);
+                    if (!smpro_acct_put((string)$a['user'], $p, implode("\n", $keep) . "\n")) continue;   // written AS the account, mode kept
                     $n += $k; $bks[] = $bk;
                 }
                 $r = $n ? ['ok' => true, 'msg' => $n . ' line(s) removed from the shell start-up files of ' . $a['user'], 'backup' => implode(', ', $bks)] : ['ok' => false, 'msg' => 'no fetch/decode line found now - nothing changed'];
@@ -290,7 +296,7 @@ function smpro_cx_rc_pattern(): string {
 
 /** Is this cron line one the account door check would call fetching/decoding? (own-domain fetches are routine) */
 function smpro_cx_cron_suspicious(string $l, string $user): bool {
-    if (!preg_match('/(curl|wget|base64|\/tmp\/|\/dev\/shm|python|perl|nc |bash -c)/i', $l)) return false;
+    if (!preg_match('/(curl|wget|base64|\/tmp\/|\/dev\/shm|python|perl|\bnc |bash -c)/i', $l)) return false;
     $ownDoms = function_exists('smpro_cc_domains_of') ? smpro_cc_domains_of($user) : [];
     if (preg_match('#(curl|wget).*?https?://([^/\s"\x27]+)#i', $l, $m)) {
         $h = strtolower(preg_replace('/^www\./', '', $m[2]));
