@@ -99,6 +99,34 @@ while ($queue || $running) {
         unset($r); unset($running[$key]);
     }
 }
+/* ---------- a page that ran out of time in the crowd gets one more go on its own ----------
+ * Fourteen pages are rendered at once, each from an empty cache, so on a busy two-core lab a page with a heavy
+ * first scan can cross the limit with nothing wrong in it - and a release was refused for that. A page that only
+ * lost the race for CPU finishes when it runs alone; a page that really hangs fails again and is reported. */
+foreach ($results as $key => $m) {
+    if (strpos((string)$m, 'did not finish within') === false) continue;
+    $id  = explode('?', (string)$key)[0];
+    $box = $root . '/retry_' . preg_replace('/[^a-z0-9_-]/i', '_', (string)$key);
+    $cmd = escapeshellarg($php) . ' ' . escapeshellarg($harness) . ' ' . escapeshellarg($id) . ' ' . escapeshellarg((string)$jobs[$key]) . ' ' . escapeshellarg($box);
+    $pipes = []; $t0 = microtime(true);
+    $proc = @proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (!is_resource($proc)) continue;
+    stream_set_blocking($pipes[1], false); stream_set_blocking($pipes[2], false); $out = ''; $killed = false;
+    while (true) {
+        $out .= (string)stream_get_contents($pipes[1]) . (string)stream_get_contents($pipes[2]);
+        $st = proc_get_status($proc);
+        if (!$st['running']) break;
+        if ((microtime(true) - $t0) > $LIMIT) { @proc_terminate($proc, 9); $killed = true; break; }
+        usleep(50000);
+    }
+    $out .= (string)stream_get_contents($pipes[1]) . (string)stream_get_contents($pipes[2]);
+    @fclose($pipes[1]); @fclose($pipes[2]); @proc_close($proc);
+    if ($killed) continue;                                            // hung on its own too: the first verdict stands
+    $lines = array_values(array_filter(array_map('trim', explode("\n", $out)), fn($l) => $l !== ''));
+    $results[$key] = $lines ? (string)end($lines) : '(no output at all)';
+    $slow[$key] = (int)round((microtime(true) - $t0) * 1000);
+    ok(true, 'render: ' . $key . ' ran out of time among the others and was rendered again on its own (' . $slow[$key] . 'ms)');
+}
 arsort($slow);
 foreach (array_slice($slow, 0, 3, true) as $key => $ms) ok(true, 'render: slowest — ' . $key . ' ' . $ms . 'ms');
 
