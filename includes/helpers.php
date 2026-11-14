@@ -969,7 +969,12 @@ function smpro_csf_do($action, $ip) {
     if ($action === 'block' && function_exists('smpro_csf_deny_add')) { $r = smpro_csf_deny_add($ip, 'smpro'); return ['ok'=>!empty($r['ok']), 'testing'=>!empty($r['testing']), 'recorded'=>!empty($r['recorded']), 'msg'=>(string)$r['msg']]; }
     if ($action === 'allow' && function_exists('smpro_csf_allow_add')) { $r = smpro_csf_allow_add($ip, 'smpro'); return ['ok'=>!empty($r['ok']), 'msg'=>(string)$r['msg']]; }
     $csf = smpro_csf_bin();
-    if ($csf === '') return ['ok' => false, 'msg' => 'csf not found'];
+    // an unblock looks in every engine a block can land in, not only CSF
+    $others = ($action === 'unblock' && function_exists('smpro_fw_unblock_engines')) ? smpro_fw_unblock_engines($ip) : [];
+    if ($csf === '') {
+        if ($others) { if (function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'lift', 'unblock'); return ['ok' => true, 'msg' => $ip . ' unblocked (' . implode(', ', $others) . ')']; }
+        return ['ok' => false, 'msg' => 'csf not found'];
+    }
     if ($action === 'unblock') {
         @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -dr ' . escapeshellarg($ip) . ' 2>&1');
         // also strip any direct csf.deny line we may have written when CSF was a no-op
@@ -986,7 +991,7 @@ function smpro_csf_do($action, $ip) {
         // Every unblock writes its 'lift' to the bridge ledger, or the ledger keeps saying another product holds the
         // address and nothing can block it again.
         if ($gone && function_exists('smpro_hg_block_record')) smpro_hg_block_record($ip, 'lift', 'unblock');
-        return ['ok' => $gone, 'msg' => $gone ? ($ip . ' unblocked') : ('could not remove ' . $ip)];
+        return ['ok' => $gone, 'msg' => $gone ? ($ip . ' unblocked' . ($others ? ' (also removed from ' . implode(', ', $others) . ')' : '')) : ('could not remove ' . $ip)];
     }
     $flag = $action === 'allow' ? '-a' : '-d';
     $out = (string)@shell_exec('timeout 25 ' . escapeshellarg($csf) . ' ' . $flag . ' ' . escapeshellarg($ip) . ' ' . escapeshellarg('smpro ' . date('Y-m-d H:i')) . ' 2>&1');
@@ -2183,4 +2188,48 @@ function smpro_detect_backup_root(): string {
     if ($safe) return $old;
     $d = SMPRO_VARLIB . '/detections'; @is_dir($d) || @mkdir($d, 0700, true);
     return $d;
+}
+
+/** Take one address out of every firewall this product can put it into (a block falls back from one engine to the
+ *  next, so an unblock has to look in all of them). Returns the engines it was removed from. */
+function smpro_fw_unblock_engines(string $ip): array {
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) return [];
+    $done = []; $e = escapeshellarg($ip);
+    $has = fn(string $b): bool => trim((string)@shell_exec('command -v ' . escapeshellarg($b) . ' 2>/dev/null')) !== '';
+    if (function_exists('smpro_imunify_fw_available') && smpro_imunify_fw_available()) {
+        $o = (string)@shell_exec('timeout 40 /usr/bin/imunify360-agent blacklist ip delete ' . $e . ' 2>&1');
+        if (stripos($o, 'error') === false && stripos($o, 'traceback') === false && stripos($o, 'usage') === false) $done[] = 'Imunify360';
+    }
+    if ($has('bitninjacli')) {
+        $o = (string)@shell_exec('timeout 40 bitninjacli --blacklist --del=' . $e . ' 2>&1');
+        if (stripos($o, 'error') === false && stripos($o, 'usage') === false) $done[] = 'BitNinja';
+    }
+    if ($has('firewall-cmd') && trim((string)@shell_exec('timeout 15 firewall-cmd --state 2>/dev/null')) === 'running') {
+        $rule = 'rule family="' . (strpos($ip, ':') !== false ? 'ipv6' : 'ipv4') . '" source address="' . $ip . '" drop';
+        if (trim((string)@shell_exec('timeout 20 firewall-cmd --permanent --query-rich-rule=' . escapeshellarg($rule) . ' 2>/dev/null')) === 'yes') {
+            @shell_exec('timeout 30 firewall-cmd --permanent --remove-rich-rule=' . escapeshellarg($rule) . ' 2>&1');
+            @shell_exec('timeout 30 firewall-cmd --reload >/dev/null 2>&1');
+            if (trim((string)@shell_exec('timeout 20 firewall-cmd --permanent --query-rich-rule=' . escapeshellarg($rule) . ' 2>/dev/null')) !== 'yes') $done[] = 'firewalld';
+        }
+    }
+    if ($has('ufw') && strpos((string)@shell_exec('timeout 20 ufw status 2>/dev/null'), $ip) !== false) {
+        $o = (string)@shell_exec('timeout 30 ufw --force delete deny from ' . $e . ' 2>&1');
+        if (stripos($o, 'deleted') !== false) $done[] = 'ufw';
+    }
+    $bin = strpos($ip, ':') !== false ? 'ip6tables' : 'iptables';
+    if ($has($bin)) {
+        $n = 0;
+        while ($n < 8 && (int)trim((string)@shell_exec('timeout 15 ' . $bin . ' -C INPUT -s ' . $e . ' -j DROP >/dev/null 2>&1 && echo 1 || echo 0')) === 1) {
+            @shell_exec('timeout 20 ' . $bin . ' -D INPUT -s ' . $e . ' -j DROP 2>&1'); $n++;
+        }
+        if ($n) { if (function_exists('smpro_fw_iptables_persist')) smpro_fw_iptables_persist(); $done[] = $bin; }
+    }
+    if ($has('nft') && strpos($ip, ':') === false) {
+        $n = 0;
+        foreach (explode("\n", (string)@shell_exec('timeout 20 nft -a list chain inet filter input 2>/dev/null')) as $l) {
+            if (preg_match('/\bip saddr ' . preg_quote($ip, '/') . ' drop\b.*# handle (\d+)/', $l, $m)) { @shell_exec('timeout 20 nft delete rule inet filter input handle ' . (int)$m[1] . ' 2>&1'); $n++; }
+        }
+        if ($n) $done[] = 'nftables';
+    }
+    return $done;
 }

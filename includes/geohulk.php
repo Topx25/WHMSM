@@ -166,22 +166,25 @@ function smpro_gh_arm(string $operatorIp, string $by = ''): array {
  * sibling server in another country: every WHM API call it made counted as a failed login, cPHulk banned it for a
  * day, and its nftables set then dropped ALL traffic from that server - replies to this server's own requests too.
  */
-function smpro_gh_trusted_ips(): array {
+function smpro_gh_trusted_ips(bool $all = false): array {
     $out = [];
-    if (!function_exists('smpro_gw_always')) { $gf = __DIR__ . '/geowall.php'; if (is_file($gf)) require_once $gf; }
-    if (function_exists('smpro_gw_always')) foreach (smpro_gw_always('') as $a) $out[(string)$a] = 1;
+    // fleet members first: the list handed to the white list is capped, and a long allow list must not push them out
     $fl = SMPRO_VARLIB . '/hub/fleet.json';
     if (@is_file($fl)) {
         $j = json_decode((string)@file_get_contents($fl), true);
-        foreach (array_slice((array)($j['snaps'] ?? []), 0, 50) as $snap) {
-            $h = strtolower(trim((string)($snap['hostname'] ?? ''))); if ($h === '') continue;
-            // a panel hostname such as 1-2-3-4.cprapid.com carries the address in its name; anything else is resolved
-            $ip = preg_match('/^(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})\./', $h, $m) ? ($m[1] . '.' . $m[2] . '.' . $m[3] . '.' . $m[4]) : (string)@gethostbyname($h);
+        // The address comes from the LINK record: it was fixed when the operator paired the member and is part of
+        // the key both ends derive, so it cannot be changed afterwards. The host name inside a member's status
+        // report is the member's own word - a taken-over member could name any address there.
+        foreach (array_slice((array)($j['fleet'] ?? []), 0, 50) as $row) {
+            $L = (array)($row['link'] ?? []); if (($L['status'] ?? '') !== 'active') continue;
+            $ip = trim((string)($L['member_ip'] ?? ''));
             if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $out[$ip] = 1;
         }
     }
+    if (!function_exists('smpro_gw_always')) { $gf = __DIR__ . '/geowall.php'; if (is_file($gf)) require_once $gf; }
+    if (function_exists('smpro_gw_always')) foreach (smpro_gw_always('') as $a) $out[(string)$a] = 1;
     unset($out['127.0.0.0/8']);
-    return array_slice(array_keys($out), 0, 300);
+    return $all ? array_keys($out) : array_slice(array_keys($out), 0, 300);   // $all = every trusted address (for deciding what is no longer trusted)
 }
 /** Put every trusted address on cPHulk's white list (white beats the country blacklist) and clear its failure history.
  *  Hourly, or at once when csf.allow changed; each address is added once and remembered. */
@@ -198,6 +201,13 @@ function smpro_gh_whitelist_trusted(bool $force = false): array {
             smpro_gh_api('flush_cphulk_login_history_for_ips', ['ip' => $ip]);
         }
     }
+    // an address that stopped being trusted (a link revoked, a line taken out of the allow list) loses the entry
+    // this product put on the white list. Only with a non-empty current list: an unreadable source withdraws nothing.
+    $nowT = array_flip(array_map('strval', smpro_gh_trusted_ips(true))); $dropped = [];   // the WHOLE trusted set, not the capped one
+    if ($nowT) foreach (array_keys($done) as $ip) if (!isset($nowT[(string)$ip])) {
+        smpro_gh_api('delete_cphulk_record', ['list_name' => 'white', 'ip' => (string)$ip]); unset($done[$ip]); $dropped[] = (string)$ip;
+    }
+    if ($dropped && function_exists('smpro_audit')) @smpro_audit('geohulk_trusted_withdrawn', ['ips' => array_slice($dropped, 0, 50), 'count' => count($dropped)]);
     $cfg = smpro_gh_cfg(); $cfg['trusted_done'] = array_keys($done); $cfg['trusted_at'] = time(); smpro_gh_cfg_save($cfg);
     if ($added && function_exists('smpro_audit')) @smpro_audit('geohulk_trusted_whitelisted', ['ips' => array_slice($added, 0, 50), 'count' => count($added)]);
     return ['added' => count($added)];

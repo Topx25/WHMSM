@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/../support/bootstrap.php';
+require_once SMPRO_BASE . '/includes/helpers.php';
 /**
  * t168 - the rest of the review: the last root-by-path writes inside account folders, the lock agreement with
  * the other products, replayed bridge events, the shared cloud-mail file, the deny list rewrite.
@@ -29,3 +30,5 @@ has($gh, "if (smpro_gh_cloudmail_unreadable()) foreach (array_keys((array)(\$c['
 
 $hp = $src('includes/helpers.php');
 ok(strpos($hp, '$dl = function_exists(\'smpro_csf_deny_lock\') ? smpro_csf_deny_lock() : null;') !== false && strpos($hp, 'smpro_csf_deny_unlock($dl);') !== false, 'F1: unblock rewrites the deny list under the shared lock');
+ok(strpos($hp, 'function smpro_fw_unblock_engines(string $ip): array {') !== false && strpos($hp, "smpro_fw_unblock_engines(\$ip) : [];") !== false, 'F2: unblock looks in every engine a block can land in');
+is_eq(smpro_fw_unblock_engines('not-an-ip'), [], 'F3: ...and refuses anything that is not an address');

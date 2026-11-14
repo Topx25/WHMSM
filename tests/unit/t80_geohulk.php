@@ -108,9 +108,13 @@ unset($GLOBALS['smpro_gh_api']);
 
 // beta398: the door never refuses the operator's own servers
 $gh = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/geohulk.php'));
-has($gh, "function smpro_gh_trusted_ips(): array {", 'T1: trusted addresses are collected');
+has($gh, "function smpro_gh_trusted_ips(bool \$all = false): array {", 'T1: trusted addresses are collected');
 has($gh, "if (function_exists('smpro_gw_always')) foreach (smpro_gw_always('') as \$a) \$out[(string)\$a] = 1;", 'T2: ...from the same list the country wall honours (own + csf.allow)');
 has($gh, "\$fl = SMPRO_VARLIB . '/hub/fleet.json';", 'T3: ...and the fleet on a hub');
+has($gh, "\$ip = trim((string)(\$L['member_ip'] ?? ''));", 'T3a: a member is trusted by the address fixed at pairing');
+ok(strpos($gh, 'gethostbyname($h)') === false && strpos($gh, "\$snap['hostname']") === false, 'T3b: never by the host name the member reports about itself');
+has($gh, "smpro_gh_api('delete_cphulk_record', ['list_name' => 'white', 'ip' => (string)\$ip]); unset(\$done[\$ip]);", 'T3c: an address that is no longer trusted loses its white-list entry');
+has($gh, "smpro_gh_trusted_ips(true))); \$dropped = [];", 'T3d: ...judged against the whole trusted set, not the capped list');
 has($gh, "smpro_gh_whitelist_trusted(\$force);   // first, and before the cfg read below", 'T4: every sync whitelists them before refusing anyone');
 has($gh, "smpro_gh_api('flush_cphulk_login_history_for_ips', ['ip' => \$ip]);", 'T5: and clears the failures that caused a ban');
 $tr = smpro_gh_trusted_ips(); ok(is_array($tr) && !in_array('127.0.0.0/8', $tr, true), 'T6: returns a list without the loopback range');
