@@ -299,6 +299,16 @@ function smpro_lic_normalise($key, $code, $j) {
         'raw'           => $j,
     ];
 }
+/** A refusal the licence server SIGNED for this key on this machine (payload kind "negative"). A refusal that
+ *  only looks like one - a proxy's error page in JSON, an answer from a redirected host - does not pass. */
+function smpro_lic_neg_ok($v, $key, $status = null) {
+    if (!is_array($v) || !smpro_lic_verify_signature($v)) return false;
+    $p = (array)($v['payload'] ?? []);
+    if ((string)($p['kind'] ?? '') !== 'negative') return false;
+    if (strtoupper(trim((string)($p['license_key'] ?? ''))) !== strtoupper(trim((string)$key))) return false;
+    if (strtolower((string)($p['fingerprint'] ?? '')) !== strtolower(smpro_lic_fingerprint())) return false;
+    return $status === null || strtolower((string)($p['status'] ?? '')) === strtolower((string)$status);
+}
 /** Activate a key on this server, persist + return state. */
 function smpro_lic_activate($key) {
     [$code, $j] = smpro_lic_api('/api/activate', smpro_lic_payload($key));
@@ -322,7 +332,13 @@ function smpro_lic_check($key = null) {
     if (trim((string)$key) === '') return smpro_lic_state();
     [$code, $j, $body, $remoteIp] = smpro_lic_api('/api/check', smpro_lic_payload($key));
     // not authoritative (Cloudflare HTML block / 5xx / transport) -> keep previous verdict inside the grace window
-    if (!smpro_lic_is_authoritative($code, $j)) {
+    $auth = smpro_lic_is_authoritative($code, $j);
+    // A server that signs its refusals says so inside the signed verdict (signs_negative). From then on a refusal
+    // WITHOUT a valid signature is not the licence server speaking, so it is handled like an unreachable server:
+    // the last good verdict stays inside its grace window instead of the product locking at once.
+    if ($auth && empty($j['ok']) && !smpro_lic_neg_ok($j['verdict'] ?? null, $key, $j['status'] ?? '')
+        && smpro_lic_signed_field(smpro_lic_state(), 'signs_negative', false) === true) $auth = false;
+    if (!$auth) {
         $prev = smpro_lic_state();
         // ANTI-BYPASS: a FAILED/unreachable check (e.g. customer blackholes the license domain in /etc/hosts)
         // must NOT refresh the "last successful check" clock - otherwise the outage grace never expires and the
@@ -334,6 +350,11 @@ function smpro_lic_check($key = null) {
         return $prev;
     }
     $st = smpro_lic_normalise($key, $code, $j); $st['unreachable'] = false; $st['last_ok'] = time();   // authoritative success -> advance the grace clock
+    // a signed refusal is kept (the first one of the episode): its signed time is when the licence really stopped
+    if (empty($st['ok']) && smpro_lic_neg_ok($j['verdict'] ?? null, $key)) {
+        $pv = smpro_lic_state();
+        $st['neg_first'] = (is_array($pv['neg_first'] ?? null) && smpro_lic_neg_ok($pv['neg_first'], $key)) ? $pv['neg_first'] : $j['verdict'];
+    }
     // cache the REAL server IP, but ONLY from a signature-verified response (so a fake server can't poison it).
     // Used later to deliver a tamper report via --resolve even when /etc/hosts redirects the license host.
     if (!empty($st['sig_verified']) && $remoteIp !== '' && filter_var($remoteIp, FILTER_VALIDATE_IP)) $st['srv_ip'] = $remoteIp;
@@ -739,6 +760,10 @@ function smpro_lic_invalid_since() {
         $ts = smpro_lic_signed_ts($s); if ($ts > 0) $c[] = $ts + SMPRO_LIC_GRACE_OUTAGE;
         $ex = trim((string)$expiry); $ex = ($ex === '' || $ex === '0') ? 0 : (is_numeric($ex) ? (int)$ex : (int)strtotime($ex)); if ($ex > 0) $c[] = $ex;
         $c = array_values(array_filter($c, fn($t) => $t <= $now));       // a moment that has not come yet is not why it is invalid
+    }
+    // a refusal the server signed: its signed time is when the licence stopped, whatever the local markers say
+    if (is_array($s['neg_first'] ?? null) && smpro_lic_neg_ok($s['neg_first'], (string)($s['key'] ?? ''))) {
+        $nt = (int)@strtotime((string)($s['neg_first']['payload']['issued_at'] ?? '')); if ($nt > 0 && $nt <= $now) $c[] = $nt;
     }
     $f = smpro_lic_dormant_file();
     $file = is_file($f) ? (int)trim((string)@file_get_contents($f)) : 0;

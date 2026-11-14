@@ -70,3 +70,10 @@ ok(strpos($src('includes/investigate.php') . $src('includes/sitewatch.php'), '@m
 ok(function_exists('smpro_mysqli_connect') && is_string(smpro_detect_backup_root()) && smpro_detect_backup_root() !== '', 'C3: helpers present');
 has($src('includes/fwblock.php'), "if (is_array(\$r) && is_array(\$r[1] ?? null)) \$docs[] = \$r[1];", 'C4: the shared list reads the decoded reply, not the transport tuple');
 has($src('includes/investigate.php'), "if (isset(\$held[rtrim(\$t, '/')])) continue;", 'C5: Site Doctor leaves a lock another product holds');
+
+// signed refusals
+ok(smpro_lic_neg_ok(null, 'K') === false && smpro_lic_neg_ok(['payload' => ['kind' => 'negative', 'license_key' => 'K', 'fingerprint' => smpro_lic_fingerprint(), 'status' => 'suspended'], 'signature' => base64_encode('x')], 'K') === false, 'N1: a refusal without a valid signature of the licence server is not accepted as signed');
+has($lic, "if (\$auth && empty(\$j['ok']) && !smpro_lic_neg_ok(\$j['verdict'] ?? null, \$key, \$j['status'] ?? '')", 'N2: an unsigned refusal is weighed against what the server said about itself');
+has($lic, "&& smpro_lic_signed_field(smpro_lic_state(), 'signs_negative', false) === true) \$auth = false;", 'N3: ...only a server that signs its refusals makes an unsigned one count as "not reached"');
+has($lic, "if ((string)(\$p['kind'] ?? '') !== 'negative') return false;", 'N4: a signed verdict of another kind is not a refusal');
+has($lic, "\$nt = (int)@strtotime((string)(\$s['neg_first']['payload']['issued_at'] ?? '')); if (\$nt > 0 && \$nt <= \$now) \$c[] = \$nt;", 'N5: the stop clock reads the signed time of the first refusal');
