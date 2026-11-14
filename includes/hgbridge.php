@@ -233,6 +233,9 @@ function smpro_hg_events_ingest() {
     foreach ($ev as $e) {
         $n['seen']++;
         $ip = (string)($e['ip'] ?? ''); $want = (string)($e['action_wanted'] ?? 'report'); $decision = 'noted';
+        // an event older than an hour is history (a lost cursor replays a week of them): noted, never blocked on
+        $ets = is_numeric($e['ts'] ?? null) ? (int)$e['ts'] : (int)@strtotime((string)($e['ts'] ?? ''));
+        if ($want === 'block' && $ets > 0 && $ets < time() - 3600) { $want = 'report'; $decision = 'stale'; }
         if ($want === 'block' && filter_var($ip, FILTER_VALIDATE_IP)) {
             $rs = function_exists('smpro_im_region_status') ? smpro_im_region_status($ip) : 'normal';
             $allowed = function_exists('smpro_im_allowlisted') ? smpro_im_allowlisted($ip) : false;

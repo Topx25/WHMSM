@@ -1856,13 +1856,20 @@ function smpro_inv_undo($id) {
         if ($parent === '' || $base === '' || $base === '.' || $base === '..' || strpbrk($base, "/\0") !== false) return ['ok'=>false,'msg'=>'refused: unsafe restore path'];
         $dest = $parent . '/' . $base;
         if (is_link($dest)) return ['ok'=>false,'msg'=>'refused: restore target is a symlink'];
-        $content = @file_get_contents($e['backup']);
-        if ($content === false) return ['ok'=>false,'msg'=>'cannot read backup'];
+        // a copy kept in the plugin's own store is read by root; a copy that sits in the account's folder is read
+        // AS the account, and the file goes back AS the account - nothing is written or chown-ed through a path
+        $inStore = defined('SMPRO_VARLIB') && strpos((string)@realpath((string)$e['backup']), rtrim(SMPRO_VARLIB, '/') . '/') === 0;
+        $asAcct = $user !== '' && function_exists('smpro_acct_put');
+        $content = ($inStore || !$asAcct) ? @file_get_contents($e['backup']) : smpro_acct_get($user, (string)$e['backup'], 67108864);
+        if ($content === false || $content === null) return ['ok'=>false,'msg'=>'cannot read backup'];
         $imm = smpro_inv_imm($dest); if ($imm) @shell_exec('chattr -i ' . escapeshellarg($dest) . ' 2>/dev/null');
-        $tmp = $dest . '.smpro-rst-' . substr(bin2hex(@random_bytes(4) ?: pack('N', mt_rand())), 0, 8);
-        $tfh = @fopen($tmp, 'xb'); $ok = $tfh !== false && @fwrite($tfh, $content) !== false; if ($tfh) @fclose($tfh);
-        if ($ok) { @chmod($tmp, 0644); $st = @stat($parent); if ($st) { @chown($tmp, $st['uid']); @chgrp($tmp, $st['gid']); } $ok = @rename($tmp, $dest); }
-        if (!$ok) @unlink($tmp);
+        if ($asAcct) { $ok = smpro_acct_put($user, $dest, (string)$content, is_file($dest) ? 0 : 0644); }
+        else {
+            $tmp = $dest . '.smpro-rst-' . substr(bin2hex(@random_bytes(4) ?: pack('N', mt_rand())), 0, 8);
+            $tfh = @fopen($tmp, 'xb'); $ok = $tfh !== false && @fwrite($tfh, $content) !== false; if ($tfh) @fclose($tfh);
+            if ($ok) { @chmod($tmp, 0644); $st = @stat($parent); if ($st) { @chown($tmp, $st['uid']); @chgrp($tmp, $st['gid']); } $ok = @rename($tmp, $dest); }
+            if (!$ok) @unlink($tmp);
+        }
         if ($imm) @shell_exec('chattr +i ' . escapeshellarg($dest) . ' 2>/dev/null');
         if (!$ok) return ['ok'=>false,'msg'=>'restore failed'];
         @unlink($e['backup']);
@@ -1875,7 +1882,12 @@ function smpro_inv_undo($id) {
     if (is_dir($e['from'])) return ['ok'=>false,'msg'=>'original path already exists'];
     $parent = dirname($e['from']); $pImm = smpro_inv_imm($parent);
     if ($pImm) @shell_exec('chattr -i ' . escapeshellarg($parent) . ' 2>/dev/null');
-    $ok = @rename($e['to'], $e['from']);
+    // both ends inside the account's home: the account moves it back itself (root following a swapped parent
+    // folder would drop an account-made item anywhere on the system)
+    $uUser = (string)($e['user'] ?? ''); $uHome = ($uUser !== '' && function_exists('smpro_user_home')) ? rtrim((string)smpro_user_home($uUser), '/') : '';
+    if ($uHome !== '' && function_exists('smpro_acct_sh') && strpos((string)$e['to'], $uHome . '/') === 0 && strpos((string)$e['from'], $uHome . '/') === 0)
+        $ok = smpro_acct_sh($uUser, '[ ! -e "$2" ] && mv -- "$1" "$2"', [(string)$e['to'], (string)$e['from']], null, 120)['code'] === 0;
+    else $ok = @rename($e['to'], $e['from']);
     if ($pImm) @shell_exec('chattr +i ' . escapeshellarg($parent) . ' 2>/dev/null');
     if (!$ok) return ['ok'=>false,'msg'=>'restore rename failed'];
     if (!empty($e['hardened'])) @shell_exec('chattr -R +i ' . escapeshellarg($e['from']) . ' 2>/dev/null');   // restore original hardening

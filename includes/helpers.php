@@ -975,8 +975,10 @@ function smpro_csf_do($action, $ip) {
         // also strip any direct csf.deny line we may have written when CSF was a no-op
         $f = '/etc/csf/csf.deny';
         if (is_file($f) && is_writable($f) && smpro_csf_denied($ip)) {
+            $dl = function_exists('smpro_csf_deny_lock') ? smpro_csf_deny_lock() : null;   // read and rewrite as one step: a line added in between is not lost
             $keep = array_filter(file($f, FILE_IGNORE_NEW_LINES) ?: [], fn($l) => !preg_match('/^' . preg_quote($ip, '/') . '(\s|$|\/|#)/', trim($l)));
             @file_put_contents($f, implode("\n", $keep) . "\n", LOCK_EX);
+            if (function_exists('smpro_csf_deny_unlock')) smpro_csf_deny_unlock($dl);
             if (!smpro_csf_testing()) @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');
         }
         clearstatcache();

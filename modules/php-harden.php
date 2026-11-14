@@ -240,10 +240,14 @@ function smpro_ph_apply($u, $mode, array $postFiles, array $postDirs, array $ext
     // Open every root before doing anything else. A folder carrying the immutable attribute cannot accept a new
     // .htaccess or a restored file, so without this a second run would fail against the protection the first one
     // applied - and would report those failures as if the files were the problem.
-    if ($accountRoots) smpro_ph_chattr_many('-i', $accountRoots);
+    // a path another product of the suite locked is theirs to open: its lock list on the shared bridge decides
+    $heldBy = [];
+    if (function_exists('smpro_hg_locks_others')) foreach ((array)smpro_hg_locks_others($u) as $hp) foreach ((array)$hp as $one) $heldBy[rtrim((string)$one, '/')] = 1;
+    $mine = fn(array $l) => array_values(array_filter($l, fn($p) => !isset($heldBy[rtrim((string)$p, '/')])));
+    if ($accountRoots) smpro_ph_chattr_many('-i', $mine($accountRoots));
     // Unlock the whole set, back every file up, then lock the whole set: the same order per file, but two
     // processes for the set instead of two for each file.
-    smpro_ph_chattr_many('-i', $files);
+    smpro_ph_chattr_many('-i', $mine($files));
     $backups = [];
     foreach ($files as $file) $backups[$file] = smpro_ph_backup($file, $backupDir . '/files');
     $lockRes = smpro_ph_chattr_many('+i', $files);

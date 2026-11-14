@@ -246,11 +246,18 @@ function smpro_gh_in_cidr(string $ip, string $cidr): bool {
     return (ip2long($ip) & $mask) === (ip2long($net) & $mask);
 }
 function smpro_gh_cloudmail_shared(): string { return defined('SMPRO_HG_DIR') ? rtrim(SMPRO_HG_DIR, '/') . '/cloud-mail.json' : '/var/lib/hostguard/cloud-mail.json'; }
+/** The shared file exists but could not be read or trusted: what the other product asked for is unknown. */
+function smpro_gh_cloudmail_unreadable(): bool {
+    $f = smpro_gh_cloudmail_shared(); clearstatcache(true, $f);
+    return @file_exists($f) && !is_array(function_exists('smpro_hg_read_json') ? smpro_hg_read_json($f) : null);
+}
 /** Providers in force: this server's choice (Microsoft by default) plus what another HostGuard product requested. */
 function smpro_gh_cloudmail_enabled(): array {
     $c = smpro_gh_cfg(); $on = isset($c['cloud_mail']) ? (array)$c['cloud_mail'] : ['microsoft'];
     $sh = function_exists('smpro_hg_read_json') ? smpro_hg_read_json(smpro_gh_cloudmail_shared()) : null;
     foreach ((array)($sh['requested'] ?? []) as $prod => $list) if ($prod !== 'smpro') foreach ((array)$list as $p) if (smpro_gh_mail_provider_key((string)$p) !== '') $on[] = smpro_gh_mail_provider_key((string)$p);
+    // unknown request = keep what is already whitelisted, never withdraw on a guess
+    if (smpro_gh_cloudmail_unreadable()) foreach (array_keys((array)($c['cloud_done'] ?? [])) as $p) $on[] = (string)$p;
     return array_values(array_unique(array_intersect($on, array_keys(smpro_gh_mail_providers()))));
 }
 /** Whitelist the ranges (once per provider, again when forced) and lift every ban that already caught them. */
@@ -282,7 +289,7 @@ function smpro_gh_cloudmail_apply(bool $force = false): array {
     }
     $dirtyCfg = ($c['cloud_done'] ?? null) !== $done || $lifted || $force || isset($c['cloud_sweep_new']);
     $c['cloud_done'] = $done; if ($dirtyCfg || ($c['cloud_sweep'] ?? 0) > time() - 5) smpro_gh_cfg_save($c);
-    if (function_exists('smpro_hg_json_write') && function_exists('smpro_hg_dir')) {
+    if (function_exists('smpro_hg_json_write') && function_exists('smpro_hg_dir') && !smpro_gh_cloudmail_unreadable()) {   // an unreadable file is not overwritten: the other product's request would be erased
         smpro_hg_dir();
         $sh = (function_exists('smpro_hg_read_json') ? smpro_hg_read_json(smpro_gh_cloudmail_shared()) : null) ?: [];
         $want = $sh; $want['applied_by'] = 'smpro'; $want['providers'] = $on; $want['ranges'] = $ranges;

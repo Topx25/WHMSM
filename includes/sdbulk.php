@@ -80,12 +80,13 @@ function smpro_sdb_fix_one(string $action, string $domain, string $path): array 
 }
 /** Write a file inside the account's web root as root without following a planted link; owner = the web root's owner. */
 function smpro_sdb_safe_write(string $dir, string $name, string $content): bool {
-    $d = @realpath($dir); if ($d === false || strpos($d, '/home') !== 0 || is_link($dir . '/' . $name)) return false;
-    $tmp = $d . '/.' . $name . '.smpro-tmp-' . bin2hex(random_bytes(4));
-    $h = @fopen($tmp, 'xb'); if (!$h) return false; $ok = @fwrite($h, $content) !== false; @fclose($h);
-    if ($ok) { @chmod($tmp, 0644); $st = @stat($d); if ($st) { @chown($tmp, $st['uid']); @chgrp($tmp, $st['gid']); } $ok = @rename($tmp, $d . '/' . $name); }
-    if (!$ok) @unlink($tmp);
-    return $ok;
+    $d = @realpath($dir); if ($d === false || strpos($d, '/home') !== 0 || $name === '' || strpbrk($name, "/\0") !== false) return false;
+    // written by the folder's owner, not by root: whatever the account does to the name in between, the write can
+    // only land where the account itself may write
+    $uid = (int)@fileowner($d);
+    $pw = ($uid > 0 && function_exists('posix_getpwuid')) ? @posix_getpwuid($uid) : false;
+    if (!is_array($pw) || empty($pw['name']) || !function_exists('smpro_acct_put')) return false;
+    return smpro_acct_put((string)$pw['name'], $d . '/' . $name, $content, 0644);
 }
 function smpro_sdb_fix_hide_errors(string $domain): array {
     $r = smpro_inv_resolve($domain); if (!$r) return ['ok' => false, 'msg' => 'unresolved target'];

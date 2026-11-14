@@ -9,7 +9,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 // --- Identity ---
 define('SMPRO_NAME',        'Safety Monitor Pro');
 define('SMPRO_SLUG',        'smpro');
-define('SMPRO_VERSION',     '1.1.10-beta415');
+define('SMPRO_VERSION',     '1.1.10-beta416');
 define('SMPRO_PACKAGED',    false);   // the release build sets this to true: a packaged copy must carry its signed file manifest
 
 /* Safety Lock - the account-side page. These five names are read by bin/register_cpuser.sh, which finds them

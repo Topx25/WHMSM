@@ -77,6 +77,28 @@ if [ -n "$WANT_SHA" ] && command -v sha256sum >/dev/null 2>&1; then
   [ "$WANT_SHA" = "$GOT_SHA" ] || die "Integrity check FAILED (sha256 mismatch) — download corrupted, please retry."
 fi
 
+# authenticity: the package must carry a signature made with the OFFLINE release key. The checksum above comes
+# from the same server as the file, so it only proves the transfer was complete - not who built the package.
+SIG_B64="$(grep -i '^x-smpro-sig:' "$HDRS" 2>/dev/null | tail -1 | tr -d '\r' | awk '{print $2}')"
+command -v openssl >/dev/null 2>&1 || die "openssl is needed to verify the package signature."
+[ -n "$SIG_B64" ] || die "The download carries no release signature - refusing to install."
+cat > "$TMP/release.pub" <<'PUBKEY'
+-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA2OKZTIB4S7cqRnoTj0q0
+rPGhqSOKT0lDggnza7QYhP0qFe1lH7s3j16varPsiFjBSBY9brHG5GGoS90PnwHx
+YzNfOXZEIw3UCClaq6roveRN8w9du5egyb1ElXkpV2OXj42WKdMZ8tdA8hm/Q7jY
+GmmS6+VObnLHrMJyfb03Hxn0G4ximuO77vmttKAkayIbc44e4rLgv3RRAfXNgBSr
+XnFstDDrr7WbuSdscOnixKyK7DFezt5VL4atnxfj1RlDxgszpPyDC0+Z/Zb5iwr2
+h5c3EWMAKejoYI30RtACMtJbSWAGBAQEgh55ZJb/DbysFlXPZlm3l0WUw3cccjc8
+coHVj1G2csGsrURvRGUi4a3p6KsplGyfqDEZaF061LU1C9zS/+oxC5PhDseOs64G
+SiCA+iSJKm9mwTIQvnxHOcgShwGUF07DsL2a1xsGdaHlWd1GBAOtnqMXwsYC5ChF
+IO1aoVYQjV9psv6/7kHz/ZcAHvWQU/lolYWcMsEyQHmTAgMBAAE=
+-----END PUBLIC KEY-----
+PUBKEY
+printf '%s' "$SIG_B64" | base64 -d > "$TMP/pkg.sig" 2>/dev/null || die "The release signature could not be read - refusing to install."
+openssl dgst -sha256 -verify "$TMP/release.pub" -signature "$TMP/pkg.sig" "$TARBALL" >/dev/null 2>&1 \
+  || die "The release signature does NOT match this package - refusing to install."
+
 VER="$(grep -i '^x-smpro-version:' "$HDRS" 2>/dev/null | tail -1 | tr -d '\r' | awk '{print $2}')"
 grn "  ✓ License valid — downloaded $(du -h "$TARBALL" | cut -f1)${VER:+ (v$VER)}"
 
