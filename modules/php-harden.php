@@ -535,7 +535,7 @@ if ($reqMethod === 'POST' && in_array(($_POST['ph_action'] ?? ''), ['apply_fast'
             $until = time() + 3600;
             if (function_exists('smpro_spq_state_load')) {
                 $st = smpro_spq_state_load();
-                $st[$target] = ['relock_at' => $until, 'set' => date('c')];
+                $st[$target] = ['relock_at' => $until, 'set' => date('c'), 'paths' => array_values(array_unique(array_merge((array)($st[$target]['paths'] ?? []), $paths)))];
                 smpro_spq_state_save($st);
             }
             smpro_spq_ask_clear($target);

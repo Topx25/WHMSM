@@ -98,7 +98,9 @@ function smpro_spq_ask_add($user, $reason, $verb = 'unlock_permanent', $root = '
     // Account-written text crossing into a root-owned store: bounded and printable only (the account page's own
     // 200-char filter is a courtesy the account can bypass by writing the request file directly).
     $reason = mb_substr(preg_replace('/[^\P{C}\t]/u', '', (string)$reason) ?? '', 0, 200);
-    $verb = in_array((string)$verb, ['unlock_permanent', 'unlock_hour', 'ignore', 'relock'], true) ? (string)$verb : 'unlock_permanent';
+    // 'unlock_selected' (a few files, for one hour) was missing from this list, so it was stored as a PERMANENT release:
+    // the operator saw "stop protecting the account", and an automatic rule for permanent releases removed every lock.
+    $verb = in_array((string)$verb, ['unlock_permanent', 'unlock_selected', 'unlock_hour', 'ignore', 'relock'], true) ? (string)$verb : 'unlock_permanent';
     $root = substr(preg_replace('/[^\x20-\x7e]/', '', (string)$root), 0, 512);
     $list[(string)$user] = ['user' => (string)$user, 'reason' => (string)$reason, 'verb' => (string)$verb,
                             'root' => (string)$root, 'items' => $clean, 'claimed_ip' => $ip, 'at' => date('c')];
@@ -206,7 +208,12 @@ function smpro_spq_read($user, $home, $max = 10) {
     if (!$st || $uid === null || (int)$st['uid'] !== $uid) return [];
 
     $out = [];
-    foreach (scandir($dir) ?: [] as $e) {
+    // read entry by entry and stop early: a folder filled with millions of names would otherwise be loaded whole and
+    // end this worker - for every account after this one too
+    $names = []; $dh = @opendir($dir);
+    if ($dh) { $seen = 0; while (($e0 = readdir($dh)) !== false) { if (++$seen > 20000) break; if (substr($e0, -5) === '.json') { $names[] = $e0; if (count($names) >= 500) break; } } closedir($dh); }
+    sort($names);
+    foreach ($names as $e) {
         if ($e === '.' || $e === '..' || substr($e, -5) !== '.json') continue;
         if (!preg_match('/^[a-f0-9]{8,40}\.json$/', $e)) continue;      // our own naming, nothing else
         $p = $dir . '/' . $e;
@@ -504,6 +511,9 @@ function smpro_spq_retry_pending(): int {
     $asks = smpro_spq_asks_all(); if (!$asks) return 0;
     $st = smpro_spq_state_load(); $last = (array)($st['auto_retry'] ?? []); $now = time(); $granted = 0; $changed = false;
     foreach ($asks as $user => $ask) {
+        // a request waits for the operator after two hours: it is no longer approved by a rule when its owner happens
+        // to sign in days later (anything running as the account could have left it there to wait for that)
+        if ($now - (int)@strtotime((string)($ask['at'] ?? '')) > 7200) continue;
         if (($now - (int)($last[$user] ?? 0)) < 600) continue;
         $last[$user] = $now; $changed = true;
         $r = smpro_spq_try_auto((string)$user, true);
@@ -533,7 +543,11 @@ function smpro_spq_relock_due() {
         if (!preg_match('/^[a-zA-Z0-9._-]{1,64}$/', (string)$user)) { unset($st[$user]); $changed = true; continue; }
 
         $again = [];
-        foreach (smpro_spq_targets($user) as $p) {
+        // exactly the paths that were released (recorded with the grant); the standard list only for a record that
+        // has none. Each is checked again: still inside this account, not a link.
+        $relist = !empty($row['paths']) ? array_map('strval', (array)$row['paths']) : smpro_spq_targets($user);
+        foreach ($relist as $p) {
+            if (is_link($p) || !function_exists('smpro_ph_inside') || !smpro_ph_inside($user, $p)) continue;
             if (function_exists('smpro_ph_perm_has') && smpro_ph_perm_has($p)) continue;
             $again[] = $p;
         }
@@ -670,7 +684,7 @@ function smpro_spq_try_auto($user, bool $retry = false) {
     $until = time() + 3600;
     $lk = smpro_spq_state_lock();
     $st = smpro_spq_state_load();
-    $st[$user] = ['relock_at' => $until, 'set' => date('c')];
+    $st[$user] = ['relock_at' => $until, 'set' => date('c'), 'paths' => array_values(array_unique(array_merge((array)($st[$user]['paths'] ?? []), $paths)))];   // what to lock again, and nothing is forgotten when a second grant follows
     smpro_spq_state_save($st);
     smpro_spq_state_unlock($lk);
     smpro_spq_ask_clear($user);

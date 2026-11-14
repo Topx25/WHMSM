@@ -441,6 +441,10 @@ function smpro_ev_run(): array {
     if ($a['blind'] !== '') $res['blind'][] = $a['blind'];
 
     $res['snapshot'] = (int)smpro_ev_snapshot($s)['n'];
+    // Every record written above moved the head of the chain in the saved state. $s was read BEFORE them: saving
+    // it as it is put the old head and number back, the next record chained to the wrong one, and the journal
+    // then failed its own check on a server nobody had touched. The chain fields are taken from what is saved.
+    $cur = smpro_ev_state(); foreach (['head', 'day', 'seq'] as $ck) $s[$ck] = $cur[$ck];
     smpro_ev_state_save($s);
 
     foreach ($res['blind'] as $why) smpro_ev_append('blind', ['why' => $why]);

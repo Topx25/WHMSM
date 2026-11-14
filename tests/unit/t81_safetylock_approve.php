@@ -27,7 +27,7 @@ ok($posDecide !== false && $posUser !== false && $posDecide < $posUser, 'U2: a r
 /* ---------- U3: approval does the work the request asked for ---------- */
 has($mod, "if ((\$ask['verb'] ?? '') === 'unlock_selected') {", 'U3: a one-hour release touches only the chosen items');
 has($mod, "smpro_ph_chattr_many('-i', \$paths);", 'U3: and lifts the immutable flag on all of them in one batch');
-has($mod, "\$st[\$target] = ['relock_at' => \$until, 'set' => date('c')];", 'U3: and schedules the re-lock in root\'s own state, not the account\'s');
+has($mod, "\$st[\$target] = ['relock_at' => \$until, 'set' => date('c'), 'paths' => ", 'U3: and schedules the re-lock in root\'s own state, not the account\'s');
 has($mod, "smpro_ph_force_unprotect(\$target, smpro_ph_profile(\$target),", 'U3: a permanent release goes through force-unprotect, the same path as the operator\'s own button');
 has($mod, "smpro_spq_ask_clear(\$target);", 'U3: the request is cleared once decided');
 

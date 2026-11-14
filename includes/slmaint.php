@@ -56,7 +56,10 @@ function smpro_slm_relock(string $why = 'maintenance'): array {
     $rec = smpro_slm_rec();
     if (!$rec) return ['ok' => true, 'relocked' => 0, 'msg' => 'nothing was released'];
     $again = [];
-    foreach ((array)($rec['files'] ?? []) as $p) { if (function_exists('smpro_ph_perm_has') && smpro_ph_perm_has($p)) continue; if (is_file($p) && !is_link($p)) $again[] = $p; }
+    foreach ((array)($rec['files'] ?? []) as $p) { if (function_exists('smpro_ph_perm_has') && smpro_ph_perm_has($p)) continue; // the list was recorded up to two hours ago, in folders the accounts own: a path is locked again only while it is
+        // still a plain file inside the account it belongs to
+        $pu = function_exists('smpro_acct_of_path') ? smpro_acct_of_path((string)$p) : '';
+        if ($pu !== '' && is_file($p) && !is_link($p) && function_exists('smpro_ph_inside') && smpro_ph_inside($pu, $p)) $again[] = $p; }
     $r = function_exists('smpro_ph_chattr_many') ? smpro_ph_chattr_many('+i', $again) : ['ok' => false, 'done' => 0, 'failed' => []];
     @unlink(SMPRO_SLM_REC);
     if (function_exists('smpro_audit')) smpro_audit('safetylock_maint_relock', ['why' => $why, 'relocked' => (int)$r['done'], 'failed' => count((array)$r['failed'])]);

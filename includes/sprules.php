@@ -115,7 +115,7 @@ function smpro_spr_login_ip($user, $withinHours = 24, $sessionLog = '/usr/local/
     $take = function ($ip, $t) use (&$best, &$bestT, $cutoff) {
         if (!filter_var($ip, FILTER_VALIDATE_IP) || $t < $cutoff) return;
         if ($ip === '127.0.0.1' || $ip === '::1') return;     // a session opened from the server itself (WHM "log in as user") says nothing about where the customer is
-        if ($t >= $bestT) { $bestT = $t; $best = $ip; }
+        if ($t >= $bestT) { $bestT = $t; $best = $ip; $GLOBALS['smpro_spr_login_at'] = $t; }
     };
     $files = function ($path) {
         $f = [$path];
@@ -134,6 +134,9 @@ function smpro_spr_login_ip($user, $withinHours = 24, $sessionLog = '/usr/local/
             if (strpos($line, 'app=cpaneld') === false && strpos($line, 'app=webmaild') === false) continue;
             if (strpos($line, 'creator=' . $user . ',') === false) continue;
             if (strpos($line, 'possessed=1') !== false) continue;
+            // a sign-in THROUGH THE LOGIN FORM. A session the account opens for itself through the API (which takes
+            // the address as an argument) is not a person signing in from somewhere.
+            if (strpos($line, 'method=handle_form_login') === false) continue;
             if (!preg_match('/address=([0-9a-fA-F.:]+),/', $line, $m)) continue;
             $t = 0;
             if (preg_match('/^\[([^\]]+)\]/', $line, $tm)) $t = (int)strtotime($tm[1]);
@@ -182,7 +185,15 @@ function smpro_spr_decide($user, array $ask) {
         return ['auto' => false, 'why' => 'the request covers ' . $items . ' items, more than the limit of ' . $r['max_items'], 'ip' => '', 'cc' => ''];
     }
 
+    $GLOBALS['smpro_spr_login_at'] = 0;
     $ip = smpro_spr_login_ip($user);
+    // The request must FOLLOW the sign-in, within the hour. "Signed in at some point in the last day" let a request
+    // written by anything running as the account wait for its owner's next visit and be approved by it.
+    $askAt = (int)@strtotime((string)($ask['at'] ?? '')); $loginAt = (int)($GLOBALS['smpro_spr_login_at'] ?? 0);
+    if ($ip !== '' && $askAt > 0 && $loginAt > 0 && ($askAt < $loginAt || $askAt - $loginAt > 3600)) {
+        return ['auto' => false, 'ip' => $ip, 'cc' => '',
+                'why' => 'the request was not made within an hour after a sign-in to cPanel, so it waits for a person'];
+    }
     if ($ip === '') {
         return ['auto' => false, 'ip' => '', 'cc' => '',
                 'why' => 'the server has no recent cPanel login for this account, so where the request came from could not be established'];

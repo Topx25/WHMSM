@@ -107,9 +107,10 @@ function smpro_svc_status($s) {
     // Made of per-version units and none is in use: not a stopped service, a feature this server does not run.
     // The restart script exists on every cPanel box, which made it read as "installed but INACTIVE" in red.
     if (!empty($s['all_units']) && !$units) return ['installed' => false, 'active' => false, 'enabled' => 'n/a', 'unit' => '—', 'state' => 'absent', 'off_reason' => ''];
-    $matched = ''; $active = false; $enabled = 'n/a'; $state = '';
+    $matched = ''; $active = false; $enabled = 'n/a'; $state = ''; $noAns = 0;
     foreach ($units as $u) {
         $st = trim(smpro_svc_run('systemctl is-active ' . escapeshellarg($u), 8));
+        if ($st === '') $noAns++;   // no answer at all (timed out): that is not the word "inactive"
         // activating / reloading / deactivating are TRANSITIONS, not outages: a MariaDB in crash recovery sits in
         // "activating" for minutes, and restarting it there sends recovery back to zero - four times an hour.
         if ($st === 'active' || in_array($st, ['activating', 'reloading', 'deactivating'], true)) { $active = true; $matched = $u; $enabled = trim(smpro_svc_run('systemctl is-enabled ' . escapeshellarg($u), 8)); $state = $st; break; }
@@ -119,7 +120,7 @@ function smpro_svc_status($s) {
     // loop above stops at the first active unit, which would hide one dead version behind three live ones.
     if (!empty($s['all_units']) && $units) {
         $bad = [];
-        foreach ($units as $u2) { $st2 = trim(smpro_svc_run('systemctl is-active ' . escapeshellarg($u2), 8)); if ($st2 !== 'active' && !in_array($st2, ['activating', 'reloading', 'deactivating'], true)) $bad[] = $u2; }
+        foreach ($units as $u2) { $st2 = trim(smpro_svc_run('systemctl is-active ' . escapeshellarg($u2), 8)); if ($st2 !== '' && $st2 !== 'active' && !in_array($st2, ['activating', 'reloading', 'deactivating'], true)) $bad[] = $u2; }
         if ($bad) { $active = false; $matched = $bad[0]; $state = count($bad) === count($units) ? 'inactive' : 'partial'; $enabled = trim(smpro_svc_run('systemctl is-enabled ' . escapeshellarg($bad[0]), 8)); }
     }
     $cmdPresent = false; foreach ($cmds as $c) if (smpro_svc_cmd_exists($c)) { $cmdPresent = true; break; }
@@ -156,6 +157,10 @@ function smpro_svc_status($s) {
         $chains = trim(smpro_svc_run("iptables -S INPUT 2>/dev/null | grep -c -- '-j LOCALINPUT'", 10));
         if ($chains === '0') { $active = false; $state = 'rules_gone'; }
     }
+    // The service manager answered for none of the units (it timed out - a server deep in swap, or under a very
+    // high load). That used to read as "down" for every watched service at once, and all of them were restarted
+    // on a machine that was already struggling. No answer is reported as unknown, and nothing acts on unknown.
+    if (!$active && $units && $noAns >= count($units) && empty($s['product'])) $state = 'unknown';
     return ['installed' => $installed, 'active' => $active, 'enabled' => $enabled === '' ? 'n/a' : $enabled, 'unit' => $matched ?: ($units[0] ?? '—'), 'state' => $state ?: ($active ? 'active' : 'inactive'), 'off_reason' => $offReason];
 }
 
@@ -221,7 +226,7 @@ function smpro_svc_scan() {
             // An ADMINISTRATIVELY DISABLED service is not down: it was switched off on purpose, starting it is
             // refused, and counting it here would put it in the "problems" list and hand it to the auto-restart
             // monitor to retry forever on every server that legitimately does not run it.
-            'down'=>($runtime && $st['installed'] && !$st['active'] && !empty($s['units']) && !$isIg && empty($st['off_reason'])),
+            'down'=>($runtime && $st['installed'] && !$st['active'] && !empty($s['units']) && !$isIg && empty($st['off_reason']) && $st['state'] !== 'unknown'),
         ];
     }
     return $rows;
@@ -537,12 +542,17 @@ function smpro_svcmon_run() {
         // deliberately turned off, and burned the crash-loop budget on restarts that are refused anyway -
         // eventually reporting "auto-restart PAUSED, manual attention needed" about a non-problem.
         if (!empty($row['off_reason'])) { unset($state[$key]); continue; }
+        if (($row['state'] ?? '') === 'unknown') continue;   // no answer this time: neither healthy nor down, the record stays as it is
         if (!empty($row['active'])) {   // healthy (or recovered)
             if (!empty($state[$key]['notified']) && $cfg['recovery'] && $cfg['notify'] && function_exists('smpro_notify')) {
                 $downFor = $now - (int)($state[$key]['downSince'] ?? $now);
                 @smpro_notify('service_up', 'Service recovered: ' . $svc['label'], $svc['label'] . ' is running again (was down for ~' . max(1, (int)round($downFor / 60)) . ' min).', ['severity'=>'info']);
             }
-            unset($state[$key]); continue;
+            // the restarts of the last hour are kept: a service that starts and dies again within minutes used to get
+            // a clean record on every start, so the four-an-hour limit never counted past one
+            $keepR = array_values(array_filter((array)($state[$key]['restarts'] ?? []), fn($t) => $t > $now - 3600));
+            if ($keepR) $state[$key] = ['restarts' => $keepR]; else unset($state[$key]);
+            continue;
         }
         // DOWN
         $s = $state[$key] ?? ['downSince'=>$now, 'restarts'=>[], 'notified'=>false];
@@ -551,15 +561,17 @@ function smpro_svcmon_run() {
         $restartMsg = '';
         if ($cfg['autorestart'] && ($now - (int)$s['downSince']) >= 300) {   // down on two consecutive ticks (>= 5 min) before the first restart, never on one sample
             if (count($s['restarts']) < 4) {                                   // crash-loop guard: max 4 auto-restarts/hour
+                // counted and SAVED before the attempt: a repair can outlast this worker's time limit, and an attempt
+                // that was never written down was never counted - the limit below did not engage at all
+                $s['restarts'][] = $now; $acted++; $state[$key] = $s; smpro_svcmon_state_save($state);
                 $r = smpro_svcmon_control($key, smpro_svc_restartsrv($svc) !== '' ? 'restart' : 'start');
-                $s['restarts'][] = $now; $acted++;
                 if (function_exists('smpro_audit')) @smpro_audit('svcmon_autorestart', ['svc'=>$key, 'ok'=>!empty($r['ok'])]);
                 if (!empty($r['ok'])) {                                        // recovered by us
                     if (!empty($r['repair']['tried']) && $cfg['notify'] && function_exists('smpro_notify'))   // a plain restart was not enough: say what was wrong
                         @smpro_notify('service_repaired', 'Service repaired: ' . $svc['label'], $svc['label'] . ' was down and a restart alone did not bring it back. Cause: ' . $r['repair']['cause'] . '. Done: ' . $r['repair']['did'] . '. It is running again.', ['severity'=>'warning']);
                     elseif (!empty($s['notified']) && $cfg['recovery'] && $cfg['notify'] && function_exists('smpro_notify'))
                         @smpro_notify('service_up', 'Service recovered: ' . $svc['label'], $svc['label'] . ' was down and SM Pro restarted it successfully.', ['severity'=>'info']);
-                    unset($state[$key]); continue;
+                    $state[$key] = ['restarts' => $s['restarts']]; continue;
                 }
                 $restartMsg = ' Auto-restart was attempted but the service did not come back.' . (!empty($r['repair']['cause']) ? ' Cause: ' . $r['repair']['cause'] . (!empty($r['repair']['did']) ? ' · tried: ' . $r['repair']['did'] : '') . '.' : '');
             } else {

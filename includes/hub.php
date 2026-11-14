@@ -729,6 +729,16 @@ function smpro_hub_process_link($lid, array $granted) {
                 'body' => smpro_hub_seal($lid, ['req' => (string)($cmd['req'] ?? ''), 'html' => $body, 'ts' => time()])]);
             $done++; continue;
         }
+        // "Remote control is LOCKED" is this server's own state (too many wrong control passwords). It used to be
+        // shown on the page and enforced only on the hub's side: a hub could still act here. Nothing that changes
+        // this server runs while the lock is on.
+        if (function_exists('smpro_hub_is_locked') && smpro_hub_is_locked() && !in_array($action, ['ping', 'status'], true)) {
+            $errs++;
+            if (function_exists('smpro_audit')) smpro_audit('hub_member_exec', ['link' => $lid, 'action' => $action, 'ok' => false, 'msg' => 'refused: remote control is locked on this server']);
+            smpro_hub_api('send', ['link_id' => $lid, 'dir' => 'result',
+                'body' => smpro_hub_seal($lid, ['req' => (string)($cmd['req'] ?? ''), 'action' => $action, 'ok' => false, 'msg' => 'Remote control is locked on that server.', 'ts' => time()])]);
+            continue;
+        }
         [$rok, $msg] = smpro_hub_exec($action, (array)($cmd['args'] ?? []), $granted);
         $rok ? $done++ : $errs++;
         if (function_exists('smpro_audit')) smpro_audit('hub_member_exec', ['link' => $lid, 'action' => $action, 'ok' => $rok, 'msg' => $msg]);

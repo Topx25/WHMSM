@@ -75,8 +75,23 @@ function smpro_ph_chattr_many($flag, array $paths, $chunk = 200) {
     if ($todo) {
         foreach (array_chunk($todo, max(1, (int)$chunk)) as $c)
             smpro_ph_run('chattr ' . $flag . ' ' . implode(' ', array_map('escapeshellarg', $c)));
+        // A folder in a path can be swapped for a link between the check above and the chattr below, and chattr then
+        // locks whatever the link leads to - a system file, or another account's site. What was locked is looked at
+        // again: a path under a home that now resolves OUTSIDE that home, or to a file of another account, gets the
+        // flag taken off at once and is reported as failed.
+        if ($want) foreach ($todo as $p) {
+            if (!preg_match('#^(/home[0-9]*/[^/]+)(/|$)#', $p, $hm)) continue;                 // only paths inside a home are judged
+            $rp = @realpath($p); if ($rp === false) continue;
+            $hr = @realpath($hm[1]); $ho = @fileowner($hm[1]); $fo = @fileowner($rp);
+            $inside = $hr !== false && ($rp === $hr || strpos($rp, $hr . '/') === 0);
+            if ($inside && ($fo === $ho || $fo === 0)) continue;
+            smpro_ph_run('chattr -i ' . escapeshellarg($rp));
+            if (function_exists('smpro_audit')) smpro_audit('safetylock_lock_escaped', ['asked' => $p, 'landed' => $rp, 'undone' => 1]);
+            $res['failed'][$p] = 'the path led outside the account - the lock was taken off again'; $res['ok'] = false;
+        }
         $after = smpro_ph_locked_map($todo);
         foreach ($todo as $p) {
+            if (isset($res['failed'][$p])) continue;
             if ((bool)($after[$p] ?? !$want) === $want) $res['changed'][] = $p;
             else { $res['failed'][$p] = $want ? 'the lock did not take' : 'the lock could not be removed'; $res['ok'] = false; }
         }

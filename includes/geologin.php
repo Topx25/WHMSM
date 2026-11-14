@@ -423,7 +423,7 @@ function smpro_gl_run(bool $force_dryrun = false): array {
 
         $action = $ok ? (string)$cfg['on_success'] : (string)$cfg['on_failed'];
         if ($action !== 'block') continue;
-        if (isset($done[$ip]) && (time() - (int)($done[$ip]['ts'] ?? 0)) < 6 * 3600) continue;   // already handled recently
+        if (isset($done[$ip]) && (time() - (int)($done[$ip]['ts'] ?? 0)) < (empty($done[$ip]['failed']) ? 6 * 3600 : 900)) continue;   // already handled recently (a block that did not take: again after 15 minutes)
 
         if ($dry) { $res['blocked'][] = $hit + ['dryrun' => true, 'msg' => 'would close the login ports']; continue; }
         // Block AND evict. The rule stops the next connection; the eviction ends the one that is already open,
@@ -436,13 +436,16 @@ function smpro_gl_run(bool $force_dryrun = false): array {
             $b = smpro_gl_block($ip, $cc, $account, $cfg);
             $res['blocked'][] = $hit + ['added' => $b['added'], 'msg' => $b['msg']];
         }
-        $done[$ip] = ['ts' => time(), 'cc' => $cc, 'account' => $account];
-        if (function_exists('smpro_audit')) smpro_audit('geologin_block', $hit + ['ports' => $b['added']]);
+        // did it take? (the kernel is read back inside the block; a sign-in that was evicted reports 'blocked')
+        $took = array_key_exists('ok', $b) ? !empty($b['ok']) : (!empty($b['blocked']) || !empty($b['added']));
+        $done[$ip] = ['ts' => time(), 'cc' => $cc, 'account' => $account] + ($took ? [] : ['failed' => 1]);
+        if (function_exists('smpro_audit')) smpro_audit($took ? 'geologin_block' : 'geologin_block_failed', $hit + ['ports' => $b['added'] ?? 0, 'msg' => (string)($b['msg'] ?? '')]);
         // A correct password used from a country that is not allowed is a compromised password, not a scan.
         if ($ok && function_exists('smpro_notify'))
             @smpro_notify('geologin_success', 'Sign-in from ' . $cc . ' — a country not allowed for ' . ($account ?: 'this server'),
                 'The password for ' . ($account ?: 'an account') . ' was accepted from ' . $ip . ' (' . $cc . '). The login ports have been '
-              . 'closed for that address, but the password is already known to somebody: change it.');
+              . 'closed for that address, but the password is already known to somebody: change it.'
+              . ($took ? '' : ' NOTE: closing the ports did NOT take this time (' . (string)($b['msg'] ?? 'no reason given') . '); it is tried again within 15 minutes - until then that address can still reach the login ports.'));
     }
 
     if (!$dry) { $state['acted'] = array_slice($done, -2000, 2000, true); $state['last_run'] = time(); smpro_gl_state_save($state); }

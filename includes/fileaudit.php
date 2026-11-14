@@ -255,12 +255,31 @@ function smpro_fa_state_save(array $s): void {
  * Every field comes from the record itself. The account is the owner of the home root in the path, NOT the
  * uid: root deleting a customer's file from a shell is exactly the event the account's owner will ask about.
  */
+/**
+ * A name or folder as the audit log holds it. One with a space, a quote or any byte outside plain ASCII is written
+ * as hex digits without quotes ("my file.php", every Arabic name): read as text it was a path that does not
+ * exist, filed under no account. '(null)' and a quoted value come back as they are.
+ */
+function smpro_fa_field(string $line, string $key): string {
+    if (preg_match('/ ' . $key . '="([^"]*)"/', $line, $m)) return $m[1];
+    if (!preg_match('/ ' . $key . '=(\S+)/', $line, $m)) return '';
+    $v = $m[1];
+    if ($v !== '' && strlen($v) % 2 === 0 && ctype_xdigit($v)) { $d = (string)@hex2bin($v); if ($d !== '' && strpos($d, "\0") === false) return $d; }
+    return $v;
+}
+/** A path with its "." and ".." parts worked out as text, so a path with a "./" part in it belongs to the same account as the plain one. */
+function smpro_fa_norm(string $p): string {
+    if ($p === '' || $p[0] !== '/' || (strpos($p, '/.') === false && strpos($p, '//') === false)) return $p;
+    $out = [];
+    foreach (explode('/', $p) as $seg) { if ($seg === '' || $seg === '.') continue; if ($seg === '..') { array_pop($out); continue; } $out[] = $seg; }
+    return '/' . implode('/', $out);
+}
 function smpro_fa_parse_event(array $lines): ?array {
     $sys = null; $paths = []; $cwd = '';
     foreach ($lines as $ln) {
         if (strpos($ln, 'type=SYSCALL ') === 0)      $sys = $ln;
         elseif (strpos($ln, 'type=PATH ') === 0)     $paths[] = $ln;
-        elseif (strpos($ln, 'type=CWD ') === 0 && preg_match('/ cwd="([^"]*)"/', $ln, $m)) $cwd = $m[1];
+        elseif (strpos($ln, 'type=CWD ') === 0) $cwd = smpro_fa_field($ln, 'cwd');
     }
     if ($sys === null || !preg_match('/ key="?(' . preg_quote(SMPRO_FA_KEY, '/') . '_[a-z]+)"?/', $sys, $km)) return null;
     if (!preg_match('/msg=audit\((\d+)\.\d+:(\d+)\)/', $sys, $mm)) return null;
@@ -275,10 +294,10 @@ function smpro_fa_parse_event(array $lines): ?array {
     // Which PATH item is the thing that changed. nametype tells us exactly, when the log is ENRICHED or not.
     $target = ''; $from = ''; $op = '';
     foreach ($paths as $p) {
-        if (!preg_match('/ name="?([^"\s]*)"?/', $p, $nm)) continue;
-        $name = $nm[1]; $nt = preg_match('/ nametype=(\w+)/', $p, $t) ? $t[1] : '';
+        $name = smpro_fa_field($p, 'name'); $nt = preg_match('/ nametype=(\w+)/', $p, $t) ? $t[1] : '';
         if ($name === '' || $name === '(null)') continue;
         if ($name[0] !== '/') $name = rtrim($cwd, '/') . '/' . $name;
+        $name = smpro_fa_norm($name);
         if ($nt === 'DELETE')      { if ($sc === 'rename' || $sc === 'renameat' || $sc === 'renameat2') { if ($from === '') $from = $name; } else { $target = $name; $op = 'deleted'; } }
         elseif ($nt === 'CREATE')  { $target = $name; $op = ($sc === 'rename' || $sc === 'renameat' || $sc === 'renameat2') ? 'renamed' : 'created'; }
         elseif ($nt === 'NORMAL')  { if ($target === '') { $target = $name; $op = $op ?: 'modified'; } }
@@ -321,7 +340,7 @@ function smpro_fa_syscall_name(int $n): string {
 
 /** The cPanel account whose home holds this path: /home2/USER/... -> USER. '' when it is nobody's. */
 function smpro_fa_account_of(string $path): string {
-    if (preg_match('#^/home\d*/([a-zA-Z0-9._-]{1,64})(?:/|$)#', $path, $m)) return $m[1];
+    if (preg_match('#^/home\d*/([a-zA-Z0-9._-]{1,64})(?:/|$)#', $path, $m) && trim($m[1], '.') !== '') return $m[1];   // never "." or "..": that is a folder, not an account
     return '';
 }
 

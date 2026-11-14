@@ -212,7 +212,7 @@ function smpro_bg_is_botlike(string $ua): bool {
     return (bool)preg_match('/bot\b|bot\/|crawl|spider|slurp|scan|fetch|scrap|python|curl\/|wget|go-http|java\/|libwww|httpclient|okhttp|headless|phantom|puppeteer|selenium|axios|node-fetch|http_request|winhttp|perl|ruby|php\/|monitor|checker|validator|archive|preview|feed|rss/i', $ua);
 }
 /** Known attack / scanner tools announcing themselves in the UA. Their presence is itself an attack signal. */
-function smpro_bg_scanner_ua_re(): string { return 'nikto|sqlmap|masscan|zgrab|nmap|nuclei|wpscan|dirbuster|dirb\b|gobuster|ffuf|acunetix|nessus|openvas|w3af|havij|hydra|medusa|joomscan|droopescan|xsser|commix|arachni|netsparker|burp|python-requests/[\d.]+$|Go-http-client/1\.1$'; }
+function smpro_bg_scanner_ua_re(): string { return 'nikto|sqlmap|masscan|zgrab|nmap|nuclei|wpscan|dirbuster|dirb\b|gobuster|ffuf|acunetix|nessus|openvas|w3af|havij|hydra|medusa|joomscan|droopescan|xsser|commix|arachni|netsparker|burp'; }
 function smpro_bg_scanner_ua(string $ua): bool {
     return (bool)preg_match('#' . smpro_bg_scanner_ua_re() . '#i', $ua);
 }
@@ -241,7 +241,7 @@ function smpro_bg_classify_req(string $method, string $uri, string $ua): string 
 /* ---------------- domlog parsing ---------------- */
 /** Parse one Apache "combined" line -> [ip, ts, method, uri, status, ua] or null. cPanel domlogs are this format. */
 function smpro_bg_parse_line(string $l): ?array {
-    if (!preg_match('/^(\S+) \S+ \S+ \[([^\]]+)\] "([^"]*)" (\d{3}) \S+ "[^"]*" "([^"]*)"/', $l, $m)) return null;
+    if (!preg_match('/^(\S+) \S+ \S+ \[([^\]]+)\] "((?:[^"\\\\]|\\\\.)*)" (\d{3}) \S+ "(?:[^"\\\\]|\\\\.)*" "((?:[^"\\\\]|\\\\.)*)"/', $l, $m)) return null;
     $req = $m[3]; $method = ''; $uri = '';
     if (preg_match('/^(\S+)\s+(\S+)/', $req, $r)) { $method = $r[1]; $uri = $r[2]; } elseif ($req !== '') { $uri = $req; }
     // "06/Sep/2026:14:05:07 +0000" - strtotime cannot read slash + month-name, so rebuild it with spaces.
@@ -270,6 +270,9 @@ function smpro_bg_aggregate(array &$ips, array $r, string $domain, int $cutoff):
     if ($r['ts'] > 0 && $r['ts'] < $cutoff) return;
     if (!filter_var($r['ip'], FILTER_VALIDATE_IP)) return;
     $cat = smpro_bg_classify_req($r['method'], $r['uri'], $r['ua']);
+    // WordPress answers a sign-in that WORKED with a redirect and a wrong password with the form again (200). A
+    // redirect is a person who signed in - an agency with thirty sites was counted as thirty guesses and blocked.
+    if ($cat === 'bruteforce' && in_array((int)$r['status'], [301, 302, 303], true) && stripos((string)$r['uri'], '/wp-login.php') !== false) $cat = '';
     $bot = smpro_bg_is_botlike($r['ua']);
     if ($cat === '' && !$bot) return;                      // an ordinary visitor: not tracked at all
     $ip = $r['ip'];
@@ -532,6 +535,7 @@ function smpro_bg_never_autoblock(string $ip): bool {
 function smpro_bg_decide(array $scan, array $cfg, array $state, callable $verify, int $now = 0): array {
     $now = $now ?: time(); $bots = $state['bots']; $cat = smpro_bg_catalog();
     $toBlock = []; $newPending = []; $newGray = []; $warnAllowed = []; $review = [];
+    $vN = 0; $vT0 = microtime(true);   // name lookups done in this pass, and when they began
     $ignore = array_values(array_filter((array)($cfg['ignore_ips'] ?? [])));
     foreach ($scan['ips'] as $ip => $a) {
         if ($ignore && smpro_bg_ip_ignored((string)$ip, $ignore)) continue;
@@ -552,6 +556,11 @@ function smpro_bg_decide(array $scan, array $cfg, array $state, callable $verify
         ];
         // verification is cached per ip+family for 7 days (DNS is slow and does not change by the minute)
         if ($family !== '' && (empty($prev['verified_at']) || ($prev['family'] ?? '') !== $family || $now - (int)$prev['verified_at'] > 7 * 86400)) {
+            // Name lookups are slow and the other side controls how slow: a few dozen addresses with a reverse zone
+            // that never answers kept this pass busy until it was killed, before anything was saved - on every
+            // run. A pass does a bounded number; the rest keep what they had and are looked up on the next pass.
+            if ($vN >= 40 || microtime(true) - $vT0 > 90) { $b['verified_at'] = (int)($prev['verified_at'] ?? 0); $bots[$ip] = $b; continue; }
+            $vN++;
             $v = $verify($ip, $family);
             $b['verified'] = (bool)$v['verified']; $b['how'] = (string)$v['how']; $b['host'] = (string)$v['host']; $b['why'] = (string)$v['why']; $b['verified_at'] = $now;
         } else { $b['verified_at'] = (int)($prev['verified_at'] ?? 0); }

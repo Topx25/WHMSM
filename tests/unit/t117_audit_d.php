@@ -42,7 +42,7 @@ has($i, "\$ls2['ino'] !== \$ls['ino'] || \$ls2['dev'] !== \$ls['dev']) return nu
 $imr = $r('modules/imunify360-reports.php');
 has($imr, "\$bdir = SMPRO_VARLIB . '/detections/' . \$acct;", 'A-M1: detection backups live outside /home');
 hasnt($imr, "'/home/backup/detections/'", 'A-M1: ...never under a creatable account name');
-has($q, "\$verb = in_array((string)\$verb, ['unlock_permanent', 'unlock_hour', 'ignore', 'relock'], true) ? (string)\$verb : 'unlock_permanent';", 'A-M2: the account-written ask is bounded');
+has($q, "\$verb = in_array((string)\$verb, ['unlock_permanent', 'unlock_selected', 'unlock_hour', 'ignore', 'relock'], true) ? (string)\$verb : 'unlock_permanent';", 'A-M2: the account-written ask is bounded');
 has($r('includes/compcheck.php'), "\$sorrySys = array_filter(\$sorryHits, fn(\$p) => strpos(\$p, '/home/') !== 0);", 'A-L2: a marker under an account home is not a server-wide critical');
 $df = $r('includes/defines.php');
 has($df, "if (!function_exists('mb_substr')) {", 'P-H1: mbstring polyfill');

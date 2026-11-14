@@ -792,14 +792,33 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
         // unusual layout) ever makes the walk match a huge set, that is a symptom of a mistake, not a big
         // clean-up - so refuse to delete anything at all and leave a note, rather than discover the error by
         // its damage. The incident that motivated this deleted application source across ~92 sites in one run.
-        $jCand = 0; foreach (explode("\0", $ph1) as $r0) if ($r0 !== '') $jCand++;
+        // The breaker counts what would really be DELETED, per account and in total. It used to count every name the
+        // walk returned - before the filters below - so on a large server the files that are never deleted (compiled
+        // templates, source files in a cache folder) pushed the count over the limit on every run and nothing was ever
+        // purged; and one wrong match on ninety sites, two hundred files each, passed it.
+        $jRecs = []; $jPer = [];
+        foreach (explode("\0", $ph1) as $r0) {
+            if ($r0 === '') continue;
+            $t0 = strpos($r0, "\t"); if ($t0 === false) continue; $p0 = substr($r0, $t0 + 1);
+            if (!preg_match('#/(storage/cache|system/storage/cache|storage/framework/(cache|views)|bootstrap/cache|wp-content/cache|var/cache)/#i', $p0)) continue;
+            if (preg_match('#/(system/library|vendor|includes|lib|src)/#i', $p0)) continue;
+            if (preg_match('#\.(php|phtml|js|css|html?|twig|tpl|inc|json|xml|ya?ml)$#i', $p0)) continue;
+            $acct0 = preg_match('#^/home[0-9]*/([^/]+)/#', $p0, $m0) ? $m0[1] : '?';
+            $jRecs[$acct0][] = $r0; $jPer[$acct0] = ($jPer[$acct0] ?? 0) + 1;
+        }
+        foreach ($jPer as $acct0 => $n0) if ($n0 > 5000) {       // one account with an absurd number is that account's layout, not junk
+            $notes[] = 'junk purge skipped for ' . $acct0 . ': ' . number_format($n0) . ' files matched there, far more than a cache clean-up - left alone.';
+            if (function_exists('smpro_audit')) smpro_audit('autopurge_skip_account', ['account' => $acct0, 'candidates' => $n0]);
+            unset($jRecs[$acct0]);
+        }
+        $jList = $jRecs ? array_merge(...array_values($jRecs)) : []; $jCand = count($jList);
         if ($jCand > 20000) {
             $notes[] = 'junk purge ABORTED as a safety measure: the sweep matched ' . number_format($jCand)
                      . ' files, far more than a normal cache clean-up. Nothing was deleted — review the patterns before re-enabling.';
             if (function_exists('smpro_audit')) smpro_audit('autopurge_abort', ['candidates' => $jCand]);
-            $ph1 = '';
+            $jList = [];
         }
-        foreach (explode("\0", $ph1) as $rec) {
+        foreach ($jList as $rec) {
             if ($rec === '') continue;
             $tab = strpos($rec, "\t"); if ($tab === false) continue;
             $size = (int)substr($rec, 0, $tab);

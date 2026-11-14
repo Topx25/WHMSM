@@ -678,7 +678,7 @@ function smpro_login_guard_run($dryrun = false) {
     $blocked = []; arsort($fails);
     foreach ($fails as $ip => $n) {
         // Qualify on either rule: enough attempts alone, or membership of a network that qualified as a whole.
-        if (($n < $thresh && !isset($netHit[$ip])) || isset($done[$ip]) || in_array($ip, $allow, true)) continue;
+        if (($n < $thresh && !isset($netHit[$ip])) || (isset($done[$ip]) && (empty($done[$ip]['failed']) || time() - (int)($done[$ip]['ts'] ?? 0) < 3600)) || in_array($ip, $allow, true)) continue;
         $g = smpro_geo_foreign($ip);
         if (empty($g['foreign'])) continue;                 // FOREIGN (non-Arab) only; Arab/local protected
         if (count($blocked) >= $cap) break;
@@ -686,13 +686,23 @@ function smpro_login_guard_run($dryrun = false) {
             ? ('Distributed login brute-force: ' . $netHit[$ip]['net_ips'] . ' addresses from ' . $netHit[$ip]['name']
                . ' totalling ' . $netHit[$ip]['net_fails'] . ' failed logins (' . $n . ' from this one), ' . $g['cc'])
             : ('Login brute-force: ' . $n . ' failed logins from ' . $g['cc']);
-        if (!$dryrun) { smpro_im_block_ip($ip, $why); $done[$ip] = ['ts' => time(), 'n' => $n, 'cc' => $g['cc']]; }
+        if (!$dryrun) {
+            // The answer was never read: an address whose block was refused or failed was written down as blocked
+            // and skipped for good. A block that did not take is recorded as such and tried again after an hour.
+            $br = smpro_im_block_ip($ip, $why);
+            if (empty($br['ok'])) {
+                $done[$ip] = ['ts' => time(), 'n' => $n, 'cc' => $g['cc'], 'failed' => 1]; $lgDirty = true;
+                if (function_exists('smpro_audit')) smpro_audit('login_guard_block_failed', ['ip' => $ip, 'fails' => $n, 'msg' => (string)($br['msg'] ?? '')]);
+                continue;
+            }
+            $done[$ip] = ['ts' => time(), 'n' => $n, 'cc' => $g['cc']];
+        }
         $blocked[] = ['ip' => $ip, 'fails' => $n, 'cc' => $g['cc'], 'rule' => isset($netHit[$ip]) ? 'network' : 'address',
                       'net' => $netHit[$ip]['name'] ?? ''];
         if (function_exists('smpro_audit')) smpro_audit('login_guard_block', ['ip' => $ip, 'fails' => $n, 'cc' => $g['cc'],
             'rule' => isset($netHit[$ip]) ? 'network' : 'address', 'net' => $netHit[$ip]['asn'] ?? '', 'dryrun' => $dryrun]);
     }
-    if ($blocked && !$dryrun) { $state['login_guard_blocked'] = array_slice($done, -3000, 3000, true); smpro_in_state_save($state); }
+    if (($blocked || !empty($lgDirty)) && !$dryrun) { $state['login_guard_blocked'] = array_slice($done, -3000, 3000, true); smpro_in_state_save($state); }
     return ['ok' => true, 'blocked' => $blocked, 'scanned' => count($fails)];
 }
 

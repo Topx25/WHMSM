@@ -103,6 +103,6 @@ is_eq(smpro_gl_clean_cc(['eg', ' SA ', 'x', '', 'USA', '12']), ['EG', 'SA'], 'G9
 /* ---------- G10: gated and recorded like every other action ---------- */
 has($pg, "smpro_require_valid_csrf('fw_csf'); smpro_require_root();", 'G10: root-only and CSRF-checked');
 has($pg, "smpro_audit('geologin_settings'", 'G10: settings changes are recorded');
-has($src, "smpro_audit('geologin_block'", 'G10: so is every block');
+has($src, "smpro_audit(\$took ? 'geologin_block' : 'geologin_block_failed'", 'G10: so is every block');
 has($pg, "smpro_audit('geologin_unblock'", 'G10: and every unblock, with the actor');
 has($pg, "fd.set('dryrun','1');   // a check never writes", 'G10: the "check" button can never write a rule');

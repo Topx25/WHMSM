@@ -174,7 +174,7 @@ function smpro_cr_apply(): array {
 /* ---------------- counting ---------------- */
 /** One combined-log line -> [ts, status, bytes, ua] or null. */
 function smpro_cr_parse(string $l): ?array {
-    if (!preg_match('/^\S+ \S+ \S+ \[([^\]]+)\] "[^"]*" (\d{3}) (\S+) "[^"]*" "([^"]*)"/', $l, $m)) return null;
+    if (!preg_match('/^\S+ \S+ \S+ \[([^\]]+)\] "(?:[^"\\\\]|\\\\.)*" (\d{3}) (\S+) "(?:[^"\\\\]|\\\\.)*" "((?:[^"\\\\]|\\\\.)*)"/', $l, $m)) return null;
     $ts = 0;
     if (preg_match('#^(\d{1,2})/([A-Za-z]{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2})\s*([+\-]\d{4})?#', $m[1], $d)) $ts = (int)(@strtotime($d[1] . ' ' . $d[2] . ' ' . $d[3] . ' ' . $d[4] . ':' . $d[5] . ':' . $d[6] . ' ' . ($d[7] ?? '')) ?: 0);
     return ['ts' => $ts, 'status' => (int)$m[2], 'bytes' => ctype_digit($m[3]) ? (int)$m[3] : 0, 'ua' => $m[4]];
