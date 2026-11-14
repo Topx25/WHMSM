@@ -2257,3 +2257,16 @@ function smpro_acct_restore(string $user, string $storeFile, string $dest, int $
     if ($cmd === '') return false;
     return trim((string)@shell_exec('cd / && timeout 300 ' . $cmd . ' < ' . escapeshellarg($storeFile) . ' >/dev/null 2>&1; echo $?')) === '0';
 }
+
+/** Rewrite a file inside an account's folder AS the account, keeping its old content beside it first.
+ *  Returns [ok, backupPath, why]. $bakPath '' = no backup wanted. A file that exists but cannot be read as the
+ *  account (a link, a special file, over the size) is refused - it is never read by root on the account's behalf. */
+function smpro_acct_rewrite(string $user, string $path, string $new, string $bakPath = '', int $mode = 0644, int $max = 2097152): array {
+    clearstatcache(true, $path);
+    $cur = smpro_acct_get($user, $path, $max);
+    if ($cur === null && (file_exists($path) || is_link($path))) return [false, '', 'the file is a link, is not a plain file, or is larger than ' . (int)($max / 1048576) . ' MB'];
+    $bak = '';
+    if ($cur !== null && $bakPath !== '') { if (!smpro_acct_put($user, $bakPath, $cur, 0600)) return [false, '', 'the old content could not be kept']; $bak = $bakPath; }
+    if (!smpro_acct_put($user, $path, $new, $mode)) return [false, $bak, 'the file could not be written'];
+    return [true, $bak, ''];
+}

@@ -1961,6 +1961,12 @@ function smpro_im_ht_write($ht, $content) {
     if ($parent === '' || $base === '' || strpbrk($base, "/\0") !== false) return [false, ''];
     $ht = $parent . '/' . $base;
     if (is_link($ht)) return [false, ''];
+    // inside an account's home the account does the read, the backup and the write itself
+    $acct = function_exists('smpro_acct_of_path') ? smpro_acct_of_path($ht) : '';
+    if ($acct !== '' && function_exists('smpro_acct_rewrite')) {
+        [$aok, $abak] = smpro_acct_rewrite($acct, $ht, (string)$content, $ht . '.smprobak-' . substr(bin2hex(@random_bytes(4) ?: pack('N', mt_rand())), 0, 8));
+        return [$aok, $abak];
+    }
     $uid = @fileowner($parent); $gid = @filegroup($parent);          // own as the cPanel account, matching the dir
     $rnd = substr(bin2hex(@random_bytes(4) ?: pack('N', mt_rand())), 0, 8);
     $bak = '';

@@ -272,6 +272,9 @@ function smpro_fa_rewrite($file, $lines) {
     if (!$okDir) return false;
     $file = $rpDir . '/' . basename($file);          // canonical (symlink-free) parent + literal leaf
     if (is_link($file)) return false;                // leaf swapped to a symlink after the parent check
+    // inside an account's home the file is rewritten BY the account, keeping its mode
+    $acct = function_exists('smpro_acct_of_path') ? smpro_acct_of_path($file) : '';
+    if ($acct !== '' && function_exists('smpro_acct_put')) return smpro_acct_put($acct, $file, implode("\n", $lines) . "\n");
     $uid = @fileowner($file); $gid = @filegroup($file); $perm = @fileperms($file) & 0777;
     $tmp = $file . '.smpro-' . substr(bin2hex(@random_bytes(6) ?: pack('N', mt_rand())), 0, 12) . '.tmp';
     $fh = @fopen($tmp, 'xb');                                        // O_CREAT|O_EXCL -> fails on a planted symlink/file

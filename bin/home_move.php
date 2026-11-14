@@ -394,11 +394,21 @@ if ($mode === 'rollback') {
     hm_rebuild($user);
     clearstatcache(); $pw2 = posix_getpwnam($user); $okHome = $pw2 && rtrim($pw2['dir'], '/') === $src;
     jp('cleanup', 88, 'Removing the copied data on the new partition…');
-    if ($okHome && $dst !== '' && $dst !== $src && is_dir($dst)) hm_sh('rm -rf ' . escapeshellarg($dst), 0);
+    $keptCopy = false;
+    if ($okHome && $dst !== '' && $dst !== $src && is_dir($dst)) {
+        // The account has been LIVING on the new home since the move. What it wrote there goes back first (newer
+        // files only, nothing is deleted on the old side); the copy is removed only when that worked. Before, the
+        // copy was simply deleted, with every upload and message that arrived since the move.
+        $rb = is_dir($src) ? hm_sh('rsync -aHAXS --numeric-ids --update ' . escapeshellarg($dst . '/') . ' ' . escapeshellarg($src . '/') . ' >/dev/null; echo "rc=$?"', 0) : 'rc=255';
+        if (preg_match('/rc=(0|24)\s*$/', trim($rb))) hm_sh('rm -rf ' . escapeshellarg($dst), 0);
+        else $keptCopy = true;
+    }
     if ($okHome) { @unlink(smpro_ds_home_state_path($user)); if ($udBak) hm_sh('rm -rf ' . escapeshellarg($udBak)); }
     smpro_ds_home_history_add(['event' => 'rollback', 'user' => $user, 'src' => $src, 'dst' => $dst, 'ok' => (bool)$okHome,
         'bytes' => (int)($st['account_bytes'] ?? 0)]);
-    jdone($okHome, $okHome ? 'Rolled back — ' . $user . ' is on ' . $src . ' again and the copy was removed.' : 'Rollback problem: homedir is ' . ($pw2['dir'] ?? '?') . '. Left the copy in place for safety.',
+    jdone($okHome, $okHome ? ('Rolled back — ' . $user . ' is on ' . $src . ' again' . ($keptCopy
+            ? '. What was written after the move could NOT be copied back, so the copy on ' . $dst . ' was LEFT in place - copy what is newer there by hand before removing it.'
+            : ' and the copy was removed (files written since the move were copied back first).')) : 'Rollback problem: homedir is ' . ($pw2['dir'] ?? '?') . '. Left the copy in place for safety.',
         ['user' => $user, 'home' => $pw2['dir'] ?? '']);
     exit;
 }

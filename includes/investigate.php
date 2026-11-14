@@ -1277,6 +1277,13 @@ function smpro_inv_ht_safe_write($ht, $docroot, $user, $new) {
     if (is_link($ht)) return [false, '', '', 'refused: .htaccess is a symlink'];
     $imm = smpro_inv_imm($ht); if ($imm) @shell_exec('chattr -i ' . escapeshellarg($ht) . ' 2>/dev/null');
     $rnd = substr(bin2hex(@random_bytes(4) ?: pack('N', mt_rand())), 0, 8);
+    // With an account to act as, the read, the backup and the write are the ACCOUNT'S: a folder swapped for a link
+    // after the check above cannot make root create or replace a file somewhere else.
+    if ($user !== '' && function_exists('smpro_acct_rewrite')) {
+        [$aok, $abak, $awhy] = smpro_acct_rewrite((string)$user, $ht, (string)$new, $ht . '.smpro-bak-' . date('Ymd_His') . '-' . $rnd);
+        if ($imm) @shell_exec('chattr +i ' . escapeshellarg($ht) . ' 2>/dev/null');
+        return $aok ? [true, $ht, $abak, ''] : [false, $ht, $abak, 'write failed: ' . $awhy];
+    }
     $bak = '';
     if (is_file($ht)) {                                                // back up only an existing file
         $bak = $ht . '.smpro-bak-' . date('Ymd_His') . '-' . $rnd;

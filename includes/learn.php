@@ -384,15 +384,19 @@ function smpro_lr_hunt(int $budget = 500): array {
             elseif ($s !== '') $add($p, $u, 'tmp', 'a script in the account\'s temporary folder that ' . $s);
         }
     }
-    foreach ($found as $f) foreach ($f['lessons'] as $lid) if (isset($L[$lid])) $L[$lid]['hits']++;
-    smpro_lr_save('lessons', $L);
+    // Only the hit counters are this hunt's to write. The lessons and the allow list are READ AGAIN here: a lesson the
+    // operator switched off, taught, or marked as not malicious while the hunt ran (up to 500 s) was overwritten with
+    // the copy from the start - and with automatic quarantine on, the file just restored was taken out again.
+    $Lnow = smpro_lr_lessons(); $allowNow = array_flip(smpro_lr_load('allow'));
+    foreach ($found as $f) foreach ($f['lessons'] as $lid) { if (isset($L[$lid])) $L[$lid]['hits']++; if (isset($Lnow[$lid])) $Lnow[$lid]['hits'] = (int)($Lnow[$lid]['hits'] ?? 0) + 1; }
+    smpro_lr_save('lessons', $Lnow);
     $res = ['at' => time(), 'took' => time() - $t0, 'sites' => $done, 'of' => count($roots), 'partial' => $partial, 'lessons' => count($on), 'findings' => array_values($found)];
     smpro_lr_save('findings', $res);
     @unlink(smpro_lr_dir() . '/hunt_wanted');
     if ($partial) { smpro_lr_save('cursor', ['at' => time(), 'lessons' => count($on), 'done' => $doneRoots, 'found' => array_values($found)]); @touch(smpro_lr_dir() . '/hunt_wanted'); }
     else @unlink(smpro_lr_dir() . '/cursor.json');
     if ($cfg['auto'] === 'quarantine_exact' && !(function_exists('smpro_ctl_dry_run') && smpro_ctl_dry_run()) && !(function_exists('smpro_ctl_disabled') && smpro_ctl_disabled())) {
-        foreach ($res['findings'] as $f) foreach ($f['lessons'] as $lid) if (($L[$lid]['type'] ?? '') === 'hash' && ($L[$lid]['source'] ?? '') !== 'shared' && !empty($L[$lid]['incidents'])) { smpro_lr_quarantine($f['path'], 'auto: exact file of a confirmed incident', (string)($f['sha'] ?? '')); break; }
+        foreach ($res['findings'] as $f) foreach ($f['lessons'] as $lid) if (($Lnow[$lid]['type'] ?? '') === 'hash' && ($Lnow[$lid]['state'] ?? 'on') === 'on' && ($Lnow[$lid]['source'] ?? '') !== 'shared' && !empty($Lnow[$lid]['incidents']) && !isset($allowNow[(string)($f['sha'] ?? '')])) { smpro_lr_quarantine($f['path'], 'auto: exact file of a confirmed incident', (string)($f['sha'] ?? '')); break; }
     }
     return $res;
 }

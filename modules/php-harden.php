@@ -150,9 +150,16 @@ function smpro_ph_apply_htaccess($dir, array $exts, $backupDir) {
     if (is_link($ht) || is_link(rtrim($dir, '/'))) return ['dir' => $dir, 'htaccess' => $ht, 'backup' => '', 'extensions' => smpro_ph_allowed_exts($exts), 'lock_rc' => 1, 'lock_output' => 'refused: .htaccess is a symbolic link'];
     smpro_ph_chattr('-i', $ht);
     $backup = ''; $content = '';
-    if (is_file($ht)) { $backup = smpro_ph_backup($ht, $backupDir . '/htaccess'); $content = (string)@file_get_contents($ht); }
+    $acct = function_exists('smpro_acct_of_path') ? smpro_acct_of_path($ht) : '';
+    // the old content is read AS the account (root reads it only where there is no account, i.e. outside a home)
+    if (is_file($ht)) { $backup = smpro_ph_backup($ht, $backupDir . '/htaccess'); $content = $acct !== '' ? (string)smpro_acct_get($acct, $ht, 2097152) : (string)@file_get_contents($ht); }
     $content = preg_replace('/# SMPRO_PH_DENY_EXEC_START.*?# SMPRO_PH_DENY_EXEC_END\s*/s', '', $content) ?? $content;
     $content = rtrim($content) . smpro_ph_htaccess_marker($exts);
+    if ($acct !== '' && function_exists('smpro_acct_put')) {              // written AS the account: this also runs unattended (the re-lock after a timed unlock)
+        if (!smpro_acct_put($acct, $ht, $content, 0644)) return ['dir' => $dir, 'htaccess' => $ht, 'backup' => $backup, 'extensions' => smpro_ph_allowed_exts($exts), 'lock_rc' => 1, 'lock_output' => 'write failed'];
+        [$rc, $out] = smpro_ph_chattr('+i', $ht);
+        return ['dir' => $dir, 'htaccess' => $ht, 'backup' => $backup, 'extensions' => smpro_ph_allowed_exts($exts), 'lock_rc' => $rc, 'lock_output' => $out];
+    }
     $uid = @fileowner($dir); $gid = @filegroup($dir);                       // own as the cPanel account, NOT root
     $tmp = $ht . '.smpro-' . bin2hex(random_bytes(6)); $fh = @fopen($tmp, 'xb');   // O_EXCL: a planted link at the temp name fails
     $ok = $fh !== false && @fwrite($fh, $content) !== false; if ($fh) @fclose($fh);

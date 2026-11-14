@@ -8,7 +8,7 @@ require_once SMPRO_BASE . '/includes/learn.php';
 $src = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/learn.php'));
 has($src, "function smpro_lr_share_types(): array { return ['hash', 'dotdir', 'behaviour', 'docblock', 'name']; }", 'S1: only hash, hidden-folder, behaviour, header and file-name lessons are shared - never a place inside a site');
 has($src, "unset(\$p['telemetry']);", 'S2: the license payload goes without the telemetry block');
-has($src, "&& (\$L[\$lid]['source'] ?? '') !== 'shared' && !empty(\$L[\$lid]['incidents'])", 'S3: automatic quarantine needs a lesson confirmed HERE, never a shared one');
+has($src, "&& (\$Lnow[\$lid]['source'] ?? '') !== 'shared' && !empty(\$Lnow[\$lid]['incidents'])", 'S3: automatic quarantine needs a lesson confirmed HERE, never a shared one');
 has($src, "if (time() - (int)(smpro_lr_load('share')['last'] ?? 0) > 6 * 3600) smpro_lr_share();", 'S4: the worker exchanges every six hours');
 
 // what goes out

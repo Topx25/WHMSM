@@ -29,7 +29,7 @@ if ($reqMethod === 'POST' && $act !== '') {
             // every finding that is the EXACT file of a confirmed incident (hash lesson, confirmed on this server)
             $F0 = smpro_lr_load('findings'); $L0 = smpro_lr_lessons(); $n = 0; $bad = 0;
             foreach ((array)($F0['findings'] ?? []) as $f0) {
-                $exact = false; foreach ((array)$f0['lessons'] as $lid) if (($L0[$lid]['type'] ?? '') === 'hash' && ($L0[$lid]['source'] ?? '') !== 'shared' && !empty($L0[$lid]['incidents'])) $exact = true;
+                $exact = false; foreach ((array)$f0['lessons'] as $lid) if (($L0[$lid]['type'] ?? '') === 'hash' && ($L0[$lid]['state'] ?? 'on') === 'on' && ($L0[$lid]['source'] ?? '') !== 'shared' && !empty($L0[$lid]['incidents'])) $exact = true;   // a lesson that was switched off no longer counts
                 if (!$exact) continue;
                 $r = smpro_lr_quarantine((string)$f0['path'], 'operator: all exact-file matches', (string)($f0['sha'] ?? '')); if (!empty($r['ok'])) $n++; else $bad++;
             }
