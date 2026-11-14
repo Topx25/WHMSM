@@ -89,8 +89,20 @@ function smpro_sw_classify_file(string $rel, bool $isNew, int $size = -1): ?arra
         if ($b === 'index.php' && $size >= 0 && $size <= 200) return null;   // the "silence is golden" placeholder
         return ['critical', 'PHP file in an uploads/images folder'];
     }
-    if (smpro_sw_is_php($rel) && preg_match('#(^|/)\.[^/]+#', $rel)) return ['critical', 'PHP file that is hidden or in a hidden folder'];
-    if (smpro_sw_is_php($rel) && preg_match('/\.(jpe?g|png|gif|ico|txt)\.php$|^[a-f0-9]{8,}\.php$/i', $b)) return ['critical', 'PHP file with a disguised name'];
+    if (smpro_sw_is_php($rel) && preg_match('#(^|/)\.[^/]+#', $rel)) {
+        // The first round on a real server called 43 of 83 sites critical for these, and a true alarm would have drowned:
+        //  - the settings files of developer tools, which every framework project carries
+        //  - anything inside a dependency tree (vendor/, node_modules/) - third-party code keeps dot folders of its own
+        //  - "._name" files, the metadata a Mac leaves beside every file it copies (a name alone cannot tell them from
+        //    code, so they are still shown - as a warning)
+        if (in_array(strtolower($b), ['.phpstorm.meta.php', '.php-cs-fixer.php', '.php-cs-fixer.dist.php', '.php_cs', '.php_cs.dist', '.php_cs.php', '.rector.php', '.phpunit.php'], true)) return null;
+        if (preg_match('#(^|/)(vendor|node_modules)/#', $rel)) return ['warning', 'PHP file in a hidden folder of a dependency tree (vendor / node_modules)'];   // shown, not an alarm
+        if (strpos($b, '._') === 0) return ['warning', 'File left by a Mac copy ("._" name) with a PHP extension'];
+        return ['critical', 'PHP file that is hidden or in a hidden folder'];
+    }
+    // a random-looking hex name needs letters AND digits: a name made of digits only is a date or a serial number
+    // (2022102601.php), which applications write by the hundred
+    if (smpro_sw_is_php($rel) && (preg_match('/\.(jpe?g|png|gif|ico|txt)\.php$/i', $b) || (preg_match('/^[a-f0-9]{8,}\.php$/i', $b) && preg_match('/[a-f]/i', substr($b, 0, -4)) && preg_match('/[0-9]/', $b)))) return ['critical', 'PHP file with a disguised name'];
     if ($b === '.htaccess' || $b === '.user.ini') return ['warning', $b . ' ' . ($isNew ? 'created' : 'changed')];
     if (!$isNew && in_array($b, ['index.php', 'wp-config.php', 'wp-load.php', 'wp-settings.php', 'functions.php'], true)) return ['warning', $b . ' changed'];
     if ($isNew && preg_match('/\.(cgi|pl|sh|phar)$/i', $b)) return ['warning', 'New script file'];
@@ -195,7 +207,7 @@ function smpro_sw_checks(string $doc): array {
  *  events recorded by the first release, which flagged plugin/WordPress folders named img/files, no longer count. */
 function smpro_sw_event_live(array $e): bool {
     if (!empty($e['resolved'])) return false;
-    if (in_array($e['kind'] ?? '', ['upload_php', 'shell_run'], true) && !empty($e['data']['path'])) return smpro_sw_classify_file((string)$e['data']['path'], true)[0] ?? '' ? true : false;
+    if (in_array($e['kind'] ?? '', ['upload_php', 'shell_run'], true) && !empty($e['data']['path'])) return (smpro_sw_classify_file((string)$e['data']['path'], true)[0] ?? '') === 'critical';   // open only while the file would still be called critical (a rule that was relaxed closes its old alarms)
     return true;
 }
 function smpro_sw_event_add(string $dom, array &$batch, string $sev, string $kind, string $title, array $data): void {

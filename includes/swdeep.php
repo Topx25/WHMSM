@@ -45,10 +45,12 @@ function smpro_swd_core(string $doc, string $user): array {
     // a before_wp_load command (it hashes files, it does not boot the site) - but wp-cli also reads the account's own
     // wp-cli.yml / ~/.wp-cli (require:), so it starts from / with those switched off, and what it prints is still the
     // account's word: every path it names is checked below before anything is done with it
-    $cmd = 'cd / && WP_CLI_CONFIG_PATH=/dev/null WP_CLI_PACKAGES_DIR=/nonexistent ' . escapeshellarg($wp) . ' core verify-checksums --include-root --skip-plugins --skip-themes --path=' . escapeshellarg($doc) . ' 2>&1';
+    $cmd = 'cd / && export PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin && WP_CLI_CONFIG_PATH=/dev/null WP_CLI_PACKAGES_DIR=/nonexistent ' . escapeshellarg($wp) . ' core verify-checksums --include-root --skip-plugins --skip-themes --path=' . escapeshellarg($doc) . ' 2>&1';
     $out = (string)@shell_exec('timeout 120 su -s /bin/bash ' . escapeshellarg($user) . ' -c ' . escapeshellarg($cmd) . ' 2>&1');
     if (stripos($out, 'include-root') !== false && stripos($out, 'unknown') !== false)   // older wp-cli: no root-file check
         $out = (string)@shell_exec('timeout 120 su -s /bin/bash ' . escapeshellarg($user) . ' -c ' . escapeshellarg(str_replace(' --include-root', '', $cmd)) . ' 2>&1');
+    // the PHP that answered was the web one, not the command-line one: nothing was verified
+    if (stripos($out, 'Only CLI access') !== false || stripos($out, 'Content-type: text/html') === 0) return ['ok' => false, 'why' => 'core not verified: wp-cli was started with the web PHP instead of the command-line PHP', 'modified' => [], 'extra' => []];
     $p = smpro_swd_parse_verify($out);
     if ($p['error'] !== '') return ['ok' => false, 'why' => 'core not verified: ' . substr($p['error'], 0, 160), 'modified' => [], 'extra' => []];
     // a path that is not a plain relative one resolving to a regular file inside the site is dropped

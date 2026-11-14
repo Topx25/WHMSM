@@ -133,7 +133,7 @@ function smpro_sdb_fix_wp_core(string $domain): array {
     $as = function (string $cmd) use ($user) { return (string)@shell_exec('timeout 300 su -s /bin/bash ' . escapeshellarg($user) . ' -c ' . escapeshellarg($cmd) . ' 2>&1'); };
     if ($items) { $as('umask 077; tar czf ' . escapeshellarg($bak) . ' -C ' . escapeshellarg($doc) . ' ' . implode(' ', array_map('escapeshellarg', $items)));
         if (!is_file($bak) || filesize($bak) < 1000) return ['ok' => false, 'msg' => 'could not back up the current core files - nothing changed']; }
-    $o = $as('cd / && WP_CLI_CONFIG_PATH=/dev/null WP_CLI_PACKAGES_DIR=/nonexistent ' . escapeshellarg($wp) . ' core download --skip-content --force' . ($ver !== '' ? ' --version=' . escapeshellarg($ver) : '') . ' --path=' . escapeshellarg($doc));
+    $o = $as('cd / && export PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin && WP_CLI_CONFIG_PATH=/dev/null WP_CLI_PACKAGES_DIR=/nonexistent ' . escapeshellarg($wp) . ' core download --skip-content --force' . ($ver !== '' ? ' --version=' . escapeshellarg($ver) : '') . ' --path=' . escapeshellarg($doc));
     $ok = (bool)preg_match('/^Success:/m', $o);   // the tool's own result line, not the word anywhere in its output
     $id = $items ? smpro_inv_manifest_add(['user' => $user, 'domain' => $r['domain'], 'action' => 'restore_wp_core', 'kind' => 'tar', 'from' => $doc, 'backup' => $bak]) : '';
     smpro_audit('sitedoctor_fix', ['action' => 'restore_wp_core', 'user' => $user, 'version' => $ver ?: 'latest', 'ok' => $ok]);
