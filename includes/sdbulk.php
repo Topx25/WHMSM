@@ -390,7 +390,7 @@ function smpro_sdb_cron_sync(): bool {
     if (!$cfg['scan_daily'] && !$cfg['auto']) { if (@is_file($f)) @unlink($f); return true; }
     $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : 'php';
     $want = "# Safety Monitor Pro - Site Doctor: daily scan of every site, automatic fixes when switched on, 7-day backup purge\n"
-          . "30 5 * * * root timeout 3600 nice -n 10 $php " . SMPRO_BASE . "/bin/sitedoctor_bulk.php daily >/dev/null 2>&1\n";
+          . "30 5 * * * root /usr/bin/flock -n " . SMPRO_LOCKS . "/sitedoctor_bulk.lock timeout 3600 nice -n 10 $php " . SMPRO_BASE . "/bin/sitedoctor_bulk.php daily >/dev/null 2>&1\n";
     if (@is_file($f) && (string)@file_get_contents($f) === $want) return true;
     return function_exists('smpro_cron_install') ? smpro_cron_install($f, $want) : false;
 }

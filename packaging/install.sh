@@ -60,7 +60,7 @@ mkdir -p "$DEST" || die "Cannot create ${DEST} (is this a cPanel server?)."
 if [ -f "${DEST}/includes/spqueue.php" ] && [ ! -f "${SRC}/${PLUGIN}/includes/spqueue.php" ] && [ "${SMPRO_FORCE_EDITION:-}" != "1" ]; then
   die "This server runs the cPanel-user edition of SM Pro (Safety Lock). This package is the WHM-only build; installing it would break the account-side worker. Use the cPanel-user release, or set SMPRO_FORCE_EDITION=1 if you really mean to replace it."
 fi
-cp -a "${SRC}/${PLUGIN}/." "${DEST}/"
+cp -a "${SRC}/${PLUGIN}/." "${DEST}/" || die "The plugin files could not be copied to ${DEST} (disk full or read-only?). Nothing was registered."
 chown -R root:root "$DEST" 2>/dev/null || true
 find "$DEST" -type d -exec chmod 0755 {} \; 2>/dev/null || true
 find "$DEST" -type f -name '*.php' -exec chmod 0644 {} \; 2>/dev/null || true

@@ -43,4 +43,4 @@ has($pg, 'id="bg-trusted"', 'B7: the card');
 has($pg, "No verified list is held yet", 'B8: ...says so when there is none');
 has($cs, "'trusted bots list'  => 'smpro_tf_cron_sync',", 'B9: cron sync keeps the tick');
 has($tf, "\$min = abs(crc32((string)@gethostname())) % 60;", 'B10: each server pulls at a minute of its own');
-has($tf, "\"# Safety Monitor Pro - trusted-bots list from the licence server (verified official crawler / mail ranges), every 6 h\\n\$min */6 * * * root timeout 120 \$php \$bin >/dev/null 2>&1\\n\"", 'B11: every six hours, time-bounded');
+has($tf, "\"# Safety Monitor Pro - trusted-bots list from the licence server (verified official crawler / mail ranges), every 6 h\\n\$min */6 * * * root /usr/bin/flock -n \" . SMPRO_LOCKS . \"/trustfeed.lock timeout 120 \$php \$bin >/dev/null 2>&1\\n\"", 'B11: every six hours, time-bounded, one run at a time');

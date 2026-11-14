@@ -865,6 +865,9 @@ function smpro_self_uninstall() {
     if (function_exists('smpro_notify')) { @smpro_notify('license_tamper', 'Plugin self-removed (license tamper)',
         'A confirmed license tamper persisted past 24h on ' . php_uname('n') . ' — the plugin uninstalled itself.', ['severity' => 'critical'], true); }
 
+    // what would stay enforcing with nothing left to manage it comes down first (the country wall above all)
+    if (!function_exists('smpro_teardown_network')) { $__uf = __DIR__ . '/update.php'; if (is_file($__uf)) require_once $__uf; }
+    if (function_exists('smpro_teardown_network')) { try { smpro_teardown_network('self-uninstall'); } catch (\Throwable $e) { if (function_exists('smpro_audit')) smpro_audit('teardown_failed', ['by' => 'self-uninstall', 'why' => $e->getMessage()]); } }
     $unreg = '/usr/local/cpanel/bin/unregister_appconfig';
     if (is_executable($unreg)) @shell_exec(escapeshellarg($unreg) . ' ' . escapeshellarg(SMPRO_SLUG) . ' >/dev/null 2>&1');
     foreach (glob('/etc/cron.d/' . SMPRO_SLUG . '-*') ?: [] as $cf) @unlink($cf);   // every cron of the product: the four named here left ~20 others invoking a missing script every minute

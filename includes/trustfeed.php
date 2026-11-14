@@ -106,6 +106,6 @@ function smpro_tf_cron_sync(): bool {
     $bin = SMPRO_BASE . '/bin/trustfeed_tick.php'; if (!@is_file($bin)) { if (@is_file($f)) @unlink($f); return false; }
     $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : (is_executable('/usr/local/cpanel/3rdparty/bin/php') ? '/usr/local/cpanel/3rdparty/bin/php' : 'php');
     $min = abs(crc32((string)@gethostname())) % 60;
-    $desired = "# Safety Monitor Pro - trusted-bots list from the licence server (verified official crawler / mail ranges), every 6 h\n$min */6 * * * root timeout 120 $php $bin >/dev/null 2>&1\n";
+    $desired = "# Safety Monitor Pro - trusted-bots list from the licence server (verified official crawler / mail ranges), every 6 h\n$min */6 * * * root /usr/bin/flock -n " . SMPRO_LOCKS . "/trustfeed.lock timeout 120 $php $bin >/dev/null 2>&1\n";
     return function_exists('smpro_cron_install') ? smpro_cron_install($f, $desired) : (@file_put_contents($f, $desired) !== false && @chmod($f, 0644));
 }

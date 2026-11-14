@@ -331,7 +331,7 @@ function smpro_lv_cron_sync(): bool {
     if (!smpro_lv_lifts()) { if (@is_file($f)) @unlink($f); return true; }
     $bin = SMPRO_BASE . '/bin/lve_tick.php'; if (!@is_file($bin)) return false;
     $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : (is_executable('/usr/local/cpanel/3rdparty/bin/php') ? '/usr/local/cpanel/3rdparty/bin/php' : 'php');
-    $desired = "# Safety Monitor Pro — put lifted LVE limits back when their time is up (removed when no lift is in force)\n*/5 * * * * root timeout 120 $php $bin >/dev/null 2>&1\n";
+    $desired = "# Safety Monitor Pro — put lifted LVE limits back when their time is up (removed when no lift is in force)\n*/5 * * * * root /usr/bin/flock -n " . SMPRO_LOCKS . "/lvelimits.lock timeout 120 $php $bin >/dev/null 2>&1\n";
     return function_exists('smpro_cron_install') ? smpro_cron_install($f, $desired) : (@file_put_contents($f, $desired) !== false && @chmod($f, 0644));
 }
 

@@ -21,6 +21,13 @@ ok()   { printf '\033[1;32m  ✓\033[0m %s\n' "$*"; }
 
 [ "$(id -u)" = "0" ] || { echo "Run as root."; exit 1; }
 
+# what would stay enforcing with nothing left to manage it comes down first, while the plugin's code is still here
+PHPBIN=/usr/local/cpanel/3rdparty/bin/php; [ -x "$PHPBIN" ] || PHPBIN="$(command -v php || true)"
+if [ -n "$PHPBIN" ] && [ -f "$DEST/bin/teardown.php" ]; then
+  say "Taking down the country wall and this product's firewall hooks"
+  "$PHPBIN" "$DEST/bin/teardown.php" 2>/dev/null | sed 's/^/    /' || echo "    (could not run - check the firewall for rules tagged smpro before a restart)"
+fi
+
 say "Unregistering from WHM"
 [ -x /usr/local/cpanel/bin/unregister_appconfig ] && /usr/local/cpanel/bin/unregister_appconfig "$PLUGIN" 2>/dev/null && ok "Unregistered" || true
 

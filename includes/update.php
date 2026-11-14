@@ -169,6 +169,25 @@ function smpro_upd_apply($version = '', $force = false) {
     }
     $ver = $authVer;   // log/record the authenticated version, not the unsigned header
 
+    // The package signature covers the archive. The manifest inside it lists every file with its hash and is signed
+    // too. The UNPACKED tree is checked against that list before anything is copied: a short extraction (a full
+    // disk, a killed tar) is caught here, while the live tree is still untouched.
+    $mfFiles = is_array($ij['files'] ?? null) ? $ij['files'] : []; $mfBad = '';
+    if ($mfFiles && function_exists('openssl_verify')) {
+        $mfSorted = $mfFiles; ksort($mfSorted);
+        $mfSig = base64_decode((string)($ij['sig'] ?? ''), true); $mfPk = @openssl_pkey_get_public(SMPRO_UPD_PUBKEY);
+        if (!$mfPk || $mfSig === false || @openssl_verify(json_encode($mfSorted, JSON_UNESCAPED_SLASHES), $mfSig, $mfPk, OPENSSL_ALGO_SHA256) !== 1) $mfBad = 'the file list signature';
+    }
+    if ($mfBad === '') foreach ($mfFiles as $mfRel => $mfSha) {
+        $mfPath = $payload . '/' . $mfRel;
+        if (!is_file($mfPath) || !hash_equals((string)$mfSha, (string)@hash_file('sha256', $mfPath))) { $mfBad = (string)$mfRel; break; }
+    }
+    if (!$mfFiles || $mfBad !== '') {
+        smpro_upd_rrmdir($ex); @unlink($tgz); @unlink($hdr); $cleanup();
+        if (function_exists('smpro_audit')) @smpro_audit('update_refused_manifest', ['to' => $ver, 'what' => $mfBad !== '' ? $mfBad : 'empty file list']);
+        return ['ok' => false, 'message' => 'The unpacked package does not match its signed file list (' . ($mfBad !== '' ? $mfBad : 'the list is empty') . '). Nothing was changed.'];
+    }
+
     $dest = realpath(SMPRO_BASE); if (!$dest || !is_dir($dest)) { $cleanup(); return ['ok' => false, 'message' => 'Install dir not found.']; }
     $from = defined('SMPRO_VERSION') ? SMPRO_VERSION : '?';
 
@@ -203,6 +222,11 @@ function smpro_upd_apply($version = '', $force = false) {
     // reported instead of a white WHM page and a dead worker fleet.
     $phpBin = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : '/usr/local/cpanel/3rdparty/bin/php';
     $bad = trim((string)@shell_exec('cd ' . escapeshellarg($dest) . ' && find . -name "*.php" -o -name "*.cgi" | head -n 600 | while read -r f; do ' . escapeshellarg($phpBin) . ' -l "$f" >/dev/null 2>&1 || echo "$f"; done 2>/dev/null | head -n 5'));
+    // ...and every file now on disk must be the file the signed list names. A copy that ended short on a full disk
+    // leaves an EMPTY file, which passes a syntax check; it does not pass this.
+    if ($bad === '') foreach ($mfFiles as $mfRel => $mfSha) {
+        if (!hash_equals((string)$mfSha, (string)@hash_file('sha256', $dest . '/' . $mfRel))) { $bad = 'not the released file after the copy: ' . $mfRel; break; }
+    }
     if ($bad !== '') {
         @shell_exec('cp -a ' . escapeshellarg($bk) . '/. ' . escapeshellarg($dest) . '/ 2>/dev/null');
         smpro_upd_rrmdir($ex); @unlink($tgz); @unlink($hdr); $cleanup();
@@ -303,8 +327,50 @@ function smpro_upd_register() {
 /** Uninstall the plugin from this server: unregister the WHM entry, remove cron jobs, optionally purge
  *  data+logs, then delete the install dir + rebuild the WHM menu (detached, so the HTTP response returns first).
  *  Runs as root. Returns the list of steps performed. */
+/**
+ * Before the plugin goes away: take down what would stay ENFORCING with nothing left to manage it.
+ * The country wall drops every address that is not in its set, and its watcher - the thing that keeps the set
+ * filled and takes the wall down when the operator stops confirming - is one of the cron jobs an uninstall removes.
+ * Left up, the next firewall restart empties the set and the server refuses everyone on the panel and shell ports.
+ * Also restores cPHulk's country list and removes this product's lines from the firewall's post-reload script,
+ * which would call a file that no longer exists. Returns what was done, in words.
+ */
+function smpro_teardown_network(string $by = 'uninstall'): array {
+    $done = [];
+    try {
+        if (!function_exists('smpro_gw_remove')) { $f = __DIR__ . '/geowall.php'; if (is_file($f)) require_once $f; }
+        if (function_exists('smpro_gw_live') && function_exists('smpro_gw_remove') && smpro_gw_live()) {
+            $r = smpro_gw_remove(true);
+            $done[] = 'Country wall taken down (' . (int)($r['removed'] ?? 0) . ' rule(s))' . (empty($r['ok']) ? ' - NOT confirmed, check the firewall by hand' : '');
+        }
+    } catch (\Throwable $e) { $done[] = 'Country wall could not be taken down: ' . $e->getMessage(); }
+    try {
+        if (!function_exists('smpro_gh_disarm')) { $f = __DIR__ . '/geohulk.php'; if (is_file($f)) require_once $f; }
+        if (function_exists('smpro_gh_cfg') && function_exists('smpro_gh_disarm') && !empty(smpro_gh_cfg()['enabled'])) {
+            $r = smpro_gh_disarm($by);
+            $done[] = 'Login country list restored in cPHulk' . (empty($r['ok']) ? ' - NOT confirmed' : '');
+        }
+    } catch (\Throwable $e) { $done[] = 'cPHulk country list could not be restored: ' . $e->getMessage(); }
+    try {
+        $base = rtrim((string)(realpath(SMPRO_BASE) ?: SMPRO_BASE), '/');
+        foreach (['/usr/local/csf/bin/csfpost.sh', '/etc/csf/csfpost.sh'] as $cp) {
+            if (!@is_file($cp) || is_link($cp)) continue;
+            $lines = explode("\n", (string)@file_get_contents($cp)); $keep = []; $n = 0;
+            foreach ($lines as $l) {
+                if (strpos($l, $base . '/bin/') !== false || (isset($l[0]) && $l[0] === '#' && strpos($l, '(Safety Monitor Pro)') !== false)) { $n++; continue; }
+                $keep[] = $l;
+            }
+            if (!$n) continue;
+            $tmp = $cp . '.smpro-tmp'; $st = @stat($cp);
+            if (@file_put_contents($tmp, implode("\n", $keep)) !== false) { @chmod($tmp, ($st['mode'] ?? 0700) & 07777); if (@rename($tmp, $cp)) $done[] = 'Removed ' . $n . ' line(s) of this product from ' . $cp; else @unlink($tmp); }
+        }
+    } catch (\Throwable $e) { $done[] = 'Firewall post-reload script not cleaned: ' . $e->getMessage(); }
+    if ($done && function_exists('smpro_audit')) @smpro_audit('teardown_network', ['by' => $by, 'done' => $done]);
+    return $done;
+}
 function smpro_plugin_uninstall($purge = false) {
     $done = [];
+    foreach (smpro_teardown_network('uninstall') as $__t) $done[] = $__t;   // first: nothing may stay enforcing unmanaged
     // 1) unregister the WHM AppConfig entry (the menu item)
     $unreg = '/usr/local/cpanel/bin/unregister_appconfig';
     if (is_executable($unreg)) { @shell_exec($unreg . ' ' . escapeshellarg(SMPRO_SLUG) . ' 2>/dev/null'); $done[] = 'Unregistered the WHM menu entry'; }

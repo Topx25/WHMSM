@@ -96,7 +96,14 @@ function smpro_integrity_state_save(array $s) {
  */
 function smpro_integrity_gate() {
     $st = is_file(SMPRO_INTEG_STATE) ? (array)json_decode((string)@file_get_contents(SMPRO_INTEG_STATE), true) : [];
-    if (!empty($st['locked'])) smpro_protected_mode((string)($st['reason'] ?? 'integrity'));   // stay locked until cleared
+    if (!empty($st['locked'])) {
+        // Locked earlier - check again now (five hashes). A lock taken while an update was half copied used to stay
+        // until a cron sweep cleared it, and that sweep does not run while the plugin is switched off.
+        $again = smpro_integrity_check(smpro_integrity_critical_files());
+        if (empty($again['ok'])) smpro_protected_mode((string)($again['reason'] ?? $st['reason'] ?? 'integrity'));
+        unset($st['locked'], $st['reason']); $st['ok_at'] = time(); @smpro_integrity_state_save($st);
+        return;
+    }
     if (isset($st['ok_at']) && (time() - (int)$st['ok_at']) < SMPRO_INTEG_TTL) return;          // recently verified -> skip
     $r = smpro_integrity_check(smpro_integrity_critical_files());
     if (!empty($r['ok']) || !empty($r['skip'])) {

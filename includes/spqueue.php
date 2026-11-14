@@ -237,7 +237,10 @@ function smpro_spq_read($user, $home, $max = 10) {
         if ((int)$ls['size'] > SMPRO_SPQ_MAX_BYTES) {
             $reject = 'The request was too large to read (' . (int)$ls['size'] . ' bytes). Select fewer items and try again.';
         } else {
-            $j = json_decode((string)@file_get_contents($p), true);
+            // read AS the account when there is one: a file swapped for a pipe after the check above would stall this
+            // worker, and a link would make root read whatever it points at
+            $raw = ($uid > 0 && function_exists('smpro_acct_get')) ? smpro_acct_get((string)$user, (string)$p, (int)SMPRO_SPQ_MAX_BYTES) : @file_get_contents($p);
+            $j = is_string($raw) ? json_decode($raw, true) : null;
             if (!is_array($j)) $reject = 'The request file could not be read. Try again from this page.';
         }
         $verb = is_array($j) ? (string)($j['verb'] ?? '') : '';
