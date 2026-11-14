@@ -442,7 +442,9 @@ function smpro_lr_quarantine(string $path, string $source, string $expectSha = '
     $rm = smpro_lr_unlink_locked($safe);
     if (!$rm['ok']) { @unlink($q); return ['ok' => false, 'msg' => 'The file could not be removed: ' . $rm['why'] . '.']; }
     $rec = ['at' => time(), 'orig' => $safe, 'kept' => $q, 'sha' => $sha, 'size' => (int)($st['size'] ?? 0), 'mode' => (int)($st['mode'] ?? 0) & 07777, 'uid' => (int)($st['uid'] ?? 0), 'gid' => (int)($st['gid'] ?? 0), 'mtime' => (int)($st['mtime'] ?? 0), 'source' => $source, 'restored' => 0];
+    $qlk = smpro_lr_qlock();
     @file_put_contents(smpro_lr_dir() . '/quarantine.jsonl', json_encode($rec, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+    smpro_lr_qunlock($qlk);
     smpro_lr_drop_finding($safe);   // the row leaves the list now, not at the next hunt
     smpro_lr_learn_file($q, $safe, 'quarantine');
     if (function_exists('smpro_audit')) smpro_audit('learn_quarantine', ['path' => $safe, 'sha256' => $sha, 'kept' => $q, 'source' => $source]);
@@ -533,11 +535,24 @@ function smpro_lr_verdict_of(array $q): ?array {
     $v = $q['verdict'] ?? null;
     return (is_array($v) && ($v['sha'] ?? '') !== '' && ($v['sha'] ?? '') === ($q['sha'] ?? '-')) ? $v : null;
 }
+/** One writer at a time for the quarantine journal. It is the only record of where a kept file came from: a row
+ *  appended by the scheduled worker between another writer's read and its rewrite was lost, and that file could
+ *  no longer be put back. */
+function smpro_lr_qlock() { $h = @fopen(smpro_lr_dir() . '/quarantine.lock', 'c'); if ($h && !@flock($h, LOCK_EX)) { @fclose($h); $h = false; } return $h ?: null; }
+function smpro_lr_qunlock($h): void { if ($h) { @flock($h, LOCK_UN); @fclose($h); } }
+/** Replace the journal in one step (written beside it, then renamed in). */
+function smpro_lr_qwrite(array $lines): bool {
+    $f = smpro_lr_dir() . '/quarantine.jsonl'; $t = $f . '.' . getmypid() . '.tmp'; $body = implode("\n", $lines) . "\n";
+    if (@file_put_contents($t, $body) !== strlen($body)) { @unlink($t); return false; }
+    @chmod($t, 0600); return @rename($t, $f);
+}
 /** Write a verdict into the store journal row of $kept (the row is the manifest; the verdict travels with it). */
 function smpro_lr_verdict_save(string $kept, array $v): void {
+    $qlk = smpro_lr_qlock();
     $f = smpro_lr_dir() . '/quarantine.jsonl'; $all = @file($f, FILE_IGNORE_NEW_LINES) ?: []; $out = []; $hit = false;
     foreach ($all as $l) { $r = json_decode($l, true); if (is_array($r) && ($r['kept'] ?? '') === $kept) { $r['verdict'] = $v; $hit = true; } $out[] = is_array($r) ? json_encode($r, JSON_UNESCAPED_SLASHES) : $l; }
-    if ($hit) @file_put_contents($f, implode("\n", $out) . "\n", LOCK_EX);
+    if ($hit) smpro_lr_qwrite($out);
+    smpro_lr_qunlock($qlk);
 }
 /** Judge every unchecked row still in the store, oldest first, inside a time budget. Returns [checked, malicious]. */
 function smpro_lr_verdict_all(int $budget = 50): array {
@@ -582,9 +597,12 @@ function smpro_lr_restore(string $kept, bool $force = false): array {
     if ($flags !== '') @exec('chattr +' . $flags . ' ' . escapeshellarg($dir) . ' 2>/dev/null');
     if (!$wrote) return ['ok' => false, 'msg' => 'Could not write the file back' . ($flags !== '' ? ' - the folder ' . $dir . ' is locked (chattr +' . $flags . ') and could not be unlocked' : ' - the folder ' . $dir . ' is not writable by root') . '.'];
     $against = $v['verdict'] !== 'clean';
+    $qlk = smpro_lr_qlock();
+    $all = @file(smpro_lr_dir() . '/quarantine.jsonl', FILE_IGNORE_NEW_LINES) ?: $all;   // as it is NOW, not as it was before the file was written back
     $out = [];
     foreach ($all as $l) { $r = json_decode($l, true); if (is_array($r) && ($r['kept'] ?? '') === $kept && empty($r['restored'])) { $r['restored'] = time(); $r['verdict'] = $v; if ($against) $r['restored_against'] = $v['verdict']; } $out[] = is_array($r) ? json_encode($r, JSON_UNESCAPED_SLASHES) : $l; }
-    @file_put_contents(smpro_lr_dir() . '/quarantine.jsonl', implode("\n", $out) . "\n", LOCK_EX);
+    smpro_lr_qwrite($out);
+    smpro_lr_qunlock($qlk);
     if (function_exists('smpro_audit')) smpro_audit('learn_restore', ['path' => $hit['orig'], 'sha256' => (string)($hit['sha'] ?? ''), 'verdict' => $v['verdict'], 'forced' => $against]);
     if ($against) return ['ok' => true, 'msg' => 'Put back AGAINST the check (' . $v['verdict'] . '). It is NOT remembered as safe: the next hunt reports it again, and the kept copy stays in the store.' . ($flags !== '' ? ' The folder was locked; it was unlocked for the write and locked again.' : '')];
     smpro_lr_mark_fp($hit['sha']);

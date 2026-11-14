@@ -53,6 +53,9 @@ foreach (glob($stub . '/*') ?: [] as $s) @chmod($s, 0755);
 /* 4b. Refresh tests/.build (pubkey-swappable harness copy) so crypto tests run against current source */
 $mkb = __DIR__ . '/support/make_build.sh';
 if (is_file($mkb)) { @exec('sh ' . escapeshellarg($mkb) . ' 2>&1', $bo, $brc); }
+// A copy that could not be regenerated is an OLD copy: the licence, update and kill-guard tests would then pass
+// against code that is not the code being released. That is a stop, not a warning.
+if (is_file($mkb) && (!isset($brc) || (int)$brc !== 0)) die_unsafe('tests/.build could not be regenerated (make_build.sh exit ' . (isset($brc) ? (int)$brc : -1) . "):\n" . implode("\n", (array)($bo ?? [])));
 
 /* 5. Banner */
 $sapiPhp = PHP_BINARY;

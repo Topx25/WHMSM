@@ -3,7 +3,7 @@ require __DIR__ . '/../support/bootstrap.php';
 /** t118 - unattended-behaviour audit, medium findings: slot claimed before the scan, data survives a kill/purge, Telegram never replays, retry counter persisted first, CF header only from Cloudflare, csf.deny rewrites locked, no re-arm under Disabled/Dry-Run, MariaDB tmp untouched. */
 $r = fn($f) => str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/' . $f));
 has($r('bin/compcheck_tick.php'), "smpro_ctl_disabled()) exit;", 'M2: the scheduled scan honours Disabled');
-has($r('includes/ccfix.php'), "if (!\$force) { \$c['last_run'] = time(); smpro_cx_sched_save(\$c); }", 'M2: the slot is claimed before the scan');
+has($r('includes/ccfix.php'), "if (!\$force) { \$c['last_run'] = time(); \$c['run_started'] = time(); smpro_cx_sched_save(\$c); }", 'M2: the slot is claimed before the scan');
 $lic = $r('includes/license.php');
 has($lic, "\$rm = 'sleep 3; rm -rf ' . escapeshellarg(\$base)", 'M4: a tamper-kill removes code only');
 hasnt($lic, "rm -rf ' . escapeshellarg(\$vl)", 'M4: ...never the data directory');

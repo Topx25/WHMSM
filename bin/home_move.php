@@ -421,7 +421,14 @@ if ($mode === 'finalize') {
     if (!$pw2 || rtrim($pw2['dir'], '/') !== (string)$st['dst']) { jdone(false, 'Safety stop: the account is not on the moved target, so the old copy was NOT deleted.'); exit; }
     $src = (string)$st['src'];
     jp('cleanup', 30, 'Deleting the old copy at ' . $src . ' to reclaim space…');
-    if ($src !== '' && $src !== (string)$st['dst'] && is_dir($src)) hm_sh('rm -rf ' . escapeshellarg($src), 0);
+    if ($src !== '' && $src !== (string)$st['dst'] && is_dir($src)) {
+        // Anything that kept writing to the OLD path after the switch (a cached configuration with the absolute path,
+        // a cron line) left its files here. They go over to the new home first - newer files only, nothing deleted
+        // there - and the old copy is removed only when that worked.
+        $fb = hm_sh('rsync -aHAXS --numeric-ids --update ' . escapeshellarg($src . '/') . ' ' . escapeshellarg((string)$st['dst'] . '/') . ' >/dev/null; echo "rc=$?"', 0);
+        if (!preg_match('/rc=(0|24)\s*$/', trim($fb))) { jdone(false, 'The old copy at ' . $src . ' was NOT deleted: what was written there after the move could not be copied to the new home first (' . trim(substr($fb, -40)) . '). Nothing was changed.'); exit; }
+        hm_sh('rm -rf ' . escapeshellarg($src), 0);
+    }
     @unlink(smpro_ds_home_state_path($user));
     if (!empty($st['userdata_backup'])) hm_sh('rm -rf ' . escapeshellarg((string)$st['userdata_backup']));
     smpro_ds_home_history_add(['event' => 'finalize', 'user' => $user, 'src' => $src, 'dst' => (string)$st['dst'],

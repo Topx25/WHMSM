@@ -392,7 +392,13 @@ function smpro_cx_run_scheduled(array $c = [], bool $force = false): array {
     $c = $c ?: smpro_cx_sched_cfg();
     // The slot is claimed first: a scan killed by the cron's timeout (a 300-s account scan on a slow box) used to
     // leave last_run untouched, so the same slot ran - and notified - at every 10-minute tick of that hour.
-    if (!$force) { $c['last_run'] = time(); smpro_cx_sched_save($c); }
+    // A run that was stopped before it could report (the cron's time limit on a slow server) used to leave nothing:
+    // no report, no message, and the slot already used. It is said at the start of the next run.
+    if (!$force && !empty($c['run_started']) && function_exists('smpro_notify')) {
+        @smpro_notify('compromise_check', 'Compromise Check did not finish', 'The scheduled Compromise Check that started ' . date('Y-m-d H:i', (int)$c['run_started']) . ' was stopped before it could report (most likely the time limit of the scheduled job). Nothing was checked in that run - "no message" was not "nothing found". Run it by hand from WHM > Safety Monitor Pro > Compromise Check, or narrow its scope.', ['severity' => 'high']);
+        if (function_exists('smpro_audit')) @smpro_audit('compromise_check_unfinished', ['started' => (int)$c['run_started']]);
+    }
+    if (!$force) { $c['last_run'] = time(); $c['run_started'] = time(); smpro_cx_sched_save($c); }
     $rep = ['at' => time(), 'scope' => $c['scope'], 'days' => $c['days'], 'users' => $c['users'], 'server' => [], 'accounts' => [], 'partial' => false, 'scanned' => 0];
     if ($c['scope'] !== 'accounts') $rep['server'] = smpro_cc_server_checks();
     if ($c['scope'] !== 'server') {
@@ -430,8 +436,9 @@ function smpro_cx_run_scheduled(array $c = [], bool $force = false): array {
         $body .= "\n\nOpen WHM > Safety Monitor Pro > Compromise Check to see the evidence and fix each item.";
         @smpro_notify('compromise_check', 'Compromise Check: ' . $sum, $body, ['severity' => $crit ? 'critical' : ($warn || $flagged ? 'high' : 'info')]);
     }
-    $c['last_run'] = $rep['at']; $c['last_report'] = $id; $c['last_summary'] = $sum;
-    smpro_cx_sched_save($c);
+    // the plan is read again before it is saved: one edited while the scan ran is not overwritten with the old copy
+    $cNow = smpro_cx_sched_cfg(); $cNow['last_run'] = $rep['at']; $cNow['last_report'] = $id; $cNow['last_summary'] = $sum; unset($cNow['run_started']);
+    smpro_cx_sched_save($cNow);
     if (function_exists('smpro_audit')) @smpro_audit('compromise_check_scheduled', ['summary' => $sum, 'report' => $id, 'forced' => $force ? 1 : 0]);
     return $rep;
 }

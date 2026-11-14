@@ -365,6 +365,30 @@ function smpro_teardown_network(string $by = 'uninstall'): array {
             if (@file_put_contents($tmp, implode("\n", $keep)) !== false) { @chmod($tmp, ($st['mode'] ?? 0700) & 07777); if (@rename($tmp, $cp)) $done[] = 'Removed ' . $n . ' line(s) of this product from ' . $cp; else @unlink($tmp); }
         }
     } catch (\Throwable $e) { $done[] = 'Firewall post-reload script not cleaned: ' . $e->getMessage(); }
+    try {   // Site Shield: its per-site web-server files would keep refusing visitors with nobody able to lift them from a page
+        if (!function_exists('smpro_ss_cfg')) { $f = __DIR__ . '/siteshield.php'; if (is_file($f)) require_once $f; }
+        if (function_exists('smpro_ss_cfg') && function_exists('smpro_ss_paths')) {
+            $sc = smpro_ss_cfg(); $n = 0;
+            foreach ((array)($sc['domains'] ?? []) as $sd => $si) {
+                foreach (smpro_ss_paths((string)$sd, (string)($si['user'] ?? '')) as $sp) if (@is_file($sp) && !is_link($sp)) { @unlink($sp); $n++; }
+                if (!empty($si['nginx_cache_off']) && function_exists('smpro_ss_nginx_cache')) smpro_ss_nginx_cache((string)($si['user'] ?? ''), false);
+            }
+            if ($n) {
+                $sc['domains'] = []; smpro_ss_cfg_save($sc);
+                [$sok, $smsg] = function_exists('smpro_ss_reload') ? smpro_ss_reload(true) : [false, 'not reloaded'];
+                $done[] = 'Site Shield removed from the web server (' . $n . ' file(s))' . ($sok ? '' : ' - the reload said: ' . $smsg);
+            }
+        }
+    } catch (\Throwable $e) { $done[] = 'Site Shield files not removed: ' . $e->getMessage(); }
+    try {   // the kernel audit rules this product loaded keep filling the audit log for nothing
+        $rf = defined('SMPRO_FA_RULES') ? SMPRO_FA_RULES : '/etc/audit/rules.d/smpro-files.rules';
+        if (@is_file($rf) && !is_link($rf)) {
+            @unlink($rf);
+            $ac = ''; foreach (['/usr/sbin/auditctl', '/sbin/auditctl'] as $x) if (@is_executable($x)) { $ac = $x; break; }
+            if ($ac !== '') @shell_exec('timeout 30 ' . $ac . ' -D -k ' . escapeshellarg(defined('SMPRO_FA_KEY') ? SMPRO_FA_KEY : 'smpro_files') . ' >/dev/null 2>&1');
+            $done[] = 'File-audit rules removed' . ($ac === '' ? ' from disk (they leave the kernel at the next reboot)' : '');
+        }
+    } catch (\Throwable $e) { $done[] = 'File-audit rules not removed: ' . $e->getMessage(); }
     if ($done && function_exists('smpro_audit')) @smpro_audit('teardown_network', ['by' => $by, 'done' => $done]);
     return $done;
 }
