@@ -300,11 +300,27 @@ function smpro_reboot_run() {
         return;
     }
     @unlink($pf);
-    if ($s['target'] === 'current') @shell_exec('timeout 20 grubby --set-default /boot/vmlinuz-' . escapeshellarg(smpro_rb_current()) . ' 2>&1');   // pin known-good kernel
+    if ($s['target'] === 'current') @shell_exec('timeout 20 ' . (@is_executable('/usr/sbin/grubby') ? '/usr/sbin/grubby' : 'grubby') . ' --set-default /boot/vmlinuz-' . escapeshellarg(smpro_rb_current()) . ' 2>&1');   // pin known-good kernel
     $bootK = $s['target'] === 'current' ? smpro_rb_current() : ($r['next'] ?? '');
     if (function_exists('smpro_audit')) @smpro_audit('reboot_exec', ['target' => $s['target'], 'kernel' => $bootK]);
     if (function_exists('smpro_notify')) @smpro_notify('reboot_now', 'Server rebooting now (scheduled)',
         'Safety Monitor Pro is rebooting this server now, as scheduled. Boot target: ' . $s['target'] . ' (' . $bootK . '). All pre-reboot safety checks passed. It should be back in a few minutes.', ['severity' => 'warning'], true);
     smpro_reboot_clear();   // one-shot: clear schedule + cron BEFORE rebooting so it never loops
-    @shell_exec('shutdown -r +1 "Scheduled reboot by Safety Monitor Pro (safety checks passed)" 2>&1');
+    // The command is called by its full path and its result is READ. It used to be a bare name with the output thrown
+    // away: from cron the name was not found, so "Server rebooting now" was announced and the server never restarted.
+    $sd = ''; foreach (['/usr/sbin/shutdown', '/sbin/shutdown', '/usr/bin/shutdown'] as $cand) if (@is_executable($cand)) { $sd = $cand; break; }
+    $out = $sd === '' ? 'the shutdown command was not found' : (string)@shell_exec($sd . ' -r +1 "Scheduled reboot by Safety Monitor Pro (safety checks passed)" 2>&1; echo "__SMRC__=$?"');
+    $started = $sd !== '' && (bool)preg_match('/__SMRC__=0\s*$/', $out);
+    if (!$started && @is_executable('/usr/bin/systemctl')) {          // the same request through the service manager
+        $out2 = (string)@shell_exec('/usr/bin/systemctl reboot --when=+1min 2>&1; echo "__SMRC__=$?"');
+        if (preg_match('/__SMRC__=0\s*$/', $out2)) $started = true; else $out .= ' | ' . $out2;
+    }
+    if (function_exists('smpro_audit')) @smpro_audit('reboot_started', ['ok' => $started ? 1 : 0, 'via' => $sd]);
+    if (!$started) {
+        $why = mb_substr(trim((string)preg_replace('/__SMRC__=\d+/', '', $out)), 0, 300);
+        if (function_exists('smpro_notify')) @smpro_notify('reboot_aborted', 'Scheduled reboot could NOT be started',
+            'The scheduled reboot of this server passed its safety checks but the restart command did not take: ' . ($why !== '' ? $why : 'no reason given') . '. The server is still running on what it had. A reboot planned by the automatic updates is planned again for the next window.', ['severity' => 'critical'], true);
+        if (!function_exists('smpro_su_state')) { $suf = __DIR__ . '/sysupd.php'; if (is_file($suf)) require_once $suf; }
+        if (function_exists('smpro_su_state') && function_exists('smpro_su_state_save')) { $su = smpro_su_state(); if (isset($su['reboot_reason'])) { unset($su['reboot_reason'], $su['reboot_planned_at']); smpro_su_state_save($su); } }
+    }
 }

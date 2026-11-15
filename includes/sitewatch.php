@@ -200,7 +200,7 @@ function smpro_sw_checks(string $doc): array {
     foreach (['.env', '.git/config', 'wp-config.php.bak', 'wp-config.php~', 'wp-config.bak', '.env.bak', 'database.sql', 'dump.sql', 'backup.sql', 'backup.zip', 'site.zip', 'public_html.zip', 'www.zip', 'backup.tar.gz'] as $f) if (@is_file($doc . '/' . $f)) $exp[] = $f;
     foreach ((array)@glob($doc . '/*.sql') as $f) $exp[] = basename($f);
     $exp = array_values(array_unique($exp));
-    $c[] = $exp ? ['fail', 'Files that must not be reachable from the web: ' . implode(', ', array_slice($exp, 0, 8)), 'exposed', $exp] : ['ok', 'No .env / .git / dump / backup files in the web root', 'exposed', []];
+    $c[] = $exp ? ['warn', 'Sensitive files inside the web root (only a deny rule keeps them from being served): ' . implode(', ', array_slice($exp, 0, 8)), 'exposed', $exp] : ['ok', 'No .env / .git / dump / backup files in the web root', 'exposed', []];
     $up = $doc . '/wp-content/uploads';
     if (@is_dir($up)) { $uh = $up . '/.htaccess'; $h = (@is_file($uh) && !@is_link($uh)) ? (string)@file_get_contents($uh, false, null, 0, 262144) : '';   // a pipe or a link here would hang or mislead the round
         $c[] = preg_match('/(Require all denied|Deny from all|php_flag\s+engine\s+off|SetHandler\s+none)/i', $h) ? ['ok', 'PHP cannot run inside uploads', 'uploads', []] : ['warn', 'PHP can run inside uploads', 'uploads', []]; }
@@ -297,8 +297,8 @@ function smpro_sw_check_site(string $dom, bool $withDb): array {
     $coreDue = $withDb || $coreTouched || !array_filter($prevChecks, fn($c) => ($c[2] ?? '') === 'core' && ($c[0] ?? '') !== 'info');   // a real verdict, not a "not verified" note
     $st['checks'] = array_merge(smpro_sw_checks($doc), smpro_swd_run($dom, $doc, $user, $coreDue, $batch, $prevChecks));
     foreach ($st['checks'] as $c) if ($c[2] === 'exposed') {
-        $now = $c[0] === 'fail' ? (array)$c[3] : []; sort($now);
-        if ($now && $now !== (array)($st['exposed_told'] ?? [])) smpro_sw_event_add($dom, $batch, 'critical', 'exposed', $c[1], ['path' => 'exposed', 'files' => $now]);
+        $now = $c[0] !== 'ok' ? (array)$c[3] : []; sort($now);
+        if ($now && $now !== (array)($st['exposed_told'] ?? [])) smpro_sw_event_add($dom, $batch, 'warning', 'exposed', $c[1], ['path' => 'exposed', 'files' => $now]);   // the check sees the file, not whether the web serves it: on a real server all 17 such findings answered 403/404 from outside - a warning, not a break-in
         $st['exposed_told'] = $now;
     }
     // the same event (same id) is recorded once
@@ -415,7 +415,7 @@ function smpro_sw_plan(string $dom): array {
     foreach (array_keys($ips) as $ip) if (!isset($own[$ip])) $steps[] = ['action' => 'block_ip', 'arg' => $ip, 'label' => 'Block ' . $ip . ' in the firewall (it ran an injected file)', 'safe' => true, 'event' => ''];
     foreach ((array)($st['checks'] ?? []) as $c) {
         if ($c[2] === 'uploads' && $c[0] === 'warn') $steps[] = ['action' => 'protect_uploads', 'arg' => '', 'label' => 'Protect: stop PHP from running inside uploads', 'safe' => true, 'event' => ''];
-        if ($c[2] === 'exposed' && $c[0] === 'fail') foreach ((array)$c[3] as $f) $steps[] = ['action' => 'quarantine', 'arg' => $f, 'label' => 'Move ' . $f . ' out of the web root (original kept)', 'safe' => false, 'event' => ''];
+        if ($c[2] === 'exposed' && $c[0] !== 'ok') foreach ((array)$c[3] as $f) $steps[] = ['action' => 'quarantine', 'arg' => $f, 'label' => 'Move ' . $f . ' out of the web root (original kept)', 'safe' => false, 'event' => ''];
         if ($c[2] === 'cfgperm') $steps[] = ['action' => 'cfg_perm', 'arg' => '', 'label' => 'Protect: make wp-config.php readable by its own account only (600) - only where PHP runs as the account (PHP-FPM / suPHP)', 'safe' => false, 'event' => ''];
     }
     foreach (smpro_swd_plan($dom, smpro_sw_events($dom, 300), $doc, (string)($st['user'] ?? '')) as $s) if ($s['action'] !== 'quarantine' || !isset($seen['q' . $s['arg']])) $steps[] = $s;

@@ -9,7 +9,7 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
 // --- Identity ---
 define('SMPRO_NAME',        'Safety Monitor Pro');
 define('SMPRO_SLUG',        'smpro');
-define('SMPRO_VERSION',     '1.1.10-beta431');
+define('SMPRO_VERSION',     '1.1.10-beta432');
 define('SMPRO_PACKAGED',    false);   // the release build sets this to true: a packaged copy must carry its signed file manifest
 
 /* Safety Lock - the account-side page. These five names are read by bin/register_cpuser.sh, which finds them
@@ -85,4 +85,14 @@ if (!function_exists('posix_getpwnam')) {
     }
     function posix_geteuid() { return (int)trim((string)@shell_exec('id -u 2>/dev/null')); }
     function posix_kill($pid, $sig) { return trim((string)@shell_exec('kill -' . (int)$sig . ' ' . (int)$pid . ' >/dev/null 2>&1; echo $?')) === '0'; }
+}
+
+// A worker started by cron has a search path of /usr/bin:/bin only. The system's own tools (shutdown, grubby, swapoff,
+// the firewall tools) live in the sbin folders: a bare name was simply not found there, without a word. The scheduled
+// reboot announced "rebooting now" and nothing happened. The folders are added once, for every command run from here.
+if (PHP_SAPI === 'cli' && function_exists('putenv')) {
+    $smproPath = (string)getenv('PATH'); $smproHave = array_flip(explode(':', $smproPath));
+    foreach (['/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin', '/sbin', '/bin'] as $smproDir) if (!isset($smproHave[$smproDir])) $smproPath .= ($smproPath === '' ? '' : ':') . $smproDir;
+    @putenv('PATH=' . $smproPath);
+    unset($smproPath, $smproHave, $smproDir);
 }

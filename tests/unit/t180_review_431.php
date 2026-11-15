@@ -9,7 +9,7 @@ $src = fn($p) => str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE .
 $rb = $src('includes/reboot.php');
 has($rb, "function smpro_reboot_busy(): array {", 'B1: work in progress is looked for before a reboot');
 has($rb, '\'-f "[s]cripts/upcp"\'', 'B2: the patterns cannot match the shell that carries them');
-$i = strpos($rb, '$busy = smpro_reboot_busy();'); $j = strpos($rb, "@shell_exec('shutdown -r +1");
+$i = strpos($rb, '$busy = smpro_reboot_busy();'); $j = strpos($rb, "' -r +1 \"Scheduled reboot by Safety Monitor Pro");
 ok($i !== false && $j !== false && $i < $j, 'B3: ...and it is looked for before the shutdown command');
 has($rb, "\$again = smpro_reboot_sched_save(['enabled' => true, 'at' => time() + 600, 'target' => \$s['target']]);", 'B4: the reboot waits ten minutes and tries again');
 has($rb, "if (time() - \$first < 7200) {", 'B5: for two hours at most');
