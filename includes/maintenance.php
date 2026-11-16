@@ -899,7 +899,7 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
                 @shell_exec('timeout 120 journalctl --vacuum-time=7d 2>/dev/null');
                 @shell_exec('timeout 120 journalctl --vacuum-size=200M 2>/dev/null');
             }
-            @shell_exec("timeout 90 nice -n 19 find /var/log -type f \\( -name '*.gz' -o -name '*.xz' -o -name '*.old' -o -name '*.1' -o -name '*.2' -o -name '*.3' -o -name '*.4' -o -name '*.5' -o -name '*.6' -o -name '*.7' \\) -mtime +14 -delete 2>/dev/null");
+            @shell_exec("timeout 90 nice -n 19 find /var/log -type f -not -path '/var/log/smpro/*' \\( -name '*.gz' -o -name '*.xz' -o -name '*.old' -o -name '*.1' -o -name '*.2' -o -name '*.3' -o -name '*.4' -o -name '*.5' -o -name '*.6' -o -name '*.7' \\) -mtime +14 -delete 2>/dev/null");
             $actions['journald'] = 1;   // marker - journald frees are not byte-accounted precisely
         }
     }

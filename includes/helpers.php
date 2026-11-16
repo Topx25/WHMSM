@@ -2165,6 +2165,38 @@ function smpro_acct_put(string $user, string $path, string $data, int $mode = 0)
        . 'mv -f -- "$t" "$1" || { rm -f -- "$t"; exit 5; }';
     return smpro_acct_sh($user, $s, [$path, $mode ? decoct($mode & 07777) : '', bin2hex(random_bytes(6))], $data, 60)['code'] === 0;
 }
+/**
+ * Move one regular file of an account out of its home into a root-only place (a quarantine, a backup of a delete).
+ *
+ * Root used to do this by path: rename() or copy()+unlink() after a path check. A folder of the path swapped for a
+ * link between the check and the move made root take a SYSTEM file instead. Here the file must belong to the
+ * account before the move, and what arrived is checked again - same file, same owner - and put straight back if it
+ * is not. Across filesystems the bytes are read from the handle that was checked and the delete is done AS the
+ * account, which cannot delete what is not its own.
+ */
+function smpro_acct_take(string $user, string $from, string $to): bool {
+    $pw = function_exists('posix_getpwnam') ? @posix_getpwnam($user) : false;
+    if (!is_array($pw) || (int)$pw['uid'] < 1) return false;
+    $uid = (int)$pw['uid'];
+    $st = @lstat($from);
+    if (!$st || ($st['mode'] & 0170000) !== 0100000 || (int)$st['uid'] !== $uid || file_exists($to) || is_link($to)) return false;
+    if (@rename($from, $to)) {
+        $s2 = @lstat($to);
+        if ($s2 && ($s2['mode'] & 0170000) === 0100000 && (int)$s2['uid'] === $uid && $s2['ino'] === $st['ino'] && $s2['dev'] === $st['dev']) { @chmod($to, 0600); clearstatcache(true, $to); return true; }
+        @rename($to, $from);   // not the file that was checked: back where it came from, at once
+        if (function_exists('smpro_audit')) smpro_audit('acct_take_refused', ['user' => $user, 'from' => $from, 'why' => 'the path led to another file']);
+        return false;
+    }
+    $h = @fopen($from, 'rb'); if (!$h) return false;
+    $s1 = @fstat($h);
+    if (!$s1 || $s1['ino'] !== $st['ino'] || $s1['dev'] !== $st['dev'] || (int)$s1['uid'] !== $uid) { @fclose($h); return false; }
+    $o = @fopen($to, 'xb'); if (!$o) { @fclose($h); return false; }
+    @chmod($to, 0600);
+    $n = @stream_copy_to_stream($h, $o); @fclose($h); $okc = @fclose($o);
+    if ($n === false || (int)$n !== (int)$s1['size'] || !$okc) { @unlink($to); return false; }
+    if (!smpro_acct_rm($user, $from) || @file_exists($from)) { @unlink($to); return false; }
+    return true;
+}
 /** Copy one regular file to another name as the account (neither end may be a link). */
 function smpro_acct_copy(string $user, string $from, string $to): bool {
     return smpro_acct_sh($user, '[ -f "$1" ] && [ ! -L "$1" ] && [ ! -L "$2" ] && cp -pf -- "$1" "$2"', [$from, $to], null, 120)['code'] === 0;

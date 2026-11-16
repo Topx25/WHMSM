@@ -441,7 +441,10 @@ function smpro_ntf_recent($limit = 40) {
  */
 function smpro_notify($type, $subject, $body, array $meta = [], $force = false) {
     $cfg = smpro_ntf_load();
-    $t = $cfg['types'][$type] ?? ['on' => true, 'email' => true, 'telegram' => true];
+    // An alert type the saved settings do not know yet (every type added after the operator last saved the page)
+    // goes to EVERY channel. The default used to be e-mail and Telegram only: on a server that uses WhatsApp alone,
+    // each new type - the scheduled reboot, the country wall taking itself down - was sent to nobody.
+    $t = $cfg['types'][$type] ?? ['on' => true, 'email' => true, 'telegram' => true, 'pushbullet' => true, 'whatsapp' => true];
     if (!$force && empty($t['on'])) return ['skipped' => 'type disabled'];
     // Quiet / grouped-alerts mode: batch routine alerts into a periodic digest. Load + AI-flagged
     // maximum-danger events bypass this and send immediately (see digest.php).
@@ -451,6 +454,13 @@ function smpro_notify($type, $subject, $body, array $meta = [], $force = false) 
     }
     $host = gethostname();
     $tag = strtoupper(($meta['severity'] ?? (smpro_ntf_types()[$type][2] ?? 'info')));
+    // A warning or worse is never sent to nobody. When its type is on but no channel that is switched on is ticked
+    // for it, it goes through every channel that is switched on, and says why it arrived there.
+    $chOn = array_values(array_filter(['email', 'telegram', 'pushbullet', 'whatsapp'], fn($c) => !empty($cfg[$c]['enabled'])));
+    if (in_array($tag, ['CRITICAL', 'HIGH', 'WARNING'], true) && $chOn && !array_filter($chOn, fn($c) => !empty($t[$c]))) {
+        foreach ($chOn as $c) $t[$c] = true;
+        $body .= "\n\n(This alert type has no channel chosen in Notifications, so it was sent through every channel that is switched on. Choose its channels there, or switch the type off.)";
+    }
     $full = "[$tag] $subject\n\n$body\n\n— Safety Monitor Pro on $host\n" . date('Y-m-d H:i:s T');
     $channels = []; $results = [];
     if (!empty($cfg['email']['enabled']) && !empty($t['email'])) {

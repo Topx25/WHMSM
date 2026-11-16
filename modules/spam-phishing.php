@@ -458,8 +458,14 @@ if ($reqMethod === 'POST' && in_array(($_POST['sp_action'] ?? ''), ['queue_rm_fr
     }
     $sender = strtolower(trim((string)($_POST['sender'] ?? '')));
     if (!filter_var($sender, FILTER_VALIDATE_EMAIL)) { echo json_encode(['ok' => false, 'msg' => 'Invalid sender address.']); exit; }
-    $esc = escapeshellarg($sender);
-    $n = (int)trim((string)@shell_exec("timeout 90 $exim -bp 2>/dev/null | grep -F $esc | awk '{print \$3}' | xargs -r $exim -Mrm 2>/dev/null | wc -l"));
+    // EXACTLY this sender. The queue listing used to be searched for the address as a piece of text, so removing one
+    // sender also removed the mail of every sender whose address merely contained it - for good.
+    $ids = [];
+    foreach (explode("\n", (string)@shell_exec('timeout 90 ' . $exim . ' -bp 2>/dev/null')) as $ql) {
+        if (preg_match('/^\s*\S+\s+\S+\s+([0-9A-Za-z]{6}-[0-9A-Za-z]{6,11}-[0-9A-Za-z]{2,4})\s+<([^>]*)>/', $ql, $qm) && strtolower($qm[2]) === $sender) $ids[] = $qm[1];
+    }
+    $n = 0;
+    foreach (array_chunk($ids, 100) as $chunk) $n += substr_count((string)@shell_exec('timeout 120 ' . $exim . ' -Mrm ' . implode(' ', array_map('escapeshellarg', $chunk)) . ' 2>/dev/null'), 'has been removed');
     smpro_audit('spam_queue_rm_sender', ['sender' => $sender, 'removed' => $n]);
     echo json_encode(['ok' => true, 'msg' => 'Removed ' . $n . ' queued message(s) from ' . $sender . '.']); exit;
 }
@@ -733,7 +739,7 @@ if ($reqMethod === 'POST' && ($_POST['sp_action'] ?? '') === 'remove_file') {
     if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($f)) { echo json_encode(['ok'=>false,'msg'=>'Refused: trusted WP Guard file (its own plugin/log/quarantine) — not moved.']); exit; }
     $dir = SMPRO_VARLIB . '/quarantine/phishing'; @is_dir($dir) || @mkdir($dir, 0700, true);
     $bak = $dir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', ltrim($f, '/'));
-    $moved = @rename($f, $bak);   // move out of the web root (reversible: it's the backup)
+    $moved = smpro_acct_take((string)$acct, $f, $bak);   // out of the web root (reversible: it is the backup); checked before and after the move
     @chmod($bak, 0600);
     smpro_audit('phishing_remove', ['file'=>$f,'ok'=>$moved,'backup'=>$bak]);
     echo json_encode(['ok'=>$moved,'msg'=>$moved ? 'Page quarantined (moved out of web root). Backup: ' . basename($bak) : 'Failed to move the file.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;

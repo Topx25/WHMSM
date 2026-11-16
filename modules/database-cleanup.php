@@ -548,7 +548,11 @@ function smpro_db_clean_row_core($db, $table, $field, $pk, $row, $orig, $clean, 
     $dir = SMPRO_DBC_BACKUP . '/' . preg_replace('/[^a-zA-Z0-9._-]/', '', $account);
     @is_dir($dir) || @mkdir($dir, 0700, true); @chmod(SMPRO_DBC_BACKUP, 0700);
     $bak = $dir . '/' . date('Ymd_His') . '_' . $db . '_' . $table . '_' . $field . '_' . $row . '.txt';
-    @file_put_contents($bak, $orig, LOCK_EX); @chmod($bak, 0600);
+    // The copy of the row is what "Restore" writes back. It used to be written without a look: on a full disk it was
+    // empty or short, the row was changed anyway, and a later restore put the short copy in its place.
+    $wrote = @file_put_contents($bak, $orig, LOCK_EX); @chmod($bak, 0600);
+    clearstatcache(true, $bak);
+    if ($wrote === false || (int)$wrote !== strlen((string)$orig) || (int)@filesize($bak) !== strlen((string)$orig)) { @unlink($bak); return ['ok' => false, 'msg' => 'The copy of the row could not be saved (disk full?) - nothing was changed.', 'backup' => '']; }
     $hex = bin2hex($clean);
     $sql = "UPDATE `$db`.`$table` SET `$field`=UNHEX('" . $hex . "') WHERE `$pk`=$row LIMIT 1";
     $out = (string)@shell_exec('timeout 30 ' . smpro_db_cli() . smpro_db_defaults() . ' -e ' . escapeshellarg($sql) . ' 2>&1');
@@ -660,9 +664,16 @@ function smpro_db_dump_to_home($db, $account) {
     $sink = smpro_acct_cmd((string)$account, 'umask 077; mkdir -p -- "$1" 2>/dev/null; [ -d "$1" ] && [ ! -L "$1" ] && [ ! -e "$2" ] && [ ! -L "$2" ] && exec cat > "$2"', [$dir, $path]);
     if ($sink === '') return ['ok'=>false,'msg'=>"Could not act as '$account' to save the backup."];
     $dump = is_executable('/usr/bin/mysqldump') ? '/usr/bin/mysqldump' : 'mysqldump';
-    $cmd = 'cd / && timeout 600 ' . $dump . smpro_db_defaults() . ' --single-transaction --quick --skip-lock-tables --default-character-set=binary '
-         . escapeshellarg($db) . ' 2>/dev/null | gzip -c | ' . $sink . ' 2>/dev/null';
-    @shell_exec($cmd);
+    // Every part of the pipe must end well. Only the size of the file used to be looked at: a dump killed at its
+    // time limit, stopped by a damaged table, or cut by the account's quota left a partial file, "Backup saved" was
+    // reported, and the clean-up of the whole database went ahead behind it.
+    $cmd = 'cd / && set -o pipefail; timeout 600 ' . $dump . smpro_db_defaults() . ' --single-transaction --quick --skip-lock-tables --default-character-set=binary '
+         . escapeshellarg($db) . ' 2>/dev/null | gzip -c | ' . $sink . ' 2>/dev/null; echo "__SMRC__=$?"';
+    $dout = (string)@shell_exec('/bin/bash -c ' . escapeshellarg($cmd));
+    if (!preg_match('/__SMRC__=0\s*$/', $dout)) {
+        smpro_acct_rm((string)$account, $path);
+        return ['ok'=>false,'msg'=>'The database dump did not finish (time limit, a damaged table, or the account is out of space) - no backup, so nothing will be changed.'];
+    }
     clearstatcache(true, $path);
     $bytes = (!is_link($path) && is_file($path)) ? (int)@filesize($path) : 0;
     if ($bytes < 40) { smpro_acct_rm((string)$account, $path); return ['ok'=>false,'msg'=>'mysqldump produced no output (DB empty or dump failed).']; }

@@ -950,11 +950,11 @@ if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'delete_malware') {
     $bdir = smpro_detect_backup_root() . '/' . $acct;
     @is_dir($bdir) || @mkdir($bdir, 0700, true); @chmod(smpro_detect_backup_root(), 0700);
     $sha = @hash_file('sha256', $file) ?: '';
-    $bak = $bdir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($file));
-    if (!@copy($file, $bak)) { echo json_encode(['ok'=>false,'msg'=>'Could not back up the file — aborting (nothing deleted).']); exit; }
-    @chmod($bak, 0600);
-    $deleted = @unlink($file);
-    if (!$deleted) { echo json_encode(['ok'=>false,'msg'=>'Backup saved but DELETE failed (permissions?). Backup: ' . basename($bak)]); exit; }
+    $bak = $bdir . '/' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($file));   // two files of one name in the same second keep separate copies
+    // the file is MOVED into the root-only store (that is the backup), checked before and after: root no longer
+    // copies and unlinks by a path the account can change under it
+    $deleted = smpro_acct_take((string)$acct, $file, $bak);
+    if (!$deleted) { echo json_encode(['ok'=>false,'msg'=>'The file could not be moved into the backup store, so nothing was deleted (it is not a plain file of this account, or the store is not writable).']); exit; }
     // per-action detection report
     $rid = smpro_fa_detection_report(['action'=>'delete_malware','account'=>$acct,'file'=>$file,'sha256'=>$sha,'backup'=>$bak,'actor'=>function_exists('smpro_current_actor')?smpro_current_actor():'root']);
     smpro_fa_manifest_add(['kind'=>'delete','action'=>'delete_malware','file'=>$file,'backup'=>$bak,'account'=>$acct,'sha256'=>$sha,'report'=>$rid,'label'=>'Deleted malware ' . basename($file)]);

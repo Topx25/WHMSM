@@ -339,7 +339,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
             @shell_exec('timeout 120 journalctl --vacuum-size=200M 2>&1');
         }
         // remove only ROTATED/compressed logs older than 14 days - never active logs
-        @shell_exec("timeout 90 nice -n 19 find /var/log -type f \\( -name '*.gz' -o -name '*.xz' -o -name '*.old' -o -name '*.1' -o -name '*.2' -o -name '*.3' -o -name '*.4' -o -name '*.5' -o -name '*.6' -o -name '*.7' \\) -mtime +14 -delete 2>/dev/null");
+        @shell_exec("timeout 90 nice -n 19 find /var/log -type f -not -path '/var/log/smpro/*' \\( -name '*.gz' -o -name '*.xz' -o -name '*.old' -o -name '*.1' -o -name '*.2' -o -name '*.3' -o -name '*.4' -o -name '*.5' -o -name '*.6' -o -name '*.7' \\) -mtime +14 -delete 2>/dev/null");
         $after = $pct($mnt);
         $r = ['ok'=>true,'msg'=>'Journald vacuumed (kept 7 days / 200M) and rotated logs older than 14 days removed. ' . $mnt . ' now ' . $after . '% (was ' . $before . '%).'];
     } elseif ($act === 'del_file') {
@@ -355,7 +355,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
             // Prefer rename (same filesystem -> instant, needs NO extra space) - copy-then-unlink doubles the
             // file's footprint first and fails on the ≥95%-full disk this tool exists to rescue. Fall back to
             // copy for a cross-filesystem backup dir.
-            $moved = @rename($f, $bak) || (@copy($f, $bak) && @unlink($f));
+            $moved = smpro_acct_take((string)$acct, $f, $bak);   // checked before and after the move; across filesystems the delete is done as the account
             if ($moved && function_exists('smpro_audit')) smpro_audit('disk_del_file', ['from' => $f, 'backup' => $bak, 'account' => $acct]);   // the original place, kept on the server (it used to exist only in the browser's report)
             if ($moved) { @chmod($bak,0600); $r = ['ok'=>true,'msg'=>'Deleted (backed up → ' . basename($bak) . ', restorable).']; }
             else $r = ['ok'=>false,'msg'=>'Backup/delete failed (permissions?).'];
