@@ -42,9 +42,14 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
     var jb=st.job||{},sc=st.scan||{},rs=vals(sc.results),msg;
     var unfinished=!jb.running&&sc.started&&!sc.finished;
     if(jb.running)msg=(jb.kind==='fix'?'Fixing '+(jb.done||0)+' of '+(jb.total||0)+' site(s)…':'Scanning '+(sc.done||0)+' of '+(sc.total||'?')+' sites'+(sc.current?' — now checking '+sc.current:'')+'…')+' You can close this page; it keeps running.';
-    else if(unfinished)msg='The last scan stopped at '+(sc.done||0)+' of '+(sc.total||'?')+' sites. Press "Continue scan" to check the rest, or "Scan all sites" to start again.';
+    else if(unfinished)msg='The last scan stopped at '+(sc.done||0)+' of '+(sc.total||'?')+' sites'+(sc.partial?' (the time limit of one run)':(jb.stopped_at?' while checking '+jb.stopped_at:''))+'. Press "Continue scan" to check the rest, or "Scan all sites" to start again.';
     else if(sc.finished)msg='Last scan: '+new Date(sc.finished*1000).toLocaleString()+' — '+rs.length+' sites, '+rs.filter(function(r){return r.state==='problem';}).length+' failing.';
     else msg='No scan yet. Press "Scan all sites".';
+    // what can be done about the failing ones, in three plain groups
+    var bad=rs.filter(function(r){return r.state==='problem';}),nA=0,nT=0,nN=0;
+    bad.forEach(function(r){var fs=(r.fixes||[]).filter(function(x){return !x.prep;});
+      if(!fs.length)nN++;else if(!r.locked&&fs.some(function(x){return x.auto;}))nA++;else nT++;});
+    if(bad.length)msg+=' Of the '+bad.length+' failing: '+nA+' can be repaired by automatic fixing, '+nT+' are repaired only when you tick them, '+nN+' have no known repair (the reason is in the Fix column).';
     $('sdbJob').textContent=msg; $('sdbScan').disabled=!!jb.running; $('sdbResume').style.display=unfinished?'':'none';
     var f=$('sdbFilter').value,hideOk=$('sdbHideOk').checked,q=$('sdbFind').value.toLowerCase(),h='';
     rs.forEach(function(r){
@@ -53,8 +58,11 @@ if (!defined('SMPRO_BOOT')) { http_response_code(403); exit('forbidden'); }
       if(hideOk&&r.state==='ok'&&f!=='fixed')return;
       if(f==='fixed'&&!(rp&&rp.ok&&rp.changed&&rp.changed.length))return;
       if(q&&(r.domain+' '+r.user).toLowerCase().indexOf(q)<0)return;
-      var fx=(r.fixes||[]).map(function(x){return e(x.label)+(x.auto?'':' <small>(by hand only)</small>');}).join('<br>')||(r.state==='problem'?'<small>none known — open the site</small>':'');
-      h+='<tr><td>'+(r.state==='problem'?'<input type="checkbox" class="sdbChk" value="'+e(r.domain)+'">':'')+'</td>'
+      // one meaning per row: a tick box only where ticking does something, and each repair says how it is run
+      var real=(r.fixes||[]).filter(function(x){return !x.prep;}),canFix=r.state==='problem'&&real.length>0;
+      var fx=(r.fixes||[]).map(function(x){return x.prep?'<small>First: '+e(x.label)+'</small>':e(x.label)+' <small>('+(x.auto&&!r.locked?'safe for automatic fixing':'runs when you tick this site')+')</small>';}).join('<br>');
+      if(!canFix)fx=r.state==='problem'?'<small><b>No repair to run.</b> '+e(r.advice||'Click the site name for the full evidence.')+'</small>':'';
+      h+='<tr><td>'+(canFix?'<input type="checkbox" class="sdbChk" value="'+e(r.domain)+'">':'')+'</td>'
         +'<td><a href="#" class="sdbOne" data-d="'+e(r.domain)+'">'+e(r.domain)+'</a></td><td>'+e(r.user)+'</td>'
         +'<td>'+e(r.platform||'')+(r.php?' <small>PHP '+e(r.php)+'</small>':'')+'</td>'
         +'<td><span class="sdb-pill '+(r.state==='ok'?'sdb-ok':'sdb-bad')+'">'+e(r.code||'—')+'</span></td>'

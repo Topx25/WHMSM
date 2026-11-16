@@ -17,6 +17,15 @@ if (function_exists('smpro_ctl_disabled') && smpro_ctl_disabled()) exit;
 if (!function_exists('smpro_sdb_run_job')) exit;
 @ini_set('memory_limit', '512M'); @set_time_limit(0);
 $kind = (string)($argv[1] ?? 'scan');
+if ($kind === 'diag') {   // one site, for the scan that started this process; no worker lock (the scan holds it)
+    $dom = strtolower(preg_replace('/[^A-Za-z0-9.-]/', '', (string)($argv[2] ?? '')));
+    $p = json_decode((string)base64_decode((string)($argv[3] ?? ''), true), true);
+    if ($dom === '' || !is_array($p) || !function_exists('smpro_sdb_diag')) exit(2);
+    try { $row = smpro_sdb_diag($dom, $p); }
+    catch (\Throwable $e) { $row = ['cause' => 'The detailed check of this site failed: ' . mb_substr($e->getMessage(), 0, 160) . '. The scan went on to the next site.', 'fixes' => [], 'advice' => 'Click the site name to examine it alone.', 'diag_failed' => 1]; }
+    echo "\n__SDB__" . json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit(0);
+}
 if (!in_array($kind, ['scan', 'resume', 'fix', 'daily'], true)) exit(2);
 $lk = @fopen(smpro_sdb_path('worker.lock'), 'c');
 if (!$lk || !@flock($lk, LOCK_EX | LOCK_NB)) exit;   // one worker at a time

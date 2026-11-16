@@ -34,7 +34,7 @@ function smpro_sdb_cfg_save(array $patch): array { $c = array_replace(smpro_sdb_
 function smpro_sdb_auto_allowed(string $action, string $path = ''): bool {
     // fix_wp_url edits the database; restart_phpfpm restarts a PHP pool other sites share; unharden is handled by the
     // lock rule below (a locked site is never touched automatically); restore_wp_core replaces code files.
-    if (in_array($action, ['fix_wp_url', 'restart_phpfpm', 'unharden', 'restore_wp_core'], true)) return false;
+    if (in_array($action, ['fix_wp_url', 'restart_phpfpm', 'unharden', 'restore_wp_core', 'lve_lift'], true)) return false;   // lve_lift raises an account's limits: a person decides that
     // The site's security plugin (WP Guard) is never switched off by a machine, even when it is the one failing.
     if (preg_match('#/plugins/wp-guard$#', rtrim($path, '/'))) return false;
     return true;
@@ -57,11 +57,30 @@ function smpro_sdb_extra_fixes(array $res, string $kind): array {
             if (is_dir($p) && !in_array($p, $have, true)) { $have[] = $p; $out[] = ['action' => $m[1] === 'plugins' ? 'disable_plugin' : 'disable_theme', 'path' => $p, 'label' => 'Disable ' . $m[2] . ' (it crashes the site)', 'why' => 'Uncaught error inside ' . $m[2]]; }
         }
         if (preg_match("#Failed opening required '" . preg_quote($doc, '#') . "/(wp-includes/|wp-admin/|wp-[a-z-]+\.php)#", $msg) && !in_array('restore_wp_core', array_column($out, 'action'), true))
-            $out[] = ['action' => 'restore_wp_core', 'path' => $doc, 'label' => 'Restore the WordPress core files (wp-admin, wp-includes, root files)', 'why' => 'A WordPress core file is missing - often removed by a malware clean-up or a broken update. Content, uploads and wp-config.php are not touched.'];
+            $out[] = ['action' => 'restore_wp_core', 'path' => $doc, 'label' => is_file($doc . '/wp-includes/version.php') ? 'Restore the WordPress core files (wp-admin, wp-includes, root files)' : 'Restore the WordPress core files (the version file is gone too, so the current WordPress release is installed)', 'why' => 'A WordPress core file is missing - often removed by a malware clean-up or a broken update. Content, uploads and wp-config.php are not touched.'];
     }
     if (in_array($kind, ['php_warning', 'php_deprecated'], true))
         $out[] = ['action' => 'hide_php_errors', 'path' => $doc, 'label' => 'Stop printing PHP warnings to visitors (display_errors off)', 'why' => 'Warnings are shown on the page; they stay in the error log.'];
     return $out;
+}
+
+/** The Resource Limits engine, when this server has per-account limits (CloudLinux). */
+function smpro_sdb_lve(): bool {
+    if (!function_exists('smpro_lv_present')) { $f = __DIR__ . '/lvelimits.php'; if (@is_file($f)) require_once $f; }
+    return function_exists('smpro_lv_present') && function_exists('smpro_lv_apply') && smpro_lv_present();
+}
+/**
+ * A site that answers 508 is not broken: its account is at its resource limit. The repairs are the two the Resource
+ * Limits page offers, run through that engine (same backup of the limits file, same automatic put-back):
+ *   - end the account's PHP / cron processes stuck for 2 minutes or more (frees the entry slots at once)
+ *   - lift the account's limits for an hour (only when a person ticks the site)
+ */
+function smpro_sdb_limit_fixes(string $user): array {
+    if ($user === '' || !smpro_sdb_lve()) return [];
+    return [
+        ['action' => 'lve_kill_hung', 'path' => $user, 'label' => 'End the account\'s stuck PHP processes (2 minutes or more) to free its entry slots', 'why' => 'The account is at its entry-process limit; stuck requests hold the slots.'],
+        ['action' => 'lve_lift', 'path' => $user, 'label' => 'Lift the account\'s limits for 60 minutes (they go back by themselves)', 'why' => 'Doubles entry processes, memory, processes and CPU for an hour; the limits file is backed up first.'],
+    ];
 }
 
 /** Why a 403 / listing / default page: the web root has no index page. '' when it has one. */
@@ -72,10 +91,125 @@ function smpro_sdb_noindex_cause(string $doc): string {
     return $n === 0 ? 'The web root is empty: the site has no content (upload it, or remove the domain).' : 'The web root has no index page (index.php / index.html), so the server refuses to list it.';
 }
 
+/**
+ * Can WordPress reach its database with the details in its own wp-config.php? '' = yes (or not a WordPress root),
+ * otherwise the database's own refusal in a few words. The password is used for the attempt and goes nowhere else.
+ */
+function smpro_sdb_db_check(string $doc): string {
+    if ($doc === '' || !function_exists('smpro_inv_wp_db') || !function_exists('smpro_mysqli_connect')) return '';
+    $c = smpro_inv_wp_db($doc);
+    if (!is_array($c) || (string)$c['name'] === '' || (string)$c['user'] === '') return '';
+    $host = (string)$c['host']; $port = 0; $sock = null;
+    if (strpos($host, ':') !== false) { [$host, $x] = explode(':', $host, 2); if (ctype_digit($x)) $port = (int)$x; elseif ($x !== '') $sock = $x; }
+    if ($host === '') $host = 'localhost';
+    $my = smpro_mysqli_connect($host, (string)$c['user'], (string)$c['pass'], (string)$c['name'], $port, $sock);
+    if ($my) { @mysqli_close($my); return ''; }
+    $no = (int)@mysqli_connect_errno(); $msg = (string)@mysqli_connect_error();
+    if ($no === 1045) return 'the user "' . $c['user'] . '" or its password is refused (1045)';
+    if ($no === 1044) return 'the user "' . $c['user'] . '" has no rights on the database "' . $c['name'] . '" (1044)';
+    if ($no === 1049) return 'the database "' . $c['name'] . '" does not exist (1049)';
+    if ($no === 2002 || $no === 2003 || $no === 2005) return 'the database server "' . $c['host'] . '" does not answer (' . $no . ')';
+    return $msg !== '' ? mb_substr(preg_replace('/\s+/', ' ', $msg), 0, 140) . ' (' . $no . ')' : 'the connection failed';
+}
+
+/**
+ * The diagnosis and the repair plan of ONE failing site. The table of all sites and the fix itself both use this, so
+ * what is shown is what is done.
+ *
+ *   - a WordPress that cannot reach its database is said to be exactly that. It used to be read from the page: a
+ *     plugin calling the database object got "on null", and the plugin was blamed and offered for switching off.
+ *   - unlocking locked files is a PREPARATION, not a repair. Alone it fixed nothing and was still offered as the fix.
+ *   - when nothing repairs the problem the site gets a sentence saying what to do by hand, not an empty promise.
+ *
+ * Returns ['kind','text','cause','advice','fixes' => [[action,label,path,auto,prep]]].
+ */
+function smpro_sdb_plan(array $res, array $p): array {
+    $kind = (string)($p['kind'] ?? ''); $text = (string)($p['text'] ?? '');
+    $doc = rtrim((string)($res['docroot'] ?? ''), '/');
+    $cause = (string)($res['live_cause']['msg'] ?? ($res['fatals'][0]['msg'] ?? ''));
+    $fixes = array_merge((array)($res['fixes'] ?? []), smpro_sdb_extra_fixes($res, $kind));
+    $advice = '';
+    if ($cause === '' && in_array($kind, ['http_403', 'dir_listing', 'default_page'], true)) $cause = smpro_sdb_noindex_cause($doc);
+
+    $nullDb = (bool)preg_match('/Call to a member function (get_row|get_var|get_results|get_col|query|prepare|insert|update|delete|replace|esc_like|get_charset_collate)\(\) on null/', $cause);
+    if ($doc !== '' && @is_file($doc . '/wp-config.php') && ($nullDb || in_array($kind, ['db_connect', 'db_error', 'blank', 'php_fatal', 'http_500', 'http_502', 'http_503'], true))) {
+        $why = smpro_sdb_db_check($doc);
+        if ($why !== '') {
+            $kind = 'db_connect'; $text = 'WordPress cannot reach its database.';
+            $cause = 'The database refuses the details in wp-config.php: ' . $why . '.' . ($nullDb ? ' The plugin error printed on the page is a consequence of that, not the cause.' : '');
+            $fixes = array_values(array_filter($fixes, fn($f) => !in_array((string)($f['action'] ?? ''), ['disable_plugin', 'disable_theme', 'unharden'], true)));
+            $advice = 'Compare DB_NAME, DB_USER and DB_PASSWORD in wp-config.php with cPanel > MySQL Databases (a restored or moved site often keeps the old ones). Nothing is changed here automatically.';
+        }
+    }
+
+    if ($kind === 'limit_508') {
+        $lf = smpro_sdb_limit_fixes((string)($res['user'] ?? ''));
+        // the site's code is not what is wrong at this moment: switching a plugin off or unlocking files is not offered
+        $fixes = $lf;
+        if ($cause === '') $cause = 'The account has reached its resource limit (entry processes, memory or CPU), so the server refuses new requests for it.';
+        if (!$lf) $advice = 'This server has no per-account limit tool to act on. See which of the account\'s processes are busy (Load Monitor), or raise the limits of its package.';
+    }
+    $prep = array_values(array_filter($fixes, fn($f) => (string)($f['action'] ?? '') === 'unharden'));
+    $real = array_values(array_filter($fixes, fn($f) => (string)($f['action'] ?? '') !== 'unharden'));
+    if (!$real) {
+        if ($prep && $advice === '') $advice = 'Some files of this site are locked, but unlocking them alone does not repair this problem.';
+        $fixes = [];
+    } else {
+        foreach ($prep as $k => $x) $prep[$k]['prep'] = true;
+        $fixes = array_merge($prep, $real);
+    }
+    if (!$fixes && $advice === '') {
+        $advice = in_array($kind, ['http_403', 'dir_listing', 'default_page'], true) && $cause !== ''
+            ? 'Upload the site content, or remove the domain if it is no longer used.'
+            : 'No known repair matches this problem. Click the site name for the full evidence.';
+    }
+    $out = [];
+    foreach ($fixes as $f) {
+        $act = (string)($f['action'] ?? ''); $path = (string)($f['path'] ?? '');
+        $out[] = ['action' => $act, 'label' => (string)($f['label'] ?? $act), 'path' => $path,
+                  'auto' => smpro_sdb_auto_allowed($act, $path), 'prep' => !empty($f['prep'])];
+    }
+    return ['kind' => $kind, 'text' => $text, 'cause' => $cause, 'advice' => $advice, 'fixes' => $out];
+}
+
+/** What the scan stores about one failing site, beyond the probe. */
+function smpro_sdb_diag(string $dom, array $p): array {
+    $res = smpro_inv_run($dom);
+    if (empty($res['ok'])) return ['cause' => 'The site could not be examined: ' . (string)($res['msg'] ?? 'it was not found on this server') . '.', 'fixes' => [], 'advice' => 'Click the site name to examine it alone.', 'diag_failed' => 1];
+    $plan = smpro_sdb_plan($res, $p);
+    $row = ['platform' => (string)($res['detect']['platform'] ?? ''), 'php' => (string)($res['phpver'] ?? ''),
+            'locked' => count((array)($res['hardened'] ?? [])) > 0, 'cause' => $plan['cause'], 'advice' => $plan['advice'], 'fixes' => $plan['fixes']];
+    if ($plan['kind'] !== (string)($p['kind'] ?? '')) { $row['kind'] = $plan['kind']; $row['text'] = $plan['text']; }
+    return $row;
+}
+/**
+ * The examination of one site, in a process of its own with a time limit. One site whose examination hangs or
+ * crashes used to end the whole scan ("stopped at 22 of 550"); now that site gets a line saying so and the scan goes on.
+ */
+function smpro_sdb_diag_child(string $dom, array $p): array {
+    $failed = fn(string $why): array => ['cause' => 'The detailed check of this site did not finish (' . $why . '). The scan went on to the next site.', 'fixes' => [], 'advice' => 'Click the site name to examine it alone.', 'diag_failed' => 1];
+    $bin = SMPRO_BASE . '/bin/sitedoctor_bulk.php';
+    if (defined('SMPRO_TEST_SRC') || PHP_SAPI !== 'cli' || !@is_file($bin)) {
+        try { return smpro_sdb_diag($dom, $p); } catch (\Throwable $e) { return $failed('it failed: ' . mb_substr($e->getMessage(), 0, 120)); }
+    }
+    $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : PHP_BINARY;
+    $arg = base64_encode((string)json_encode(['kind' => (string)($p['kind'] ?? ''), 'text' => (string)($p['text'] ?? ''), 'code' => (int)($p['code'] ?? 0)]));
+    $out = (string)@shell_exec('timeout 240 ' . escapeshellarg($php) . ' ' . escapeshellarg($bin) . ' diag ' . escapeshellarg($dom) . ' ' . escapeshellarg($arg) . ' 2>/dev/null');
+    $i = strrpos($out, "\n__SDB__");
+    $j = $i === false ? null : json_decode(substr($out, $i + 8), true);
+    return is_array($j) ? $j : $failed('it took longer than four minutes or stopped on an error');
+}
+
 /** Run one fix: the bulk-only actions here, everything else through the single-site engine. */
 function smpro_sdb_fix_one(string $action, string $domain, string $path): array {
     if ($action === 'hide_php_errors') return smpro_sdb_fix_hide_errors($domain);
     if ($action === 'restore_wp_core') return smpro_sdb_fix_wp_core($domain);
+    if ($action === 'lve_kill_hung' || $action === 'lve_lift') {
+        $r = smpro_inv_resolve($domain); $user = is_array($r) ? (string)$r['user'] : '';
+        if ($user === '' || !smpro_sdb_lve()) return ['ok' => false, 'msg' => 'this server has no per-account limits to act on'];
+        $x = $action === 'lve_lift' ? smpro_lv_apply('lift', ['user' => $user, 'minutes' => '60'], 'site-doctor') : smpro_lv_apply('kill_hung', ['user' => $user], 'site-doctor');
+        return ['ok' => !empty($x['ok']), 'msg' => (string)($x['msg'] ?? '')];
+    }
     return smpro_inv_fix($action, $domain, $path);
 }
 /** Write a file inside the account's web root as root without following a planted link; owner = the web root's owner. */
@@ -127,7 +261,10 @@ function smpro_sdb_fix_wp_core(string $domain): array {
     if (!is_file($doc . '/wp-config.php') || !preg_match('/^[a-z0-9_-]+$/i', $user)) return ['ok' => false, 'msg' => 'not a WordPress web root'];
     $ver = '';
     if (is_file($doc . '/wp-includes/version.php') && preg_match("/wp_version\s*=\s*'([0-9.]+)'/", (string)@file_get_contents($doc . '/wp-includes/version.php'), $m)) $ver = $m[1];
-    if ($ver === '') return ['ok' => false, 'msg' => 'the installed WordPress version could not be read - not replacing the core with a different version'];
+    // The version file can be ONE OF the missing files - the usual case this repair is offered for, and it used to
+    // refuse there. With the file gone the current WordPress release is installed (the site is down either way and
+    // what is left of the old core goes into the backup). A file that is there but unreadable is still refused.
+    if ($ver === '' && is_file($doc . '/wp-includes/version.php')) return ['ok' => false, 'msg' => 'the installed WordPress version could not be read - not replacing the core with a different version'];
     $bak = $home . '/.smpro-bak-wpcore-' . date('Ymd_His') . '.tar.gz';
     $items = array_values(array_filter(array_merge(['wp-admin', 'wp-includes'], array_map('basename', (array)glob($doc . '/*.php'))), fn($x) => $x !== 'wp-config.php' && file_exists($doc . '/' . $x)));
     $as = function (string $cmd) use ($user) { return (string)@shell_exec('timeout 300 su -s /bin/bash ' . escapeshellarg($user) . ' -c ' . escapeshellarg($cmd) . ' 2>&1'); };
@@ -217,16 +354,7 @@ function smpro_sdb_scan(array $only = [], int $budget = 3300, bool $resume = fal
         $p = smpro_sdb_probe($dom, $t['ip']);
         $row = ['domain' => $dom, 'user' => $t['user'], 'type' => $t['type'], 'checked_at' => time()] + $p;
         if ($p['state'] === 'problem' && function_exists('smpro_inv_run')) {
-            $res = smpro_inv_run($dom);
-            if (!empty($res['ok'])) {
-                $row['platform'] = (string)($res['detect']['platform'] ?? '');
-                $row['php'] = (string)($res['phpver'] ?? '');
-                $row['cause'] = (string)($res['live_cause']['msg'] ?? ($res['fatals'][0]['msg'] ?? ''));
-                $row['locked'] = count((array)($res['hardened'] ?? [])) > 0;
-                $all_f = array_merge((array)($res['fixes'] ?? []), smpro_sdb_extra_fixes($res, (string)$p['kind']));
-                $row['fixes'] = array_values(array_map(fn($f) => ['action' => (string)($f['action'] ?? ''), 'label' => (string)($f['label'] ?? ''), 'path' => (string)($f['path'] ?? ''), 'auto' => smpro_sdb_auto_allowed((string)($f['action'] ?? ''), (string)($f['path'] ?? ''))], $all_f));
-                if ($row['cause'] === '' && in_array($p['kind'], ['http_403', 'dir_listing', 'default_page'], true)) $row['cause'] = smpro_sdb_noindex_cause((string)($res['docroot'] ?? ''));
-            }
+            $row = array_merge($row, smpro_sdb_diag_child($dom, $p));
             // A site that was fixed before and fails again: say so (something put the fault back - an update, a
             // self-healing plugin, a restore), instead of showing it as a new problem.
             $prev = smpro_sdb_reports($dom, 1)[0] ?? null;
@@ -257,10 +385,10 @@ function smpro_sdb_fix_site(string $domain, bool $auto): array {
     $res = smpro_inv_run($domain);
     if (empty($res['ok'])) { $rep['steps'][] = 'Could not resolve the site: ' . (string)($res['msg'] ?? ''); return smpro_sdb_report_add($rep); }
     $rep['user'] = (string)$res['user']; $rep['platform'] = (string)($res['detect']['platform'] ?? ''); $rep['php'] = (string)($res['phpver'] ?? '');
-    $rep['problem'] = $before['text']; $rep['cause'] = (string)($res['live_cause']['msg'] ?? ($res['fatals'][0]['msg'] ?? ''));
+    $plan = smpro_sdb_plan($res, $before);   // the same plan the table showed
+    $rep['problem'] = $plan['text']; $rep['cause'] = $plan['cause'];
     if ($before['state'] === 'ok') { $rep['ok'] = true; $rep['steps'][] = 'The site already answers correctly; nothing was changed.'; $rep['after'] = $rep['before']; return smpro_sdb_report_add($rep); }
-    $fixes = array_merge((array)($res['fixes'] ?? []), smpro_sdb_extra_fixes($res, (string)$before['kind']));
-    if ($rep['cause'] === '' && in_array($before['kind'], ['http_403', 'dir_listing', 'default_page'], true)) $rep['cause'] = smpro_sdb_noindex_cause((string)($res['docroot'] ?? ''));
+    $fixes = $plan['fixes'];
     if ($auto) {
         if (!empty($res['hardened'])) { $rep['steps'][] = 'Skipped by the automatic switch: some of this site\'s files are locked (PHP Harden / WP Guard). Tick the site to fix it by hand.'; return smpro_sdb_report_add($rep); }
         $held = array_filter($fixes, fn($f) => !smpro_sdb_auto_allowed((string)($f['action'] ?? ''), (string)($f['path'] ?? '')));
@@ -269,7 +397,7 @@ function smpro_sdb_fix_site(string $domain, bool $auto): array {
     } elseif (function_exists('smpro_inv_unharden_base')) {
         $n = smpro_inv_unharden_base($res); if ($n) $rep['steps'][] = 'Cleared the immutable flag on ' . $n . ' file(s) to be edited (each is recorded for undo).';
     }
-    if (!$fixes) { $rep['steps'][] = 'No known fix matches this problem on this platform' . ($rep['platform'] !== '' ? ' (' . $rep['platform'] . ')' : '') . '. Use Diagnose on the site for the full evidence.'; $rep['after'] = $rep['before']; return smpro_sdb_report_add($rep); }
+    if (!$fixes) { $rep['steps'][] = $plan['advice'] !== '' ? 'Nothing was changed. ' . $plan['advice'] : 'No known fix matches this problem on this platform' . ($rep['platform'] !== '' ? ' (' . $rep['platform'] . ')' : '') . '. Use Diagnose on the site for the full evidence.'; $rep['after'] = $rep['before']; return smpro_sdb_report_add($rep); }
     $ids0 = array_column(smpro_inv_manifest_load(), 'id');
     $after = $before;
     foreach ($fixes as $f) {
@@ -349,7 +477,7 @@ function smpro_sdb_job(): array {
     $pid = (int)($j['pid'] ?? 0); $beat = (int)(smpro_sdb_load('scan.json')['beat'] ?? 0);
     $dead = ($pid > 0 && !@file_exists('/proc/' . $pid)) || ($pid === 0 && (int)($j['started'] ?? 0) < time() - 90)
          || (($j['kind'] ?? '') !== 'fix' && max($beat, (int)($j['started'] ?? 0)) < time() - 900);
-    if ($dead) { $j['running'] = false; $j['stopped'] = true; smpro_sdb_save('job.json', $j); }
+    if ($dead) { $j['running'] = false; $j['stopped'] = true; $j['stopped_at'] = (string)(smpro_sdb_load('scan.json')['current'] ?? ''); smpro_sdb_save('job.json', $j); }
     return $j;
 }
 /** Start the detached worker: kind scan|fix, with the sites to fix. Refuses while one is running. */
@@ -370,7 +498,15 @@ function smpro_sdb_run_job(string $kind): void {
     if ($kind === 'fix') {
         foreach ((array)$j['domains'] as $d) { smpro_sdb_fix_site((string)$d, false); $j['done'] = (int)$j['done'] + 1; smpro_sdb_save('job.json', $j); }
     } else {
-        smpro_sdb_scan([], 3300, $kind === 'resume');
+        $sc0 = smpro_sdb_scan([], 3300, $kind === 'resume');
+        // Hundreds of sites do not fit in one run. The scan used to stop at its time limit and wait for somebody to
+        // press "Continue scan"; it now starts its own continuation (a bounded number of times).
+        if (!empty($sc0['partial']) && $kind !== 'daily' && (int)($j['round'] ?? 0) < 15 && !defined('SMPRO_TEST_SRC')) {
+            smpro_sdb_save('job.json', ['kind' => 'resume', 'domains' => [], 'running' => true, 'started' => time(), 'done' => 0, 'total' => 0, 'pid' => 0, 'round' => (int)($j['round'] ?? 0) + 1]);
+            $php = function_exists('smpro_php_cli_bin') ? smpro_php_cli_bin() : 'php';
+            @shell_exec('nohup sh -c ' . escapeshellarg('sleep 6; exec timeout 3600 nice -n 10 ' . escapeshellarg($php) . ' ' . escapeshellarg(SMPRO_BASE . '/bin/sitedoctor_bulk.php') . ' resume') . ' >/dev/null 2>&1 </dev/null &');
+            return;
+        }
         $cfg = smpro_sdb_cfg();
         if ($kind === 'daily' && $cfg['auto']) {
             $scan = smpro_sdb_load('scan.json', ['results' => []]);
