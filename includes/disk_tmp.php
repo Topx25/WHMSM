@@ -388,6 +388,17 @@ function smpro_ds_tmp_expand_loop(array $plan, array &$log): array {
     smpro_ds_tmp_job_write(['phase'=>'swap','pct'=>70,'done'=>false,'msg'=>'Swapping /tmp','heartbeat'=>time()]);
     // Delta copy for anything written during PHASE A.
     @shell_exec(smpro_mnt_wrap('cp -a -u /tmp/. ' . escapeshellarg($mp) . '/ 2>/dev/null', $to));
+    // The copy's exit code is useless here - a live /tmp loses files mid-copy (sessions, sockets) so `cp` returns
+    // non-zero in the normal case. But a copy that moved NOTHING while /tmp holds data is a real failure (the
+    // staging fs filled, or the mount went away): swapping then would hand every service an EMPTY /tmp and drop
+    // every session. So: if /tmp has entries and staging has none, ABORT now - the old /tmp is still mounted and
+    // nothing was detached, so the rollback is clean. (An already-empty /tmp legitimately copies to an empty one.)
+    $srcN = (int)trim((string)@shell_exec('ls -A /tmp 2>/dev/null | head -1000 | wc -l'));
+    $dstN = (int)trim((string)@shell_exec('ls -A ' . escapeshellarg($mp) . ' 2>/dev/null | head -1000 | wc -l'));
+    if ($srcN > 0 && $dstN === 0) {
+        $rb = smpro_ds_tmp_rollback_loop('prestage', $d, $log);   // old /tmp never detached -> clean
+        return $fail('The copy of /tmp into the new image moved nothing (new image has ' . $dstN . ' entries, /tmp has ' . $srcN . '); the staging filesystem may be full. Aborted with the old /tmp intact.', true, !empty($rb['critical']));
+    }
     // Free the new fs so it can be mounted at /tmp.
     @shell_exec(smpro_mnt_wrap('umount ' . escapeshellarg($mp) . ' 2>&1', 60));
     // HARD ASSERT: the staging mount/loop MUST be gone before we open a loop on $new_file at /tmp - on

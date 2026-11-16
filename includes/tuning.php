@@ -971,8 +971,24 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         if (preg_match('/^\s*\[mysqld\]/im', $c)) $new = preg_replace('/^(\s*\[mysqld\][^\n]*\n)/im', "$1" . implode("\n", $lines) . "\n", $c, 1);
         else $new = "[mysqld]\n" . implode("\n", $lines) . "\n" . $c;
         if (@file_put_contents($file, $new, LOCK_EX) === false) return ['ok' => false, 'msg' => 'Could not write ' . $file . ' (permission denied).'];
+        // VALIDATE before we leave it there. "Takes effect on the next restart" is only safe if the next restart
+        // actually succeeds: a bad directive (or a buffer pool bigger than RAM) makes MySQL fail to start weeks
+        // later, after a reboot or an update, with nobody connecting that to this change. The server itself checks
+        // the file (mysqld --validate-config on 8.0+/MariaDB 10.4+, else --help --verbose which parses it the same
+        // way); if it is unreadable or rejects the file, put the backup straight back and refuse.
+        $mv = '';
+        foreach (['mysqld', 'mariadbd'] as $bin) { $p = trim((string)@shell_exec('command -v ' . $bin . ' 2>/dev/null')); if ($p !== '') { $mv = $p; break; } }
+        if ($mv !== '') {
+            $chk = (string)@shell_exec('timeout 30 ' . escapeshellarg($mv) . ' --defaults-file=' . escapeshellarg($file) . ' --validate-config 2>&1; echo "__rc=$?"');
+            if (strpos($chk, '--validate-config') !== false && stripos($chk, 'unknown') !== false)   // older server: no --validate-config, parse via --help
+                $chk = (string)@shell_exec('timeout 30 ' . escapeshellarg($mv) . ' --defaults-file=' . escapeshellarg($file) . ' --help --verbose >/dev/null 2>/tmp/.smpro_mycnf_chk; echo "__rc=$?"; cat /tmp/.smpro_mycnf_chk 2>/dev/null; rm -f /tmp/.smpro_mycnf_chk');
+            if (!preg_match('/__rc=0\b/', $chk)) {
+                @file_put_contents($file, $c, LOCK_EX);   // restore exactly what was there
+                return ['ok' => false, 'msg' => 'The server rejected the new my.cnf, so nothing was changed. ' . trim(mb_substr(preg_replace('/__rc=\d+/', '', $chk), -200))];
+            }
+        }
         smpro_tun_profile_add([['engine' => 'mysql', 'id' => $recId, 'change' => implode('; ', $lines), 'from' => $rec['current']]]);
-        return ['ok' => true, 'applied' => implode('; ', array_slice($lines, 1)), 'note' => 'Added to my.cnf — takes effect on the NEXT MySQL restart (do it at a quiet time). Not restarted now (safe).', 'needs_restart' => 'mysql'];
+        return ['ok' => true, 'applied' => implode('; ', array_slice($lines, 1)), 'note' => 'Added to my.cnf' . ($mv !== '' ? ' (the server validated the file)' : '') . ' — takes effect on the NEXT MySQL restart (do it at a quiet time). Not restarted now (safe).', 'needs_restart' => 'mysql'];
     }
     // Apache: cPanel-safe Include drop-in (NOT httpd.conf - survives EasyApache rebuilds), validated + graceful reload + auto-rollback.
     if ($kind === 'apache_inc') {
