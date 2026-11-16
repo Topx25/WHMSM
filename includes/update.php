@@ -209,6 +209,15 @@ function smpro_upd_apply($version = '', $force = false) {
     @shell_exec('cp -a ' . escapeshellarg($dest) . '/. ' . escapeshellarg($bk) . '/ 2>/dev/null');
     $pruned = smpro_upd_prune_backups();   // the copy above is the newest, so it is always among the kept ones
 
+    // CRASH MARKER: the copy below is not atomic, and the rollback that follows lives in THIS process. If the
+    // machine loses power (or the worker is killed) between the copy and the verify, the tree is left half old /
+    // half new and nothing restores it - the integrity gate would only LOCK it. The marker names the backup and
+    // the version it protects; it is written BEFORE the first byte is overwritten and removed only once verify
+    // passes. smpro_upd_recover_interrupted() (run from the integrity gate) finishes the rollback if we never do.
+    $mark = SMPRO_VARLIB . '/update_in_progress.json';
+    @file_put_contents($mark, json_encode(['backup' => $bk, 'from' => $from, 'to' => $ver, 'dest' => $dest, 'started' => time()], JSON_UNESCAPED_SLASHES), LOCK_EX);
+    @chmod($mark, 0600);
+
     // apply: overlay the new payload over the live dir (php/cgi/assets updated; data dirs are OUTSIDE web root)
     @shell_exec('cp -a ' . escapeshellarg($payload) . '/. ' . escapeshellarg($dest) . '/ 2>/dev/null');
     @shell_exec('chown -R root:root ' . escapeshellarg($dest) . ' 2>/dev/null');
@@ -250,10 +259,43 @@ function smpro_upd_apply($version = '', $force = false) {
     smpro_upd_register();
 
     smpro_upd_rrmdir($ex); @unlink($tgz); @unlink($hdr); $cleanup();
+    @unlink($mark);   // verify passed and the prune is done: the window is closed, the crash marker goes
 
     $c = smpro_upd_cfg(); $c['last_apply'] = time(); $c['last_result'] = 'updated to ' . ($ver ?: 'latest'); smpro_upd_cfg_save($c);
     if (function_exists('smpro_audit')) smpro_audit('self_update', ['from' => $from, 'to' => $ver, 'backup' => $bk, 'pruned_backups' => $pruned]);
     return ['ok' => true, 'from' => $from, 'to' => $ver ?: 'latest', 'backup' => $bk];
+}
+
+/**
+ * Finish a rollback that a crash interrupted. smpro_upd_apply writes update_in_progress.json before it overwrites
+ * the first file and removes it only once the new build has passed its parse + hash verify. If the machine lost
+ * power (or the worker was killed) in between, the marker is still there and the live tree is half old / half new:
+ * without this it would only get LOCKED by the integrity gate and wait for a human. Called at the very top of the
+ * integrity gate, on every load. It restores the backup the marker names and clears the marker.
+ *
+ * It does nothing while an apply may still be running (the marker is younger than the single-flight lock's life):
+ * only a marker older than the apply could possibly be is treated as a crash, so a live update is never fought.
+ */
+function smpro_upd_recover_interrupted(): bool {
+    $mark = SMPRO_VARLIB . '/update_in_progress.json';
+    if (!@is_file($mark)) return false;
+    $m = json_decode((string)@file_get_contents($mark), true);
+    if (!is_array($m) || empty($m['backup']) || empty($m['dest'])) { @unlink($mark); return false; }
+    // Still in the window where a real apply could legitimately hold it? An apply copies + parse-checks + hashes a
+    // few hundred files; give it a generous ceiling. Younger than that -> leave it, an update may be mid-flight.
+    if (time() - (int)($m['started'] ?? 0) < 900) return false;
+    $bk = (string)$m['backup']; $dest = (string)$m['dest'];
+    if (!@is_dir($bk) || !@is_dir($dest)) { @unlink($mark); return false; }
+    // single-flight: take the same lock the apply uses, so a recovery and a just-starting apply can't both copy.
+    $lock = defined('SMPRO_UPD_LOCK') ? @fopen(SMPRO_UPD_LOCK, 'c') : false;
+    if ($lock && !@flock($lock, LOCK_EX | LOCK_NB)) { @fclose($lock); return false; }   // an apply holds it -> not a crash
+    @shell_exec('cp -a ' . escapeshellarg($bk) . '/. ' . escapeshellarg($dest) . '/ 2>/dev/null');
+    @shell_exec('chown -R root:root ' . escapeshellarg($dest) . ' 2>/dev/null');
+    @unlink($mark);
+    if ($lock) { @flock($lock, LOCK_UN); @fclose($lock); }
+    if (function_exists('smpro_audit')) @smpro_audit('update_recovered', ['restored' => $bk, 'from' => (string)($m['from'] ?? ''), 'to' => (string)($m['to'] ?? ''), 'age' => time() - (int)($m['started'] ?? 0)]);
+    if (function_exists('smpro_notify')) @smpro_notify('update_available', 'Interrupted update recovered', 'A self-update of SM Pro was interrupted (power loss or a killed process) with the files half-replaced. The previous version was restored from its backup automatically and is running. Try the update again at a quiet moment.', ['severity' => 'high']);
+    return true;
 }
 
 /** SELF-HEAL the WHM menu entry: if the AppConfig registration is missing (a cPanel upcp/rebuild can wipe

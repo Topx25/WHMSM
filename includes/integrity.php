@@ -95,6 +95,10 @@ function smpro_integrity_state_save(array $s) {
  * 2s live-poll endpoint doesn't re-hash every call. A critical mismatch -> Protected Mode immediately.
  */
 function smpro_integrity_gate() {
+    // Finish a rollback a crash interrupted BEFORE judging the tree: a half-replaced install (power lost mid-copy)
+    // would otherwise be read as tampering and LOCKED, waiting for a human. This restores the backup and clears
+    // the marker; only a marker too old to be a live update is acted on, so a running update is never fought.
+    if (function_exists('smpro_upd_recover_interrupted')) { try { smpro_upd_recover_interrupted(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('integrity_gate:recover', $e); } }
     $st = is_file(SMPRO_INTEG_STATE) ? (array)json_decode((string)@file_get_contents(SMPRO_INTEG_STATE), true) : [];
     if (!empty($st['locked'])) {
         // Locked earlier - check again now (five hashes). A lock taken while an update was half copied used to stay
