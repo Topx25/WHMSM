@@ -1686,6 +1686,57 @@ function smpro_csf_allow_add($ip, $reason = '') {
             'msg'=>($ok ? ($ip . ' added to csf.allow (never block)') : ('csf.allow not writable for ' . $ip)) . ($live !== '' ? ' + applied live to ' . $live . '.' : ($ok ? '.' : ' — and no live iptables to apply to.'))];
 }
 /**
+ * The reverse of smpro_csf_allow_add: take an address back OUT of csf.allow.
+ *
+ * "Allow" and "Remove allow" were not a pair: an address allowed by hand (a mistake, or a one-off that is over)
+ * stayed in csf.allow forever, which means NEVER BLOCK - so it could not be blocked again by anything, and no
+ * button took it off. That is the hole this closes. Mirrors the add: `csf -ar` first, then VERIFY against the
+ * file, and if CSF was a no-op (disabled/TESTING) strip the matching line(s) directly. Judged only by the
+ * address really being gone from csf.allow, never by csf's stdout.
+ *
+ * REFUSES the operator's own current address (removing it could lock the panel out mid-session) and anything
+ * still carrying another manager's note that is not ours - "Remove allow" is for an allow a person added here,
+ * not for a provider range the auto-update maintains or the self-IP offer placed. The caller passes an explicit override
+ * only for an explicit "yes, remove it anyway".
+ */
+function smpro_csf_allow_remove($ip, $selfOverride = false) {
+    $ip = trim((string)$ip);
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) return ['ok'=>false,'msg'=>'invalid IP'];
+    if (!smpro_csf_allowlisted($ip)) return ['ok'=>true,'already'=>true,'msg'=>$ip . ' is not in csf.allow.'];
+    if (!$selfOverride && function_exists('smpro_admin_ip') && $ip === smpro_admin_ip())
+        return ['ok'=>false,'refused'=>true,'msg'=>'Refused — that is YOUR current address; removing its allow mid-session could lock you out. Remove it from another machine if you mean to.'];
+    $csf = function_exists('smpro_im_csf_bin') ? smpro_im_csf_bin() : (function_exists('smpro_csf_bin') ? smpro_csf_bin() : '');
+    if ($csf !== '') @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -ar ' . escapeshellarg($ip) . ' 2>&1');
+    clearstatcache();
+    if (smpro_csf_allowlisted($ip)) {                              // csf disabled / no-op, or csf -ar left it -> strip the line(s) directly
+        $f = '/etc/csf/csf.allow';
+        if (is_file($f) && is_writable($f)) {   // csf.allow has no dedicated lock helper; LOCK_EX on write is the guard
+            $kept = array_filter(file($f, FILE_IGNORE_NEW_LINES) ?: [], function ($l) use ($ip) {
+                $t = trim($l);
+                if ($t === '' || $t[0] === '#') return true;             // keep blanks + comments
+                $tok = preg_split('/[\s#]/', $t, 2)[0];                  // the address/CIDR this line allows
+                return $tok !== $ip;                                      // drop only an EXACT match (never a CIDR that merely contains it)
+            });
+            @file_put_contents($f, implode("\n", $kept) . "\n", LOCK_EX);
+            clearstatcache();
+            if ($csf !== '' && !smpro_csf_allowlisted($ip) && function_exists('smpro_csf_testing') && !smpro_csf_testing())
+                @shell_exec('timeout 25 ' . escapeshellarg($csf) . ' -r >/dev/null 2>&1');   // reload so the removed line leaves the running firewall
+        }
+    }
+    clearstatcache();
+    $gone = !smpro_csf_allowlisted($ip);
+    // also drop the live top-of-INPUT ACCEPT and our live-allow store, so "never block" is truly lifted everywhere.
+    // Done inline (not via smpro_fw_live_remove) so the two removers never call back into each other.
+    if ($gone) {
+        if (function_exists('smpro_fw_ipt_all')) @smpro_fw_ipt_all($ip, 'ACCEPT', true);
+        if (function_exists('smpro_fw_live_list') && function_exists('smpro_fw_live_save')) {
+            $ll = smpro_fw_live_list(); if (in_array($ip, $ll, true)) smpro_fw_live_save(array_values(array_filter($ll, fn($x) => $x !== $ip)));
+        }
+    }
+    if (function_exists('smpro_audit')) @smpro_audit('csf_allow_remove', ['ip'=>$ip, 'gone'=>$gone ? 1 : 0, 'force'=>$selfOverride ? 1 : 0]);
+    return ['ok'=>$gone, 'msg'=>$gone ? ($ip . ' removed from csf.allow — it can be blocked again.') : ('could not remove ' . $ip . ' from csf.allow')];
+}
+/**
  * Make an allow take effect on the LIVE firewall immediately, regardless of CSF state (enabled / disabled / TESTING /
  * desynced with stale rules still loaded). Inserts a top-of-INPUT ACCEPT for $ip into the live iptables (v4) or
  * ip6tables (v6). Because it sits at position 1 of the filter INPUT chain it is evaluated BEFORE the jumps to every

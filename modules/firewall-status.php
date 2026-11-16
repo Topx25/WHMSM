@@ -576,8 +576,16 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'ipadd') {
     // Imunify) PLUS a live iptables rule, so adding an IP works even when CSF is not installed/active.
     $ip = trim((string)($_POST['ip'] ?? ''));
     if (!filter_var($ip, FILTER_VALIDATE_IP)) { echo json_encode(['ok'=>false,'msg'=>'Enter a valid IP address.']); exit; }
-    $op = (($_POST['op'] ?? '') === 'block') ? 'block' : 'allow';
+    $op = in_array(($_POST['op'] ?? ''), ['block', 'unallow'], true) ? (string)$_POST['op'] : 'allow';
     $reason = preg_replace('/[^A-Za-z0-9 ._\-\/:]/', '', mb_substr(trim((string)($_POST['reason'] ?? '')), 0, 80));
+    if ($op === 'unallow') {
+        // The counterpart of "allow": take an address back OUT of csf.allow so it is no longer "never block".
+        // Without this an address allowed by mistake could never be blocked again and no button removed it.
+        $force = ($_POST['force'] ?? '') === '1';
+        $r = function_exists('smpro_csf_allow_remove') ? smpro_csf_allow_remove($ip, $force) : ['ok'=>false,'msg'=>'No allow-remove method available.'];
+        smpro_audit('firewall_ip_unallow', ['ip'=>$ip, 'ok'=>!empty($r['ok']), 'refused'=>!empty($r['refused']), 'actor'=>smpro_current_actor()]);
+        echo json_encode(['ok'=>!empty($r['ok']), 'refused'=>!empty($r['refused']), 'msg'=>(string)$r['msg']], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+    }
     if ($op === 'allow') {
         // works WITH or WITHOUT CSF: CSF allow-list and/or Imunify whitelist + a live iptables INPUT ACCEPT
         $r = function_exists('smpro_fw_live_allow') ? smpro_fw_live_allow($ip, $reason ?: 'manual allow')
@@ -1599,6 +1607,7 @@ $ccExtra   = array_values(array_diff($ccChecked, $ccKnown));
       <option value="72h">Block: 72 hours (temp)</option>
     </select>
     <button class="fw-act fix" type="button" id="ipAllowBtn">&#9989; Allow (whitelist)</button>
+    <button class="fw-act" type="button" id="ipUnallowBtn" title="Take an address back out of csf.allow — the counterpart of Allow, so an address allowed by mistake can be blocked again">&#8630; Remove allow</button>
     <button class="fw-act danger" type="button" id="ipBlockBtn">&#9940; Block</button>
   </div>
 </div>
@@ -1943,17 +1952,23 @@ table.gr-tbl tr.gr-live td{background:rgba(220,38,38,.06)}
     var DLBL={'1h':'1 hour','6h':'6 hours','24h':'24 hours','72h':'72 hours'};
     var q=(op==='block')
       ?((dur!=='permanent'&&DLBL[dur])?('Temporarily block '+ip+' for '+DLBL[dur]+'? It auto-expires.'):('Block '+ip+' permanently (csf.deny)?'))
+      :(op==='unallow')?('Remove the allow for '+ip+'?\n\nIt will no longer be "never block" — after this it can be blocked again.')
       :('Whitelist '+ip+'?');
     if(!confirm(q))return;
-    var btn=document.getElementById(op==='block'?'ipBlockBtn':'ipAllowBtn');var old=btn.innerHTML;btn.disabled=true;btn.innerHTML='⏳';
+    var btn=document.getElementById(op==='block'?'ipBlockBtn':(op==='unallow'?'ipUnallowBtn':'ipAllowBtn'));var old=btn.innerHTML;btn.disabled=true;btn.innerHTML='⏳';
     var fd=new URLSearchParams();fd.set('smpro_csrf',FW_CSRF);fd.set('fw_action','ipadd');fd.set('op',op);fd.set('ip',ip);fd.set('reason',reason);fd.set('dur',dur);
-    fetch('index.cgi?page=firewall-status',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString(),cache:'no-store'})
-     .then(function(r){return r.json();}).then(function(j){alert((j&&j.ok?'✅ ':'⚠ ')+((j&&j.msg)||'Done'));if(j&&j.ok)setTimeout(function(){location.reload();},900);else{btn.disabled=false;btn.innerHTML=old;}})
-     .catch(function(){btn.disabled=false;btn.innerHTML=old;alert('Request failed.');});
+    function send(){fetch('index.cgi?page=firewall-status',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString(),cache:'no-store'})
+     .then(function(r){return r.json();}).then(function(j){
+       // "Remove allow" refuses your OWN current address unless you confirm the override (locking yourself out risk)
+       if(op==='unallow'&&j&&j.refused&&!fd.get('force')){if(confirm((j.msg||'')+'\n\nRemove it anyway?')){fd.set('force','1');btn.disabled=true;btn.innerHTML='⏳';return send();}btn.disabled=false;btn.innerHTML=old;return;}
+       alert((j&&j.ok?'✅ ':'⚠ ')+((j&&j.msg)||'Done'));if(j&&j.ok)setTimeout(function(){location.reload();},900);else{btn.disabled=false;btn.innerHTML=old;}})
+     .catch(function(){btn.disabled=false;btn.innerHTML=old;alert('Request failed.');});}
+    send();
   }
-  var a=document.getElementById('ipAllowBtn'),b=document.getElementById('ipBlockBtn');
+  var a=document.getElementById('ipAllowBtn'),b=document.getElementById('ipBlockBtn'),ua=document.getElementById('ipUnallowBtn');
   if(a)a.addEventListener('click',function(){ipact('allow');});
   if(b)b.addEventListener('click',function(){ipact('block');});
+  if(ua)ua.addEventListener('click',function(){ipact('unallow');});
   // "Allow my IP" banner button
   var mine=document.getElementById('fwAllowMine');
   if(mine)mine.addEventListener('click',function(){
