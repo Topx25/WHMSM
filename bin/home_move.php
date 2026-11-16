@@ -232,6 +232,36 @@ function hm_rewrite_userdata($user, $src, $dst) {
     }
     return $n;
 }
+/**
+ * The account's scheduled jobs name the home by its full path. They kept running from the OLD copy after a move -
+ * old code on old data - and stopped altogether when "Reclaim space" removed it. The job list is root's file in the
+ * spool, not a file inside the account: it is rewritten the same way as the account's records, the previous list is
+ * kept first. Returns the number of lines changed (0 = nothing named the old path), -1 = it could not be written.
+ */
+function hm_cron_rewrite($user, $from, $to) {
+    $cf = '/var/spool/cron/' . $user;
+    if (!preg_match('/^[a-z0-9][a-z0-9._-]{0,31}$/i', (string)$user) || !is_file($cf) || is_link($cf)) return 0;
+    $c = (string)@file_get_contents($cf);
+    if ($c === '' || strpos($c, $from) === false) return 0;
+    $re = '#' . preg_quote($from, '#') . '(?=/|$|[\s:;"\'])#m';
+    $nc = preg_replace($re, $to, $c, -1, $n);
+    if ($nc === null || $nc === $c || !$n) return 0;
+    $keep = SMPRO_VARLIB . '/backups/homemove'; @is_dir($keep) || @mkdir($keep, 0700, true);
+    if (@file_put_contents($keep . '/' . $user . '-crontab-' . date('Ymd_His'), $c) === false) return -1;   // no copy of the list, no change to it
+    $st = @stat($cf); $tmp = $cf . '.smpro-' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, $nc, LOCK_EX) === false) { @unlink($tmp); return -1; }
+    @chmod($tmp, ($st['mode'] ?? 0600) & 07777); @chown($tmp, (int)($st['uid'] ?? 0)); @chgrp($tmp, (int)($st['gid'] ?? 0));
+    if (!@rename($tmp, $cf)) { @unlink($tmp); return -1; }
+    @touch('/var/spool/cron');   // the scheduler re-reads a list when its folder changed
+    return (int)$n;
+}
+/** Settings files inside the account that still name the old path (reported, never edited: they are the account's own). */
+function hm_old_refs($home, $old) {
+    if (!is_dir($home) || $old === '') return [];
+    $o = hm_sh('find ' . escapeshellarg($home) . ' -xdev -maxdepth 5 -type f \\( -name .user.ini -o -name php.ini -o -name .htaccess -o -name wp-config.php \\) -size -512k -print0 2>/dev/null'
+        . ' | xargs -0 -r grep -lF -- ' . escapeshellarg($old . '/') . ' 2>/dev/null | head -20', 60);
+    return array_values(array_filter(array_map('trim', explode("\n", $o)), fn($x) => $x !== '' && $x[0] === '/'));
+}
 /** Rebuild every generated config that derives from passwd + userdata. Returns a log string. */
 function hm_rebuild($user) {
     $log = '';
@@ -271,7 +301,7 @@ if ($mode === 'move') {
     // ALREADY on the target, re-running the copy would be wrong - pick up from the rebuild instead. rsync
     // itself is resumable, so an interrupted copy simply continues where it stopped.
     $prev = smpro_ds_home_state_read($user);
-    $resumed = !empty($prev['user']) && $prev['user'] === $user && ($prev['status'] ?? '') === 'moving';
+    $resumed = !empty($prev['user']) && $prev['user'] === $user && in_array((string)($prev['status'] ?? ''), ['copying', 'moving'], true);
     $alreadyFlipped = rtrim($pw['dir'], '/') === rtrim($troot, '/') . '/' . $user;
 
     if (!$alreadyFlipped) {
@@ -303,6 +333,10 @@ if ($mode === 'move') {
         $RS = 'rsync -aHAXS --numeric-ids --partial --info=progress2 --out-format=%n ';   // --out-format prints each transferred file so the details view can show them
         $JOB['phase'] = 'rsync';
         jp('rsync', 8, 'Copying ' . $user . ' to ' . $troot . ($resumed ? ' (resuming)' : '') . ' — the site stays up');
+        // recorded when the copy STARTS: what is on the target from here on is this account's own unfinished copy, and
+        // a retry after an interruption continues it instead of failing its pre-flight on "target not empty"
+        smpro_ds_home_state_write(['user' => $user, 'src' => $src, 'dst' => $dst, 'target_root' => $troot, 'oldhome' => $src,
+            'account_bytes' => $total, 'status' => 'copying', 'ts' => (int)($prev['ts'] ?? time())]);
         @mkdir($dst, 0711, true); @chown($dst, $uid); @chgrp($dst, $gid);
         hm_rsync_progress($RS . escapeshellarg($src . '/') . ' ' . escapeshellarg($dst . '/'),
             $total, 'Copying ' . $user . ' to ' . $troot, 8, 55);
@@ -329,14 +363,26 @@ if ($mode === 'move') {
         hm_sh('rm -rf ' . escapeshellarg($udBak) . '; cp -a /var/cpanel/userdata/' . escapeshellarg($user) . ' ' . escapeshellarg($udBak));
     }
     smpro_ds_home_state_write(['user' => $user, 'src' => $src, 'dst' => $dst, 'target_root' => $troot, 'oldhome' => $src,
-        'userdata_backup' => $udBak, 'account_bytes' => $total, 'status' => 'moving', 'ts' => (int)($prev['ts'] ?? time())]);
+        'userdata_backup' => $udBak, 'account_bytes' => $total, 'status' => 'moving', 'ts' => (int)($prev['ts'] ?? time()), 'flipped_at' => (int)($prev['flipped_at'] ?? 0)]);
 
     $nrw = 0;
     if (!$alreadyFlipped) {
         jp('flip', 70, 'Switching ' . $user . ' to the new home directory…');
         $um = hm_sh('/usr/sbin/usermod -d ' . escapeshellarg($dst) . ' ' . escapeshellarg($user), 60);
+        // Did it take? The answer was never read: when usermod refused (the account has running processes), the web
+        // configuration was rewritten to the new path anyway - the site served the new copy while mail, cron and the
+        // account record stayed on the old one. Nothing is rewritten unless the account really is on the new home.
+        clearstatcache(); $pwf = posix_getpwnam($user);
+        if (!$pwf || rtrim((string)$pwf['dir'], '/') !== rtrim($dst, '/')) {
+            $stc = smpro_ds_home_state_read($user); $stc['status'] = 'copying'; smpro_ds_home_state_write($stc, $user);
+            jdone(false, 'The account could not be pointed at the new home (usermod: ' . trim(mb_substr((string)$um, 0, 200)) . '). ' . $user . ' still runs from ' . $src
+                . ' and nothing else was changed. The copy on ' . $dst . ' is kept; start the move again at a quiet moment (it continues from the copy).');
+            exit(1);
+        }
+        $stf = smpro_ds_home_state_read($user); $stf['flipped_at'] = time(); smpro_ds_home_state_write($stf, $user);
     }
     $nrw = hm_rewrite_userdata($user, $src, $dst);   // idempotent: a no-op if already rewritten
+    $ncr = hm_cron_rewrite($user, $src, $dst);       // the same for the account's scheduled jobs
 
     jp('rebuild', 80, 'Rebuilding web/PHP/quota configuration for ' . $user . '…');
     $rlog = hm_rebuild($user);
@@ -387,8 +433,16 @@ if ($mode === 'rollback') {
     $src = (string)$st['src']; $dst = (string)$st['dst']; $udBak = (string)($st['userdata_backup'] ?? '');
     jp('flip', 20, 'Pointing the account back to ' . $src . '…');
     hm_sh('/usr/sbin/usermod -d ' . escapeshellarg($src) . ' ' . escapeshellarg($user), 60);
-    if ($udBak !== '' && is_dir($udBak)) {
-        hm_sh('rm -rf /var/cpanel/userdata/' . escapeshellarg($user) . '; cp -a ' . escapeshellarg($udBak) . ' /var/cpanel/userdata/' . escapeshellarg($user));
+    // The account's records are rewritten back to the old path. They used to be REPLACED by the copy taken at move
+    // time: every domain, sub-domain and certificate added since the move was lost with the roll-back. That copy is
+    // now only the fallback, when a record still names the new path after the rewrite.
+    hm_rewrite_userdata($user, $dst, $src);
+    hm_cron_rewrite($user, $dst, $src);
+    $stillNew = trim(hm_sh('grep -rl ' . escapeshellarg($dst . '/') . ' /var/cpanel/userdata/' . escapeshellarg($user) . ' 2>/dev/null | head -1'));
+    if ($stillNew !== '' && $udBak !== '' && is_dir($udBak)) {
+        $keepUd = '/var/cpanel/userdata/' . $user . '.smpro-before-rollback-' . date('Ymd_His');
+        hm_sh('mv /var/cpanel/userdata/' . escapeshellarg($user) . ' ' . escapeshellarg($keepUd) . ' && cp -a ' . escapeshellarg($udBak) . ' /var/cpanel/userdata/' . escapeshellarg($user));
+        if (!is_dir('/var/cpanel/userdata/' . $user)) hm_sh('mv ' . escapeshellarg($keepUd) . ' /var/cpanel/userdata/' . escapeshellarg($user));   // the copy failed: the records go back as they were
     }
     jp('rebuild', 55, 'Rebuilding configuration…');
     hm_rebuild($user);
@@ -399,7 +453,11 @@ if ($mode === 'rollback') {
         // The account has been LIVING on the new home since the move. What it wrote there goes back first (newer
         // files only, nothing is deleted on the old side); the copy is removed only when that worked. Before, the
         // copy was simply deleted, with every upload and message that arrived since the move.
-        $rb = is_dir($src) ? hm_sh('rsync -aHAXS --numeric-ids --update ' . escapeshellarg($dst . '/') . ' ' . escapeshellarg($src . '/') . ' >/dev/null; echo "rc=$?"', 0) : 'rc=255';
+        // only what was WRITTEN on the new home since the switch
+        $since = (int)($st['flipped_at'] ?? 0) ?: (int)($st['ts'] ?? 0);
+        $rb = !is_dir($src) ? 'rc=255' : ($since > 0
+            ? hm_sh('cd ' . escapeshellarg($dst) . ' && find . -xdev \\( -type f -o -type l \\) -newermt ' . escapeshellarg('@' . $since) . ' -print0 | rsync -aHAXS --numeric-ids --update --from0 --files-from=- ./ ' . escapeshellarg($src . '/') . ' >/dev/null; echo "rc=$?"', 0)
+            : hm_sh('rsync -aHAXS --numeric-ids --update ' . escapeshellarg($dst . '/') . ' ' . escapeshellarg($src . '/') . ' >/dev/null; echo "rc=$?"', 0));
         if (preg_match('/rc=(0|24)\s*$/', trim($rb))) hm_sh('rm -rf ' . escapeshellarg($dst), 0);
         else $keptCopy = true;
     }
@@ -425,14 +483,24 @@ if ($mode === 'finalize') {
         // Anything that kept writing to the OLD path after the switch (a cached configuration with the absolute path,
         // a cron line) left its files here. They go over to the new home first - newer files only, nothing deleted
         // there - and the old copy is removed only when that worked.
-        $fb = hm_sh('rsync -aHAXS --numeric-ids --update ' . escapeshellarg($src . '/') . ' ' . escapeshellarg((string)$st['dst'] . '/') . ' >/dev/null; echo "rc=$?"', 0);
+        // Only what was WRITTEN to the old path since the switch. Everything the old copy still held used to be
+        // offered to the new home: a file the account - or a malware clean-up - deleted after the move still existed
+        // in the stale copy, so "Reclaim space" brought it back.
+        $since = (int)($st['flipped_at'] ?? 0) ?: (int)($st['ts'] ?? 0);
+        $fb = $since > 0
+            ? hm_sh('cd ' . escapeshellarg($src) . ' && find . -xdev \\( -type f -o -type l \\) -newermt ' . escapeshellarg('@' . $since) . ' -print0 | rsync -aHAXS --numeric-ids --update --from0 --files-from=- ./ ' . escapeshellarg((string)$st['dst'] . '/') . ' >/dev/null; echo "rc=$?"', 0)
+            : hm_sh('rsync -aHAXS --numeric-ids --update ' . escapeshellarg($src . '/') . ' ' . escapeshellarg((string)$st['dst'] . '/') . ' >/dev/null; echo "rc=$?"', 0);
         if (!preg_match('/rc=(0|24)\s*$/', trim($fb))) { jdone(false, 'The old copy at ' . $src . ' was NOT deleted: what was written there after the move could not be copied to the new home first (' . trim(substr($fb, -40)) . '). Nothing was changed.'); exit; }
+        hm_cron_rewrite($user, $src, (string)$st['dst']);   // a job added since the move with the old path
+        $oldRefs = hm_old_refs((string)$st['dst'], $src);
         hm_sh('rm -rf ' . escapeshellarg($src), 0);
     }
     @unlink(smpro_ds_home_state_path($user));
     if (!empty($st['userdata_backup'])) hm_sh('rm -rf ' . escapeshellarg((string)$st['userdata_backup']));
     smpro_ds_home_history_add(['event' => 'finalize', 'user' => $user, 'src' => $src, 'dst' => (string)$st['dst'],
         'bytes' => (int)($st['account_bytes'] ?? 0), 'ok' => true]);
-    jdone(true, 'Reclaimed the space from the old home at ' . $src . '. The move is complete.', ['user' => $user, 'freed' => $src]);
+    jdone(true, 'Reclaimed the space from the old home at ' . $src . '. The move is complete.'
+        . (!empty($oldRefs) ? ' ' . count($oldRefs) . ' settings file(s) of the account still name the old path and need the new one (' . (string)$st['dst'] . '): ' . implode(', ', array_slice($oldRefs, 0, 8)) . (count($oldRefs) > 8 ? ' ...' : '') : ''),
+        ['user' => $user, 'freed' => $src, 'old_refs' => $oldRefs ?? []]);
     exit;
 }

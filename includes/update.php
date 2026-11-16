@@ -343,6 +343,12 @@ function smpro_teardown_network(string $by = 'uninstall'): array {
             $r = smpro_gw_remove(true);
             $done[] = 'Country wall taken down (' . (int)($r['removed'] ?? 0) . ' rule(s))' . (empty($r['ok']) ? ' - NOT confirmed, check the firewall by hand' : '');
         }
+        // The web-server half of the wall has its own file. With the kernel half down it stayed behind, still
+        // refusing visitors of the panel sub-domains by country with no page left to lift it.
+        if (!defined('SMPRO_TEST_SRC') && function_exists('smpro_gw_panel_live') && function_exists('smpro_gw_panel_remove') && smpro_gw_panel_live()) {
+            $r = smpro_gw_panel_remove(true);
+            $done[] = 'Country rule for the panel sub-domains removed from the web server' . (empty($r['ok']) ? ' - NOT confirmed' : '');
+        }
     } catch (\Throwable $e) { $done[] = 'Country wall could not be taken down: ' . $e->getMessage(); }
     try {
         if (!function_exists('smpro_gh_disarm')) { $f = __DIR__ . '/geohulk.php'; if (is_file($f)) require_once $f; }
@@ -389,6 +395,36 @@ function smpro_teardown_network(string $by = 'uninstall'): array {
             $done[] = 'File-audit rules removed' . ($ac === '' ? ' from disk (they leave the kernel at the next reboot)' : '');
         }
     } catch (\Throwable $e) { $done[] = 'File-audit rules not removed: ' . $e->getMessage(); }
+    try {   // immutable locks on customer files: the owner cannot change such a file, and the pages that release it leave with the product
+        if (!function_exists('smpro_ph_release_all')) { $f = __DIR__ . '/phlock.php'; if (is_file($f)) require_once $f; }
+        if (function_exists('smpro_ph_release_all')) {
+            $lr = smpro_ph_release_all($by);
+            if ($lr['released']) $done[] = 'Released ' . $lr['released'] . ' file lock(s) on ' . $lr['accounts'] . ' account(s)';
+            if ($lr['stuck']) $done[] = count($lr['stuck']) . ' file lock(s) could NOT be released - clear them by hand with chattr -i: ' . implode(', ', array_slice($lr['stuck'], 0, 5)) . (count($lr['stuck']) > 5 ? ' ...' : '');
+            if ($lr['skipped']) $done[] = 'Lock records of ' . count($lr['skipped']) . ' account(s) that no longer exist were left as they are';
+        }
+    } catch (\Throwable $e) { $done[] = 'File locks not released: ' . $e->getMessage(); }
+    try {   // Crawler Control: its server-wide rule keeps refusing the chosen crawlers on every site
+        if (!function_exists('smpro_cr_httpd_run')) { $f = __DIR__ . '/crawlers.php'; if (is_file($f)) require_once $f; }
+        $cf = defined('SMPRO_CR_HTTPD') ? SMPRO_CR_HTTPD : '';
+        if (!defined('SMPRO_TEST_SRC') && $cf !== '' && function_exists('smpro_cr_httpd_run') && @is_file($cf) && !is_link($cf)) {
+            @unlink($cf);
+            [$crc, $cout] = smpro_cr_httpd_run('/usr/sbin/apachectl configtest', 60);
+            if ($crc === 0) [$crc, $cout] = smpro_cr_httpd_run('/usr/sbin/apachectl graceful', 60);
+            $done[] = 'Crawler rule removed from the web server' . ($crc === 0 ? '' : ' - the web server was NOT reloaded (' . trim(mb_substr((string)$cout, -160)) . '); it lets the crawlers in again at its next restart');
+        }
+    } catch (\Throwable $e) { $done[] = 'Crawler rule not removed: ' . $e->getMessage(); }
+    try {   // sender block: the mail server keeps discarding mail of every listed sender, with no page left to take one off
+        if (!function_exists('smpro_mb_installed')) { $f = __DIR__ . '/mailblock.php'; if (is_file($f)) require_once $f; }
+        if (!defined('SMPRO_TEST_SRC') && function_exists('smpro_mb_installed') && function_exists('smpro_mb_uninstall') && smpro_mb_installed()) {
+            $mr = smpro_mb_uninstall();
+            $done[] = 'Sender block removed from the mail server (the list itself is kept)' . (empty($mr[0]) ? ' - NOT confirmed: ' . (string)($mr[1] ?? '') : '');
+        }
+    } catch (\Throwable $e) { $done[] = 'Sender block not removed: ' . $e->getMessage(); }
+    // settings, not enforcement: they are named so nobody has to find them by accident later
+    $left = [];
+    foreach (['/etc/apache2/conf.d/includes/zz-smpro-tuning.conf', '/etc/sysctl.d/90-smpro-harden.conf', '/etc/sysctl.d/99-smpro.conf'] as $lf) if (@is_file($lf)) $left[] = $lf;
+    if ($left) $done[] = 'Tuning settings applied from this product stay in force (remove the file to go back to the defaults): ' . implode(', ', $left);
     if ($done && function_exists('smpro_audit')) @smpro_audit('teardown_network', ['by' => $by, 'done' => $done]);
     return $done;
 }

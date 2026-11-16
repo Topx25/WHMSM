@@ -249,6 +249,47 @@ function smpro_ph_remove_htaccess($dir) {
     return (bool)$ok;
 }
 /**
+ * Uninstall: release every immutable lock THIS PRODUCT recorded placing on account files.
+ *
+ * An immutable file cannot be changed by its owner, and the only pages that could release it leave with the product:
+ * the customer could then never update the site again and nothing on the server said why. Only what the lock records
+ * name is released, and only inside the home of the account the record belongs to - a lock another product or an
+ * administrator set is not this product's to lift on its way out. The PHP guard blocks stay (plain text in a file the
+ * account can now edit). Returns accounts, released, skipped[] (record of an account that no longer exists),
+ * stuck[] (still locked after the attempt - said, never counted as done).
+ */
+function smpro_ph_release_all(string $by = 'uninstall'): array {
+    $res = ['accounts' => 0, 'released' => 0, 'skipped' => [], 'stuck' => []];
+    foreach (glob(SMPRO_PH_STATE . '/*.json') ?: [] as $mf) {
+        $u = basename($mf, '.json');
+        if (!preg_match('/^[a-z0-9][a-z0-9._-]{0,31}$/i', $u)) continue;
+        $m = json_decode((string)@file_get_contents($mf), true);
+        if (!is_array($m)) continue;
+        $paths = [];
+        foreach ((array)($m['protected_files'] ?? []) as $f) { $p = is_array($f) ? (string)($f['path'] ?? '') : (string)$f; if ($p !== '') $paths[] = $p; }
+        foreach ((array)($m['locked_roots'] ?? []) as $d) { $p = is_array($d) ? (string)($d['dir'] ?? '') : (string)$d; if ($p !== '') $paths[] = $p; }
+        foreach ((array)($m['deny_php_dirs'] ?? []) as $d) { $p = is_array($d) ? (string)($d['dir'] ?? '') : (string)$d; if ($p !== '') $paths[] = rtrim($p, '/') . '/.htaccess'; }
+        $pr = $m['pending_relock'] ?? null;
+        if (is_array($pr)) {
+            foreach ((array)($pr['files'] ?? []) as $p) if ((string)$p !== '') $paths[] = (string)$p;
+            foreach ((array)($pr['dirs'] ?? []) as $p) if ((string)$p !== '') $paths[] = rtrim((string)$p, '/') . '/.htaccess';
+        }
+        if (!$paths) continue;
+        if (smpro_ph_home($u) === '') { $res['skipped'][] = $u; continue; }
+        $paths = array_values(array_unique(array_filter($paths, fn($p) => smpro_ph_inside($u, $p))));
+        $r = smpro_ph_chattr_many('-i', $paths);
+        $n = count($r['changed']);
+        foreach (array_keys($r['failed']) as $p) $res['stuck'][] = $p;
+        if ($n) { $res['accounts']++; $res['released'] += $n; }
+        // the record says what is true now; a relock that was waiting is dropped with it
+        $m['status'] = 'unlocked'; $m['unlock_until'] = ''; unset($m['pending_relock']); $m['released_at_uninstall'] = date('c');
+        smpro_ph_save($u, $m);
+        if (function_exists('smpro_hg_locks_write')) smpro_hg_locks_write($u, []);
+        smpro_ph_audit_log($u, 'php_harden_release_uninstall', 'Uninstall (' . $by . ') - ' . $n . ' lock(s) released' . ($r['failed'] ? ', ' . count($r['failed']) . ' could NOT be released' : ''), ['stuck' => array_slice(array_keys($r['failed']), 0, 20)]);
+    }
+    return $res;
+}
+/**
  * Remove EVERY protection this plugin holds over an account, and record that it must stay removed.
  *
  * The ordinary unlock only touches the paths the browser posted, which is right when an operator is unlocking a

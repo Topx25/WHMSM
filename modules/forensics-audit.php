@@ -1809,7 +1809,7 @@ button.fa-scan{text-align:left;font:inherit}
     h+='<table class="fa-plan"><thead><tr><th>Pri</th><th>Finding</th><th>AI decision</th><th>Why</th><th>Action</th></tr></thead><tbody>';
     j.decisions.forEach(function(d){
       var a=ACT[d.decision]||{l:'',c:'gray'};
-      var btn=a.l?'<button class="fa-lnk faExecDec b-'+a.c+'" data-idx="'+d.id+'" data-dec="'+esc(d.decision)+'" data-acct="'+esc(d.account)+'">'+a.l+'</button>':'<span class="meta">review</span>';
+      var btn=a.l?'<button class="fa-lnk faExecDec b-'+a.c+'" data-idx="'+d.id+'" data-dec="'+esc(d.decision)+'" data-acct="'+esc(d.account)+'" data-title="'+esc(d.title)+'" data-act="'+esc(d.act||'')+'">'+a.l+'</button>':'<span class="meta">review</span>';
       h+='<tr><td><b>P'+d.priority+'</b></td><td><b class="mono">'+esc(d.account)+'</b><div>'+esc(d.title)+'</div></td><td><span class="b '+a.c+'">'+esc(d.decision)+'</span></td><td class="meta" style="white-space:normal;max-width:240px">'+esc(d.reason)+'</td><td>'+btn+'</td></tr>';
     });
     return h+'</tbody></table>';
@@ -1837,6 +1837,10 @@ button.fa-scan{text-align:left;font:inherit}
     var b=e.target.closest&&e.target.closest('.faExecDec'); if(!b)return;
     var idx=b.getAttribute('data-idx'), dec=b.getAttribute('data-dec'), acct=b.getAttribute('data-acct')||'';
     if(dec==='scan'){ if(!acct||acct==='all'||acct==='system'||acct==='?'){alert('No single account to scan.');return;} ajaxDeepScan(acct); b.textContent='✓ scanning'; return; }
+    // The plan is made from a fresh look at the server; the rows on this page are from when it was loaded. A number
+    // alone could then name a DIFFERENT finding, and the button would act on that one. It must be the same finding.
+    var F0=(typeof FIND!=='undefined')?FIND[idx]:null;
+    if(F0&&(F0.account!==acct||F0.title!==(b.getAttribute('data-title')||'')||(F0.act||'')!==(b.getAttribute('data-act')||''))){alert('The findings changed since this page was loaded. Reload the page and ask for the plan again — nothing was done.');return;}
     var tr=(typeof FIND!=='undefined'&&FIND[idx])?fRowFor(idx):null; if(!tr){alert('Finding not found — re-scan and retry.');return;}
     var fd=new URLSearchParams(); fd.set('smpro_csrf',CSRF_REM); var lbl=b.innerHTML;
     if(dec==='suspend'){ if(!acct||acct==='all'||acct==='system'){alert('No account to suspend.');return;} if(!confirm('SUSPEND account "'+acct+'"?\n\nThis disables the whole site. Reversible — you can unsuspend anytime.'))return; fd.set('fa_action','suspend');fd.set('account',acct); }

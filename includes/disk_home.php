@@ -177,7 +177,13 @@ function smpro_ds_home_preflight(string $user, string $troot): array {
 
     if (is_dir($dst)) {
         $empty = trim((string)@shell_exec('ls -A ' . escapeshellarg($dst) . ' 2>/dev/null')) === '';
-        $add('Target path is free (not an existing non-empty dir)', $empty, $dst . ($empty ? ' (empty)' : ' EXISTS'));
+        // A copy that was interrupted (killed, target full) leaves its files here. The move record says they are this
+        // account's own unfinished copy: then the folder is not "in the way" - rsync continues it. Without this every
+        // retry after an interruption failed its own pre-flight, although the worker said it would resume.
+        $own = function_exists('smpro_ds_home_state_read') ? (array)smpro_ds_home_state_read($user) : [];
+        $mine = !empty($own['user']) && $own['user'] === $user && rtrim((string)($own['dst'] ?? ''), '/') === rtrim($dst, '/')
+             && in_array((string)($own['status'] ?? ''), ['copying', 'moving'], true);
+        $add('Target path is free (not an existing non-empty dir)', $empty || $mine, $dst . ($empty ? ' (empty)' : ($mine ? ' (this account\'s own unfinished copy - it will be continued)' : ' EXISTS')));
     } else {
         $add('Target path is free', true, $dst);
     }

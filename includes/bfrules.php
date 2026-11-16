@@ -226,8 +226,13 @@ function smpro_bfr_run(array $nets, ?array $cfg = null, ?bool $dryrun = null, st
         return $out;
     }
 
-    $myIp = '';
     $myIp = function_exists('smpro_admin_ip') ? smpro_admin_ip() : '';   // REMOTE_ADDR first: cpsrvd is the direct peer, the forwarded headers are what the browser sent
+    // The scheduled run has no browser behind it, so "your own address" was empty there and the guard below never
+    // fired - exactly in the run nobody is watching. Every address the operator was seen working from (the record
+    // behind the "allow my address" offer, whatever was answered) counts as his own, in every run.
+    $mine = [];
+    if ($myIp !== '') $mine[$myIp] = true;
+    if (function_exists('smpro_fw_self_state')) foreach (array_keys((array)smpro_fw_self_state()) as $sip) if (filter_var((string)$sip, FILTER_VALIDATE_IP)) $mine[(string)$sip] = true;
 
     $budget = (int)$cfg['max_per_run'];
     foreach ($nets as $nv) {
@@ -241,7 +246,7 @@ function smpro_bfr_run(array $nets, ?array $cfg = null, ?bool $dryrun = null, st
             if (!filter_var($ip, FILTER_VALIDATE_IP)) continue;
             if ($budget-- <= 0) { $out['refused'][] = ['ip' => $ip, 'why' => 'the per-run ceiling was reached']; continue; }
 
-            if ($myIp !== '' && $ip === $myIp) { $out['refused'][] = ['ip' => $ip, 'why' => 'this is your own address']; continue; }
+            if (isset($mine[$ip])) { $out['refused'][] = ['ip' => $ip, 'why' => $ip === $myIp ? 'this is your own address' : 'an address the operator works from']; continue; }
             if (function_exists('smpro_csf_allowlisted') && smpro_csf_allowlisted($ip)) {
                 $out['refused'][] = ['ip' => $ip, 'why' => 'allow-listed']; continue;
             }
