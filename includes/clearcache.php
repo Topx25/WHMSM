@@ -75,7 +75,7 @@ function smpro_inv_cc_user_ok($user) {
     // CRITICAL(2): system cutoff aligned with the codebase convention (uid<100 = system, investigate.php:1384).
     if ($uid < 100) return false;
     // Home MUST be under /home/ and exist and be OWNED by that uid (defeats a hijacked passwd home).
-    if ($home === '' || strpos($home, '/home/') !== 0) return false;
+    if ($home === '' || !preg_match('#^/home\d*/#', (string)$home)) return false;
     if (!is_dir($home)) return false;
     $st = @stat($home);
     if (!$st || (int)$st['uid'] !== $uid) return false;
@@ -290,7 +290,7 @@ function smpro_inv_clearcache_plan($target) {
     $u = smpro_inv_cc_user_ok($user);
     if ($u === false) return ['ok' => false, 'msg' => 'Refusing: "' . $user . '" is not a valid non-system cPanel account (or it is suspended).'];
     // docroot must live under /home and contain no traversal (matches the fix-engine guard).
-    if (strpos($docroot, '/home/') !== 0 || strpos($docroot, '..') !== false) return ['ok' => false, 'msg' => 'Refusing: document root is outside /home.'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot) || strpos($docroot, '..') !== false) return ['ok' => false, 'msg' => 'Refusing: document root is outside /home.'];
     if (!is_dir($docroot)) return ['ok' => false, 'msg' => 'Document root not found on disk.'];
 
     $detect = smpro_inv_detect($docroot, $home);
@@ -306,7 +306,7 @@ function smpro_inv_clearcache_plan($target) {
     $rp = @realpath($docroot);
     if ($approot === $docroot && $rp !== false && is_file($rp . '/artisan')) $approot = $rp; // symlinked docroot -> real app dir
     $approot = rtrim($approot, '/');
-    if (strpos($approot, '/home/') !== 0) $approot = $docroot;
+    if (!preg_match('#^/home\d*/#', (string)$approot)) $approot = $docroot;
 
     $tg = smpro_inv_cc_targets($platform, $docroot, $approot, $home);
     // Size each EXISTING target - path_safe FIRST so du can't follow a planted symlink out of the account.

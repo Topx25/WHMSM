@@ -258,8 +258,8 @@ function smpro_ai_decide_pack(string $ctx): array {
             $i = 0;
             foreach ($list as $r) {
                 if (($r['resource_type'] ?? '') === 'db') continue;          // file actions here
-                $file = (string)($r['file'] ?? ''); if ($file === '' || strpos($file, '/home/') !== 0) continue;
-                $acct = (string)($r['username'] ?? (preg_match('#^/home/([^/]+)/#', $file, $mm) ? $mm[1] : ''));
+                $file = (string)($r['file'] ?? ''); if ($file === '' || !preg_match('#^/home\d*/#', (string)$file)) continue;
+                $acct = (string)($r['username'] ?? (preg_match('#^/home\d*/([^/]+)/#', $file, $mm) ? $mm[1] : ''));
                 $items[] = ['id' => 'm' . $i, 'kind' => 'malware', 'file' => $file, 'account' => $acct,
                     'hash' => (string)($r['hash'] ?? ''), 'imid' => (string)($r['id'] ?? ''),
                     'label' => 'malware ' . basename($file) . ($acct ? ' · ' . $acct : ''),

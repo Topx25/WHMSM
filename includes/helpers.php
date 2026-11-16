@@ -1643,7 +1643,7 @@ function smpro_wpguard_trusted($path) {
     // pass this check only neutralizes their own file.
     if (($qp = strpos($n, '/wp-content/hostguard-quarantine/')) !== false) {
         $qht = (string)@file_get_contents(substr($n, 0, $qp) . '/wp-content/hostguard-quarantine/.htaccess', false, null, 0, 4096);
-        return (bool)preg_match('/(?:Deny\s+from\s+all|Require\s+all\s+denied)/i', $qht);
+        return (bool)preg_match('/^[ \t]*(?:Deny\s+from\s+all|Require\s+all\s+denied)[ \t]*\r?$/mi', $qht);   // a real line: "# Require all denied" used to pass, and any folder named like the quarantine became a hiding place
     }
     if (substr($n, -34) === '/wp-content/hostguard-security.log') return true;                  // WP Guard's log
     if (substr($n, -28) === '/plugins/wp-guard/readme.txt') return true;                        // plugin readme
@@ -2055,6 +2055,93 @@ function smpro_account_datalist() {
     <?php
 }
 
+/** The two tools of the account-isolation layer, or '' when this server has none. */
+function smpro_cage_bin(string $name): string {
+    foreach (['/usr/sbin/', '/sbin/', '/usr/bin/'] as $d) if (@is_executable($d . $name)) return $d . $name;
+    return '';
+}
+/**
+ * Can this account enter its isolation cage? '' = yes (or the server has no such layer); otherwise the layer's own
+ * words. Every site of an account that cannot enter its cage answers 500, whatever the site's code is like.
+ */
+function smpro_cage_broken(string $user): string {
+    $enter = smpro_cage_bin('cagefs_enter_user');
+    if ($enter === '' || !preg_match('/^[a-z0-9_][a-z0-9_.-]{0,31}$/i', $user)) return '';
+    $out = (string)@shell_exec('timeout 25 ' . escapeshellarg($enter) . ' ' . escapeshellarg($user) . ' /bin/true 2>&1; echo "__SMRC__=$?"');
+    if (preg_match('/__SMRC__=0\s*$/', $out)) return '';
+    $msg = trim((string)preg_replace('/__SMRC__=\d+\s*$/', '', $out));
+    // only the failure of the cage itself counts - not an account the layer is switched off for
+    return (stripos($msg, 'cagefs jail') !== false || stripos($msg, 'Read-only file system') !== false) ? mb_substr(preg_replace('/\s+/', ' ', $msg), 0, 200) : '';
+}
+/**
+ * The cages are checked, and rebuilt when they are broken. Seen on a real server: at boot a large home partition was
+ * switched to read-only for the quota check for some forty seconds, the isolation layer started inside that window
+ * and built every cage with that partition read-only, and when the partition came back the cages did not. Every
+ * account on it answered 500 for eleven hours, and nothing said so. One account per home root is tried every few
+ * minutes; a broken cage is rebuilt (at most once an hour) and the operator is told either way.
+ * $repair = false: report only.
+ */
+function smpro_cage_guard(bool $repair = true): array {
+    $ctl = smpro_cage_bin('cagefsctl');
+    if ($ctl === '' || smpro_cage_bin('cagefs_enter_user') === '') return ['ran' => false];
+    $sf = SMPRO_VARLIB . '/cage_guard.json';
+    $st = @is_file($sf) ? json_decode((string)@file_get_contents($sf), true) : null; if (!is_array($st)) $st = [];
+    $probe = [];                                                     // up to two accounts per home root
+    foreach ((array)@glob('/var/cpanel/users/*') as $uf) {
+        $u = basename((string)$uf); if ($u === '' || $u[0] === '.' || @is_file('/var/cpanel/suspended/' . $u)) continue;
+        $pw = function_exists('posix_getpwnam') ? @posix_getpwnam($u) : false; if (!is_array($pw)) continue;
+        if (!preg_match('#^(/home\d*)/#', (string)$pw['dir'], $m)) continue;
+        if (count($probe[$m[1]] ?? []) < 2) $probe[$m[1]][] = $u;
+    }
+    $bad = [];
+    foreach ($probe as $root => $users) foreach ($users as $u) { $why = smpro_cage_broken($u); if ($why !== '') $bad[$root][$u] = $why; }
+    $save = function (array $st) use ($sf) { @file_put_contents($sf, json_encode($st), LOCK_EX); @chmod($sf, 0600); };
+    if (!$bad) { if (!empty($st['broken'])) { $st['broken'] = 0; $save($st); } return ['ran' => true, 'ok' => true]; }
+    $first = reset($bad); $firstWhy = (string)reset($first);
+    $where = implode(', ', array_keys($bad));
+    $st['broken'] = time(); $res = ['ran' => true, 'ok' => false, 'roots' => array_keys($bad), 'why' => $firstWhy, 'repaired' => false];
+    if ($repair && time() - (int)($st['fixed_at'] ?? 0) >= 3600) {
+        $st['fixed_at'] = time(); $save($st);
+        @shell_exec('timeout 600 ' . escapeshellarg($ctl) . ' --remount-all >/dev/null 2>&1');
+        $still = [];
+        foreach ($bad as $root => $users) foreach (array_keys($users) as $u) if (smpro_cage_broken($u) !== '') $still[] = $u;
+        $res['repaired'] = !$still;
+        if (function_exists('smpro_audit')) smpro_audit('cage_guard', ['roots' => array_keys($bad), 'why' => $firstWhy, 'repaired' => !$still]);
+        if (function_exists('smpro_notify')) @smpro_notify('cage_broken', !$still ? 'Account isolation was broken - repaired' : 'Account isolation is broken - the repair did NOT work',
+            'Accounts on ' . $where . ' could not enter their isolation cage (CageFS): ' . $firstWhy . "\n\n"
+          . 'While that lasts, every site of those accounts answers 500 whatever its code is like.' . "\n\n"
+          . (!$still ? 'The cages were rebuilt (cagefsctl --remount-all) and the accounts enter them again. If this follows a reboot: the layer started while that partition was still read-only (quota check at boot).'
+                     : 'The cages were rebuilt (cagefsctl --remount-all) but these accounts still cannot enter: ' . implode(', ', array_slice($still, 0, 8)) . '. Check that the partition is mounted read-write, then run that command again.'),
+            ['severity' => 'critical']);
+    } elseif (time() - (int)($st['told_at'] ?? 0) >= 3600) {
+        $st['told_at'] = time();
+        if (function_exists('smpro_notify')) @smpro_notify('cage_broken', 'Account isolation is broken', 'Accounts on ' . $where . ' cannot enter their isolation cage (CageFS): ' . $firstWhy . '. Their sites answer 500. Run: cagefsctl --remount-all', ['severity' => 'critical']);
+    }
+    $save($st);
+    return $res;
+}
+/**
+ * Every folder that holds customer homes on this server: /home, /home2, /home3 ... A cPanel server spreads accounts
+ * over them as partitions fill. Scans that walked /home alone simply did not see the accounts on the others: on a
+ * real server that was half of them. Real folders only - a name that is a link to another root is not walked twice.
+ */
+function smpro_home_roots(): array {
+    static $r = null; if ($r !== null) return $r;
+    $r = [];
+    foreach ((array)@glob('/home*', GLOB_ONLYDIR) as $d) if (preg_match('#^/home\d*$#', (string)$d) && !is_link($d)) $r[] = (string)$d;
+    if (!$r) $r = ['/home'];
+    return $r;
+}
+/** Every account home folder, over all roots. */
+function smpro_home_dirs(): array {
+    $o = []; foreach (smpro_home_roots() as $hr) foreach ((array)@glob($hr . '/*', GLOB_ONLYDIR) as $d) $o[] = (string)$d;
+    return $o;
+}
+/** Files matching <root>/<any account><suffix>, over all roots. */
+function smpro_home_glob(string $suffix): array {
+    $o = []; foreach (smpro_home_roots() as $hr) foreach ((array)@glob($hr . '/*' . $suffix) as $f) $o[] = (string)$f;
+    return $o;
+}
 /**
  * Where an account's files actually are, from /etc/passwd.
  *

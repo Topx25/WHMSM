@@ -149,6 +149,13 @@ function smpro_sdb_plan(array $res, array $p): array {
         if ($cause === '') $cause = 'The account has reached its resource limit (entry processes, memory or CPU), so the server refuses new requests for it.';
         if (!$lf) $advice = 'This server has no per-account limit tool to act on. See which of the account\'s processes are busy (Load Monitor), or raise the limits of its package.';
     }
+    // The account cannot enter its isolation cage: every site of it answers 500 and no site code is at fault.
+    if ((in_array($kind, ['http_500', 'http_503', 'blank', 'no_answer'], true) || stripos($cause, 'End of script output before headers') !== false)
+        && function_exists('smpro_cage_broken') && ($cw = smpro_cage_broken((string)($res['user'] ?? ''))) !== '') {
+        $kind = 'cage_broken'; $text = 'The account cannot enter its isolation cage, so all its sites fail.';
+        $cause = 'CageFS: ' . $cw . '. The site code is not the problem.';
+        $fixes = [['action' => 'cage_remount', 'path' => (string)$res['user'], 'label' => 'Rebuild the account\'s isolation cage', 'why' => 'cagefsctl --remount for this account']];
+    }
     $prep = array_values(array_filter($fixes, fn($f) => (string)($f['action'] ?? '') === 'unharden'));
     $real = array_values(array_filter($fixes, fn($f) => (string)($f['action'] ?? '') !== 'unharden'));
     if (!$real) {
@@ -204,6 +211,14 @@ function smpro_sdb_diag_child(string $dom, array $p): array {
 function smpro_sdb_fix_one(string $action, string $domain, string $path): array {
     if ($action === 'hide_php_errors') return smpro_sdb_fix_hide_errors($domain);
     if ($action === 'restore_wp_core') return smpro_sdb_fix_wp_core($domain);
+    if ($action === 'cage_remount') {
+        $r = smpro_inv_resolve($domain); $user = is_array($r) ? (string)$r['user'] : ''; $ctl = function_exists('smpro_cage_bin') ? smpro_cage_bin('cagefsctl') : '';
+        if ($user === '' || $ctl === '') return ['ok' => false, 'msg' => 'this server has no account-isolation layer to rebuild'];
+        @shell_exec('timeout 120 ' . escapeshellarg($ctl) . ' --remount ' . escapeshellarg($user) . ' >/dev/null 2>&1');
+        $still = smpro_cage_broken($user);
+        if (function_exists('smpro_audit')) smpro_audit('sitedoctor_fix', ['action' => 'cage_remount', 'user' => $user, 'ok' => $still === '']);
+        return ['ok' => $still === '', 'msg' => $still === '' ? 'the account enters its cage again' : 'still cannot enter: ' . $still . ' (the same fault probably holds for every account on that partition: run cagefsctl --remount-all)'];
+    }
     if ($action === 'lve_kill_hung' || $action === 'lve_lift') {
         $r = smpro_inv_resolve($domain); $user = is_array($r) ? (string)$r['user'] : '';
         if ($user === '' || !smpro_sdb_lve()) return ['ok' => false, 'msg' => 'this server has no per-account limits to act on'];
@@ -515,9 +530,34 @@ function smpro_sdb_run_job(string $kind): void {
                 $sc = smpro_sdb_load('scan.json'); $sc['beat'] = time(); $sc['current'] = 'fixing ' . $dom; smpro_sdb_save('scan.json', $sc);   // still alive
             }
         }
+        if (function_exists('smpro_sdb_mass_alert')) smpro_sdb_mass_alert();
         smpro_sdb_purge();
     }
     $j['running'] = false; $j['finished'] = time(); smpro_sdb_save('job.json', $j);
+}
+/**
+ * Many sites failing together is one event with one cause (a partition, a PHP version, the isolation layer), not
+ * that many separate site problems. On a real server 23 sites answered 500 from a reboot on, the daily scan saw
+ * them all - and told nobody. After a finished scan: when the number of failing sites is 5 or more above the scan
+ * before it, one critical message with the commonest causes.
+ */
+function smpro_sdb_mass_alert(): array {
+    $scan = smpro_sdb_load('scan.json', ['results' => []]);
+    if (empty($scan['finished'])) return ['sent' => false];
+    $bad = array_filter((array)$scan['results'], fn($r) => ($r['state'] ?? '') === 'problem');
+    $cfg = smpro_sdb_load('bulk.json'); $prev = (int)($cfg['last_failing'] ?? -1);
+    $cfg['last_failing'] = count($bad); smpro_sdb_save('bulk.json', $cfg);
+    if ($prev < 0 || count($bad) < 5 || count($bad) < $prev + 5) return ['sent' => false, 'failing' => count($bad), 'before' => $prev];
+    $by = [];
+    foreach ($bad as $r) { $k = (string)($r['kind'] ?? '') . ' - ' . mb_substr((string)(($r['cause'] ?? '') !== '' ? $r['cause'] : ($r['text'] ?? '')), 0, 90); $by[$k][] = (string)$r['domain']; }
+    uasort($by, fn($a, $b) => count($b) <=> count($a));
+    $lines = [];
+    foreach (array_slice($by, 0, 4, true) as $k => $doms) $lines[] = count($doms) . ' site(s): ' . $k . "\n   e.g. " . implode(', ', array_slice($doms, 0, 4));
+    if (function_exists('smpro_notify')) @smpro_notify('sitedoctor_mass', 'Site Doctor: ' . count($bad) . ' sites are failing (' . (count($bad) - $prev) . ' more than at the last scan)',
+        "Sites failing now: " . count($bad) . " of " . count((array)$scan['results']) . " (last scan: " . $prev . ").\n\nCommonest causes:\n" . implode("\n", $lines)
+      . "\n\nMany sites failing together usually have ONE cause on the server. Open Site Doctor > All sites.", ['severity' => 'critical']);
+    if (function_exists('smpro_audit')) smpro_audit('sitedoctor_mass', ['failing' => count($bad), 'before' => $prev]);
+    return ['sent' => true, 'failing' => count($bad), 'before' => $prev];
 }
 /** Daily scan (and, with the switch on, automatic fixes) at 05:30; the purge runs with it. */
 function smpro_sdb_cron_sync(): bool {

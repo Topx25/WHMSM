@@ -169,7 +169,7 @@ function smpro_inv_wp($docroot, $domain) {
 }
 /** Fix WordPress siteurl/home in the DB to the correct URL (reversible). */
 function smpro_inv_fix_wp_url($r) {
-    $docroot = $r['docroot']; if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused'];
+    $docroot = $r['docroot']; if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok'=>false,'msg'=>'refused'];
     $db = smpro_inv_wp_db($docroot); if (!$db) return ['ok'=>false,'msg'=>'wp-config not found'];
     if (!function_exists('mysqli_connect')) return ['ok'=>false,'msg'=>'mysqli unavailable'];
     $host = $db['host']; $port = 0; $sock = null;
@@ -643,13 +643,13 @@ function smpro_inv_optimize_merge_htaccess($current, $blocks) {
  *  chown-to-docroot-owner, manifest kind='file' -> one-click Undo via the existing file-restore branch. */
 function smpro_inv_optimize_write_htaccess($r, $merged, $blocks, $run = '') {
     $docroot = rtrim($r['docroot'], '/');
-    if (strpos($docroot, '/home/') !== 0) return ['ok' => false, 'msg' => 'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok' => false, 'msg' => 'refused: docroot outside /home'];
     foreach ((array)$blocks as $b) {   // we are responsible for what we ADD - it must be clean ASCII, small, no PHP
         if (strlen($b) > 8192 || stripos($b, '<?php') !== false || preg_match('/[^\x09\x0a\x0d\x20-\x7e]/', $b))
             return ['ok' => false, 'msg' => 'refused: generated block failed safety validation'];
     }
     if (strlen($merged) > 32768) return ['ok' => false, 'msg' => 'refused: resulting .htaccess is too large'];
-    $user = (string)($r['user'] ?? (preg_match('#^/home/([^/]+)#', $docroot, $mu) ? $mu[1] : ''));
+    $user = (string)($r['user'] ?? (preg_match('#^/home\d*/([^/]+)#', $docroot, $mu) ? $mu[1] : ''));
     $imm  = smpro_inv_imm($docroot . '/.htaccess');
     // symlink-safe write - a root chown/write can never follow an account-planted symlink out of the account.
     [$ok, $ht, $bak, $err] = smpro_inv_ht_safe_write($docroot . '/.htaccess', $docroot, $user, rtrim($merged, "\n") . "\n");
@@ -663,7 +663,7 @@ function smpro_inv_optimize_write_htaccess($r, $merged, $blocks, $run = '') {
  *  under the account docroot, be an editable web asset, and not sit in a build/vendor dir. */
 function smpro_inv_optimize_allowed($docroot, $path) {
     $docroot = rtrim((string)$docroot, '/');
-    if (strpos($docroot, '/home/') !== 0) return false;
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return false;
     $rp = @realpath($path); $rd = @realpath($docroot);
     if ($rp === false || $rd === false) return false;
     if (strpos($rp, $rd . '/') !== 0) return false;                          // must be INSIDE docroot (defeats ../ + symlink escape)
@@ -908,7 +908,7 @@ function smpro_inv_optimize_scan($target) {
  *  referenced by a still-applied manifest entry and are older than $days - so repeated runs can't
  *  slowly fill an account's disk/inodes. Cheap: one bounded find, capped deletes. */
 function smpro_inv_optimize_gc($docroot, $days = 7) {
-    $docroot = @realpath($docroot); if ($docroot === false || strpos($docroot, '/home/') !== 0) return 0;
+    $docroot = @realpath($docroot); if ($docroot === false || !preg_match('#^/home\d*/#', (string)$docroot)) return 0;
     $referenced = [];
     foreach (smpro_inv_manifest_load() as $e) if (($e['status'] ?? '') === 'applied' && !empty($e['backup'])) $referenced[$e['backup']] = 1;
     $mins = (int)($days * 1440);
@@ -926,7 +926,7 @@ function smpro_inv_optimize_apply($target, $id, $run = '') {
     $r = smpro_inv_resolve($target);
     if (!$r) return ['ok' => false, 'msg' => 'Could not resolve that target.'];
     $docroot = rtrim($r['docroot'], '/');
-    if (strpos($docroot, '/home/') !== 0) return ['ok' => false, 'msg' => 'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok' => false, 'msg' => 'refused: docroot outside /home'];
     $run = preg_replace('/[^A-Za-z0-9_.-]/', '', (string)$run);
     $id = (string)$id; $sep = strpos($id, ':'); $type = $sep === false ? $id : substr($id, 0, $sep); $arg = $sep === false ? '' : substr($id, $sep + 1);
 
@@ -1065,7 +1065,7 @@ function smpro_inv_fix_allowed($docroot, $path) {
  *  then fall back to a broad lsattr scan over the docroot's standard files + .htaccess files.
  *  Also flags .htaccess files the SITE user can't write (mode missing owner-write / wrong owner). */
 function smpro_inv_hardened_scan($docroot, $user = '') {
-    if (!is_dir($docroot) || strpos($docroot, '/home/') !== 0) return [];
+    if (!is_dir($docroot) || !preg_match('#^/home\d*/#', (string)$docroot)) return [];
     $out = [];
     // ── 1. PHP Harden manifest (most accurate - lists exactly what it locked) ──────────────────
     $u = $user !== '' ? $user : basename(dirname(rtrim($docroot, '/')));
@@ -1158,7 +1158,7 @@ function smpro_inv_fix_muplugin($r, $path) {
  *  old scan checked. Also updates the manifest status to 'unlocked' so the PHP Harden page reflects it. */
 function smpro_inv_fix_unharden($r) {
     $docroot = $r['docroot']; $user = $r['user'];
-    if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
     // Collect targets from the PHP Harden manifest (authoritative) + the broad scan (fallback).
     $items = smpro_inv_hardened_scan($docroot, $user);
     // Also sweep the PHP Harden manifest for deny-exec .htaccess guards in dirs (they may be inside
@@ -1313,7 +1313,7 @@ function smpro_inv_ht_safe_write($ht, $docroot, $user, $new) {
  *  correct RewriteBase for this (sub)site. Reversible (undo restores the backup). Hardening-aware. */
 function smpro_inv_fix_htaccess($r) {
     $docroot = $r['docroot']; $user = (string)($r['user'] ?? '');
-    if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
     // Confine + reject symlink BEFORE reading (a symlinked .htaccess would otherwise leak /etc/shadow into the backup).
     // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created - realpath() returns
     // false on a non-existent leaf, which used to make these repairs refuse a deleted .htaccess. The leaf's
@@ -1357,7 +1357,7 @@ function smpro_inv_has_force_https($docroot) {
  *  but still loops (a force-https rule + an SSL-terminating proxy bounce). Reversible (full backup). */
 function smpro_inv_fix_neutralize_https($r) {
     $docroot = $r['docroot']; $user = (string)($r['user'] ?? '');
-    if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
     // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created - realpath() returns
     // false on a non-existent leaf, which used to make these repairs refuse a deleted .htaccess. The leaf's
     // own is_link guard (below) + smpro_inv_ht_safe_write's O_EXCL/rename keep the symlink-leak protection.
@@ -1409,7 +1409,7 @@ function smpro_inv_htaccess_syntax_err(array $serverlogs) {
  *  the correct rewrite block; for all other platforms it is a blank placeholder. Reversible (undo -> backup). */
 function smpro_inv_fix_htaccess_syntax($r) {
     $docroot = $r['docroot']; $user = (string)($r['user'] ?? '');
-    if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
     // Resolve the DOCROOT dir (not the leaf) so a MISSING .htaccess can still be created - realpath() returns
     // false on a non-existent leaf, which used to make these repairs refuse a deleted .htaccess. The leaf's
     // own is_link guard (below) + smpro_inv_ht_safe_write's O_EXCL/rename keep the symlink-leak protection.
@@ -1475,7 +1475,7 @@ function smpro_inv_fix_restart_phpfpm($r) {
  *  Applies standard cPanel permissions (dirs=755, PHP files=644) and restores correct ownership. Safe: excludes cache/uploads. */
 function smpro_inv_fix_permissions($r) {
     $docroot = $r['docroot'];
-    if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
     if (!is_dir($docroot)) return ['ok'=>false,'msg'=>'docroot not found'];
     $st = @stat($docroot); if (!$st) return ['ok'=>false,'msg'=>'cannot stat docroot'];
     $uid = (int)$st['uid']; $gid = (int)$st['gid'];
@@ -1502,7 +1502,7 @@ function smpro_inv_fix_laravel_cache($r, $cacheDir = '') {
         $cacheDir = $approot . '/bootstrap/cache';
     }
     $cacheDir = rtrim((string)$cacheDir, '/');
-    if (strpos($cacheDir, '/home/') !== 0 || strpos($cacheDir, '..') !== false) return ['ok'=>false,'msg'=>'refused'];
+    if (!preg_match('#^/home\d*/#', (string)$cacheDir) || strpos($cacheDir, '..') !== false) return ['ok'=>false,'msg'=>'refused'];
     // The directory may come from the AI plan, whose evidence includes the account's own logs: confine it to THIS
     // account's home and to a real bootstrap/cache, whatever the plan says.
     $homeReal = function_exists('smpro_user_home') ? @realpath(smpro_user_home((string)$r['user'])) : false; $cacheReal = @realpath($cacheDir);
@@ -1602,7 +1602,7 @@ function smpro_inv_fixes_has(array $out, $action) { foreach ($out as $o) if (($o
  *  edit - otherwise PHP Harden / emergency-harden / a security plugin's lock makes the write fail silently and
  *  the "fix" does nothing (exactly the reported symptom). Returns how many locked targets were cleared. */
 function smpro_inv_unharden_base($res) {
-    $d = rtrim((string)($res['docroot'] ?? ''), '/'); if ($d === '' || strpos($d, '/home/') !== 0) return 0;
+    $d = rtrim((string)($res['docroot'] ?? ''), '/'); if ($d === '' || !preg_match('#^/home\d*/#', (string)$d)) return 0;
     $home = (string)($res['home'] ?? dirname($d));
     $targets = [$d.'/.htaccess', $d.'/wp-config.php', $home.'/wp-config.php', $d.'/wp-content/.htaccess', $d.'/wp-content/uploads/.htaccess', $d.'/wp-content', $d.'/wp-content/plugins'];
     $n = 0;
@@ -1617,9 +1617,9 @@ function smpro_inv_unharden_base($res) {
 /** Backup + write a literal .htaccess content (AI-provided, validated). Reversible. Hardening-aware. */
 function smpro_inv_write_htaccess($r, $content) {
     $docroot = $r['docroot'];
-    if (strpos($docroot, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
+    if (!preg_match('#^/home\d*/#', (string)$docroot)) return ['ok'=>false,'msg'=>'refused: docroot outside /home'];
     if (strlen($content) > 8192 || stripos($content, '<?php') !== false || preg_match('/[^\x09\x0a\x0d\x20-\x7e]/', $content)) return ['ok'=>false,'msg'=>'refused: .htaccess content failed safety validation'];
-    $user = (string)($r['user'] ?? (preg_match('#^/home/([^/]+)#', $docroot, $mu) ? $mu[1] : ''));
+    $user = (string)($r['user'] ?? (preg_match('#^/home\d*/([^/]+)#', $docroot, $mu) ? $mu[1] : ''));
     $imm  = smpro_inv_imm($docroot . '/.htaccess');
     [$ok, $ht, $bak, $err] = smpro_inv_ht_safe_write($docroot . '/.htaccess', $docroot, $user, rtrim($content, "\n") . "\n");   // symlink-safe
     if (!$ok) return ['ok'=>false,'msg'=>$err];
@@ -1848,7 +1848,7 @@ function smpro_inv_undo($id) {
         $art = (string)($e['to'] ?? '');
         $dr = @realpath(dirname((string)($e['from'] ?? ''))); $ra = @realpath($art);
         if ($art === '' || $ra === false) { $m[$hit]['status'] = 'undone'; $m[$hit]['undone_ts'] = time(); @file_put_contents(smpro_inv_manifest_path(), json_encode($m, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX); return ['ok'=>true,'msg'=>'Already removed.']; }
-        if (strpos($ra, '/home/') !== 0) return ['ok'=>false,'msg'=>'refused: artifact outside /home'];
+        if (!preg_match('#^/home\d*/#', (string)$ra)) return ['ok'=>false,'msg'=>'refused: artifact outside /home'];
         @unlink($art);
         $m[$hit]['status'] = 'undone'; $m[$hit]['undone_ts'] = time();
         @file_put_contents(smpro_inv_manifest_path(), json_encode($m, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);

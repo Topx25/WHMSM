@@ -837,8 +837,8 @@ function smpro_mnt_purge(bool $force = false, bool $light = false): array {
             if ($lst === false || ($lst['mode'] & 0170000) !== 0100000) continue;              // must be a real regular file (NOT a symlink)
             $rp = @realpath($path);
             if ($rp === false) continue;
-            if (strpos($rp, '/home/') !== 0) continue;                                         // must be under /home
-            if (strpos($rp, '/home/backup/') === 0) continue;                                  // never account backups
+            if (!preg_match('#^/home\d*/#', (string)$rp)) continue;                                         // must be under /home
+            if (preg_match('#^/home\d*/backup/#', (string)$rp)) continue;                                  // never account backups
             if (preg_match('#/(mail|\.trash|\.snapshots|node_modules|\.git)(/|$)#i', $rp)) continue;  // never these trees
             // ---------------------------------------------------------------------------------------------
             // HARD SAFETY NET (added after an incident: the old whitelist was just "/cache/", which matches
@@ -1135,7 +1135,7 @@ function smpro_mnt_act_preview(): array {
         $size = (int)substr($rec, 0, $tab); $path = substr($rec, $tab + 1);
         if ($path === '' || !is_file($path) || is_link($path)) continue;
         $rp = @realpath($path); if ($rp === false) continue;
-        if (strpos($rp, '/home/') !== 0 || strpos($rp, '/home/backup/') === 0) continue;
+        if (!preg_match('#^/home\d*/#', (string)$rp) || preg_match('#^/home\d*/backup/#', (string)$rp)) continue;
         if (preg_match('#/(mail|\.trash|\.snapshots|node_modules|\.git)(/|$)#i', $rp)) continue;
         if (!preg_match('#/(cache|storage/framework|bootstrap/cache)/#i', $rp)) continue;
         $junkBytes += $size; $junkN++;

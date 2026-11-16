@@ -855,7 +855,7 @@ if ($reqMethod === 'POST' && ($_POST['dbc_action'] ?? '') === 'analyze_file') {
     header('Content-Type: application/json');
     if (!function_exists('smpro_fx_deepfile') || !function_exists('smpro_fx_scope')) { echo json_encode(['ok' => false, 'msg' => 'File-analysis engine unavailable.']); exit; }
     $path = trim((string)($_POST['path'] ?? ''));
-    if (!preg_match('#^/home/([^/]+)/.+#', $path, $m) || strpos($path, '/..') !== false) { echo json_encode(['ok' => false, 'msg' => 'Refused: only a real file under /home/<account>/ can be analyzed.']); exit; }
+    if (!preg_match('#^/home\d*/([^/]+)/.+#', $path, $m) || strpos($path, '/..') !== false) { echo json_encode(['ok' => false, 'msg' => 'Refused: only a real file under /home/<account>/ can be analyzed.']); exit; }
     $acct = $m[1];
     if (!@is_file($path) && !@is_link($path)) { echo json_encode(['ok' => false, 'msg' => 'File not found: ' . $path]); exit; }
     $scope = smpro_fx_scope($acct);

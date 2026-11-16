@@ -239,11 +239,11 @@ function smpro_cc_persistence_checks(): array {
         closedir($h);
     };
     $look('/etc', 2); $look('/root', 2);
-    foreach (glob('/home/*', GLOB_ONLYDIR) ?: [] as $hd) { if (count($sorryHits) >= 5) break; $look($hd, 1); }
+    foreach ((function_exists('smpro_home_dirs') ? smpro_home_dirs() : (glob('/home/*', GLOB_ONLYDIR) ?: [])) as $hd) { if (count($sorryHits) >= 5) break; $look($hd, 1); }
     $sorry = implode("\n", $sorryHits);
     // A marker under an account home is that ACCOUNT's finding (any customer can create ~/x.sorry and must not be able
     // to raise a server-wide critical); one under /etc or /root is the server's.
-    $sorrySys = array_filter($sorryHits, fn($p) => strpos($p, '/home/') !== 0);
+    $sorrySys = array_filter($sorryHits, fn($p) => !preg_match('#^/home\d*/#', (string)$p));
     $out[] = ['id' => 'sorry', 'title' => 'No ransomware markers (*.sorry)', 'status' => $sorrySys ? 'critical' : ($sorry !== '' ? 'warning' : 'ok'),
               'finding' => $sorry !== '' ? 'found: ' . str_replace("\n", ', ', $sorry) : ('none under /etc, /root or the top of the home directories' . ($sorryPartial ? ' (a directory too large to read fully was skipped past its first entries)' : '')),
               'why' => 'The extension the 2026 cPanel ransomware left on encrypted files.', 'evidence' => $sorry !== '' ? explode("\n", $sorry) : []];

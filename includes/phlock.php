@@ -178,7 +178,7 @@ function smpro_ph_roots($u) {
             [$domain, $rest] = explode(':', $line, 2);
             $parts = array_map('trim', explode('==', $rest));
             if (($parts[0] ?? '') !== $u) continue;
-            foreach ($parts as $part) if (strpos($part, '/home/') === 0 && is_dir($part)) {
+            foreach ($parts as $part) if (preg_match('#^/home\d*/#', (string)$part) && is_dir($part)) {
                 $real = realpath($part) ?: $part;
                 if (function_exists('smpro_ph_inside') && !smpro_ph_inside($u, $real)) continue;   // a docroot outside this home is not this account's to lock
                 $roots[$real] = ['domain' => trim($domain), 'root' => $real];

@@ -200,15 +200,17 @@ if (($_GET['ajax'] ?? '') === 'svscan') {
     $prune = "\\( -path '/home/backup' -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/.snapshots' -o -ipath '*/node_modules' -o -ipath '*/.git' \\) -prune -o";
     $pruneC = " -o -ipath '*/vendor'";   // also skip vendor for large/oldbak (not for junk)
     $items = []; $title = ''; $safety = 'review';
+    // every home root, not /home alone (the reports used to miss the accounts on /home2 ...)
+    $smproHR = implode(' ', smpro_home_roots()); $smproHB = implode(' -o ', array_map(fn($hr) => "-path '" . $hr . "/backup'", smpro_home_roots()));
     if ($type === 'large') {
         $title = 'Large files ≥500 MB (all accounts, mail excluded)'; $safety = 'review';
-        $cmd = smpro_ds_wrap("find /home -maxdepth 7 \\( -path '/home/backup' -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' -o -ipath '*/vendor' -o -ipath '*/cache' \\) -prune -o -type f -size +500M -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' -print 2>/dev/null | sort -rn | head -120", 200);
+        $cmd = smpro_ds_wrap("find " . $smproHR . " -maxdepth 7 \\( " . $smproHB . " -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' -o -ipath '*/vendor' -o -ipath '*/cache' \\) -prune -o -type f -size +500M -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' -print 2>/dev/null | sort -rn | head -120", 200);
     } elseif ($type === 'oldbak') {
         $title = 'Old backups & archives >30 days (all accounts)'; $safety = 'likely';
-        $cmd = smpro_ds_wrap("find /home -maxdepth 7 \\( -path '/home/backup' -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' \\) -prune -o -type f \\( -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.tar' -o -iname '*.zip' -o -iname '*.gz' -o -iname '*.sql' -o -iname '*.bak' -o -iname '*.old' \\) -size +5M -mtime +30 -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' -print 2>/dev/null | sort -rn | head -150", 220);
+        $cmd = smpro_ds_wrap("find " . $smproHR . " -maxdepth 7 \\( " . $smproHB . " -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' \\) -prune -o -type f \\( -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.tar' -o -iname '*.zip' -o -iname '*.gz' -o -iname '*.sql' -o -iname '*.bak' -o -iname '*.old' \\) -size +5M -mtime +30 -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' -print 2>/dev/null | sort -rn | head -150", 220);
     } elseif ($type === 'junk') {
         $title = 'Safe junk / cache files >2 days (all accounts)'; $safety = 'safe';
-        $cmd = smpro_ds_wrap("find /home -xdev -maxdepth 9 \\( -path '/home/backup' -o -path '/home/virtfs' -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' -o -ipath '*/vendor' -o -ipath '*/library' -o -ipath '*/lib' -o -ipath '*/src' -o -ipath '*/includes' -o -ipath '*/storage/framework/sessions' \\) -prune -o -type f -atime +2 -not -iname '*.php' -not -iname '*.phtml' -not -iname '*.inc' \\( -ipath '*/cache/*' -o -ipath '*/storage/framework/*' -o -ipath '*/bootstrap/cache/*' -o -ipath '*/.cache/*' \\) -not -name 'index.php' -not -name '.gitignore' -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' -print 2>/dev/null | sort -rn | head -200", 220);
+        $cmd = smpro_ds_wrap("find " . $smproHR . " -xdev -maxdepth 9 \\( " . $smproHB . " -o -path '/home/virtfs' -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' -o -ipath '*/vendor' -o -ipath '*/library' -o -ipath '*/lib' -o -ipath '*/src' -o -ipath '*/includes' -o -ipath '*/storage/framework/sessions' \\) -prune -o -type f -atime +2 -not -iname '*.php' -not -iname '*.phtml' -not -iname '*.inc' \\( -ipath '*/cache/*' -o -ipath '*/storage/framework/*' -o -ipath '*/bootstrap/cache/*' -o -ipath '*/.cache/*' \\) -not -name 'index.php' -not -name '.gitignore' -printf '%s\\t%TY-%Tm-%Td\\t%p\\n' -print 2>/dev/null | sort -rn | head -200", 220);
     } else { echo '<div class="fa-empty">Unknown scan.</div>'; exit; }
     foreach (explode("\n",(string)@shell_exec($cmd)) as $l){ if(trim($l)==='')continue; $p=explode("\t",$l,3); if(count($p)<3)continue; $items[]=['size'=>(int)$p[0],'mtime'=>$p[1],'file'=>$p[2]]; }
     smpro_audit('disk_svscan', ['type'=>$type,'hits'=>count($items)]);

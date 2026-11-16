@@ -525,6 +525,8 @@ function smpro_svcmon_run() {
     // Always refresh the cheap scan snapshot so the dashboard stays current even when monitoring is off.
     $rows = smpro_svc_scan(); smpro_svc_snap_write($rows);
     if (!$cfg['enabled'] || !$cfg['monitor']) return;
+    // the account-isolation cages: tried every run, rebuilt when broken (only when automatic repair is on), always told
+    if (function_exists('smpro_cage_guard')) { try { smpro_cage_guard(!empty($cfg['autorestart'])); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail('cage_guard', $e); else @error_log('smpro cage guard: ' . $e->getMessage()); } }
     $reg = smpro_svc_registry(); $state = smpro_svcmon_state_load(); $now = time(); $acted = 0;
     $ignored = smpro_svc_ignored();
     // A watch list saved before PHP-FPM existed in the catalog cannot contain it, and a critical service that is in

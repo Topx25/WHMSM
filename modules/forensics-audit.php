@@ -120,7 +120,7 @@ function smpro_fa_collect_findings($user) {
 
     /* 3) SSH authorized_keys - passwordless access / persistence (trusted keys suppressed) */
     $allow = smpro_fa_allow_load();
-    $keyFiles = $scope === '' ? array_merge(['/root/.ssh/authorized_keys'], glob('/home/*/.ssh/authorized_keys') ?: []) : [smpro_user_home($scope) . '/.ssh/authorized_keys'];
+    $keyFiles = $scope === '' ? array_merge(['/root/.ssh/authorized_keys'], smpro_home_glob('/.ssh/authorized_keys')) : [smpro_user_home($scope) . '/.ssh/authorized_keys'];
     foreach ($keyFiles as $kf) {
         if (!is_readable($kf)) continue;
         $isRoot = strpos($kf, '/root/') !== false;
@@ -151,7 +151,7 @@ function smpro_fa_collect_findings($user) {
 
     /* 4) Shell-init / PHP-ini injections - login-time exec */
     $dsus = '/curl|wget|base64|eval|python\s+-c|perl\s+-e|\bnc\b|\/dev\/tcp|history\s*-c|chattr|auto_prepend|auto_append/i';
-    $homes = $scope === '' ? array_slice(glob('/home/*', GLOB_ONLYDIR) ?: [], 0, 600) : [smpro_user_home($scope)];
+    $homes = $scope === '' ? array_slice(smpro_home_dirs(), 0, 1200) : [smpro_user_home($scope)];
     foreach ($homes as $h) {
         $acct = basename($h);
         foreach (['.bashrc','.bash_profile','.profile','.user.ini'] as $df) {
@@ -638,7 +638,7 @@ function smpro_fa_scan($type, $user, $path, $days) {
         // Shared-hosting safe: for ALL accounts, scope to the live web roots (public_html) with shallow depth + prune heavy dirs.
         // For one account, scan its whole home. PRUNE = skip (don't descend) the big noise dirs entirely.
         $prune = "\\( -path '*/vendor' -o -ipath '*/node_modules' -o -path '*/storage/framework' -o -path '*/storage/cache' -o -path '*/bootstrap/cache' -o -path '*/.git' -o -path '*/.trash' -o -path '*/.cagefs' \\) -prune -o";
-        $target = ($user === 'all' || $user === '') ? '/home/*/public_html' : escapeshellarg($path);
+        $target = ($user === 'all' || $user === '') ? implode(' ', array_map(fn($hr) => $hr . '/*/public_html', smpro_home_roots())) : escapeshellarg($path);
         $base = 'find ' . $target . " -maxdepth 6 " . $prune . " -name '.htaccess' -print0 2>/dev/null | head -z -n 20000";
         // ONE grep over all .htaccess (file:line:content). The normal cPanel handler is in nearly every file,
         // so a candidate pre-filter would overflow - instead grep all matching lines once, then classify in PHP.
@@ -1042,6 +1042,14 @@ if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'fx_wl_add') {
     $reason = trim((string)($_POST['reason'] ?? ''));
     if ($value === '' || $reason === '') { echo json_encode(['ok'=>false,'msg'=>'A file/pattern and a reason are required.']); exit; }
     if (in_array($scope, ['file_hash','path','path_size'], true) && !preg_match('#^/home\d*/#', (string)$value)) { echo json_encode(['ok'=>false,'msg'=>'Refused: only paths under /home/<account>/ can be whitelisted.']); exit; }
+    // A pattern is bound to ONE account's home and must name something: scope "glob" with the value "*" and no
+    // account used to be accepted, and silenced every finding on every account for good.
+    if ($scope === 'glob') {
+        $ah = ($acct !== '' && function_exists('smpro_user_home')) ? rtrim((string)smpro_user_home($acct), '/') : '';
+        if ($ah === '' || strpos($value, $ah . '/') !== 0 || strpos($value, '..') !== false || strlen(str_replace(['*', '?', '/'], '', substr($value, strlen($ah)))) < 4) {
+            echo json_encode(['ok'=>false,'msg'=>'Refused: a pattern must start with the home of the chosen account and name a folder or file inside it (at least a few real characters besides * and ?).']); exit;
+        }
+    }
     $id = smpro_fe_wl_add($acct, $scope, $value, ['reason'=>$reason]); smpro_fa_cache_clear();
     echo json_encode(['ok'=>true,'id'=>$id,'msg'=>'Whitelisted. Future re-alerts on this file are suppressed; genuine tampering (new obfuscation, 10× size jump) still fires.'], JSON_UNESCAPED_SLASHES); exit;
 }

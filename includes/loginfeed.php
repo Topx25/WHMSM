@@ -204,13 +204,39 @@ function smpro_lf_front_logins(): array {
     }
     return $idx;
 }
+/**
+ * A login that could not be given to one address is counted, and said once in ten minutes. It used to be dropped in
+ * silence: the line kept the proxy's own address, which every guard skips as "this server", so a blind spot looked
+ * exactly like a quiet night.
+ */
+function smpro_lf_unattributed(array $ips, int $ts): void {
+    static $told = false;
+    $f = SMPRO_VARLIB . '/cache/login_unattributed.json';
+    $j = @is_file($f) ? json_decode((string)@file_get_contents($f), true) : null; if (!is_array($j)) $j = ['n' => 0, 'since' => time(), 'told' => 0];
+    $j['n'] = (int)$j['n'] + 1; $j['last'] = $ts; $j['last_ips'] = array_slice(array_values($ips), 0, 6);
+    if (!$told && time() - (int)$j['told'] >= 600) {
+        $told = true; $j['told'] = time();
+        if (function_exists('smpro_audit')) smpro_audit('login_unattributed', ['count_since_last' => (int)$j['n'], 'addresses' => $j['last_ips']]);
+        $j['n'] = 0;
+    }
+    @is_dir(dirname($f)) || @mkdir(dirname($f), 0700, true);
+    @file_put_contents($f, json_encode($j), LOCK_EX); @chmod($f, 0600);
+}
 /** [ip, how] for a loopback-recorded login at $ts, or ['', reason]. */
 function smpro_lf_real_login_ip(int $ts, string $status = '200'): array {
     if ($ts <= 0) return ['', ''];
     $idx = smpro_lf_front_logins(); $cand = [];
-    for ($d = -2; $d <= 2; $d++) foreach (array_keys($idx[$ts + $d][$status] ?? []) as $ip) $cand[$ip] = 1;
-    if (count($cand) === 1) return [(string)array_key_first($cand), 'front proxy log (Imunify WebShield / cPanel proxy), same second'];
-    if (count($cand) > 1) return ['', 'one of ' . implode(', ', array_keys($cand)) . ' (several logins in the same second)'];
+    // The same second first, then one and two seconds either side. All five seconds used to be taken together, so
+    // two addresses a second apart - any password-guessing run from more than one machine - made every one of
+    // their attempts "unknown", and neither guard ever saw them.
+    // Only for FAILED attempts. A sign-in that WORKED is never narrowed this way: giving a successful login to the
+    // wrong one of two people would point the country lock at somebody who did nothing.
+    foreach (($status === '401' ? [0, 1, 2] : [2]) as $w) {
+        $cand = [];
+        for ($d = -$w; $d <= $w; $d++) foreach (array_keys($idx[$ts + $d][$status] ?? []) as $ip) $cand[$ip] = 1;
+        if (count($cand) === 1) return [(string)array_key_first($cand), 'front proxy log (Imunify WebShield / cPanel proxy), ' . ($w === 0 ? 'same second' : 'within ' . $w . ' s')];
+        if (count($cand) > 1) { smpro_lf_unattributed(array_keys($cand), $ts); return ['', 'one of ' . implode(', ', array_keys($cand)) . ' (several logins in the same second)']; }
+    }
     return ['', ''];
 }
 

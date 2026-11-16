@@ -14,11 +14,19 @@ if (!defined('SMPRO_PS_DIR')) define('SMPRO_PS_DIR', SMPRO_VARLIB . '/phishscan'
 function smpro_ps_scan($path) {
     if ($path === '') return ['err' => 'Pick a single account.', 'rows' => []];
     $sig = 'paypal|verify[^a-z]{0,3}your[^a-z]{0,3}account|account[^a-z]{0,3}(suspended|locked|limited)|secure[^a-z]{0,3}login|signin[^a-z]{0,3}verify|onedrive|office\\s?365|wells.?fargo|bank.?of.?america|netflix|amazon.*billing|webmail.*upgrade|confirm[^a-z]{0,3}identity|update[^a-z]{0,3}payment';
-    $excl = " -not -path '*/vendor/*' -not -ipath '*/node_modules/*' -not -path '*/wp-includes/*' -not -path '*/wp-admin/*'";
+    // These were find's words given to grep: grep refused them, its complaint went to /dev/null, and every scan ended
+    // "done, nothing found" - for every account, always. grep's own way of leaving folders out:
+    $excl = " --exclude-dir=vendor --exclude-dir=node_modules --exclude-dir=wp-includes --exclude-dir=wp-admin";
     $cmd = 'timeout 280 nice -n ' . SMPRO_SCAN_NICE . ' ionice -c3 grep -rlIEi ' . escapeshellarg($sig)
-        . ' --include=*.php --include=*.html --include=*.htm ' . escapeshellarg($path) . $excl . ' 2>/dev/null | head -200';
+        . ' --include=*.php --include=*.html --include=*.htm' . $excl . ' ' . escapeshellarg($path) . ' 2>/dev/null | head -200; echo "__SMRC__=${PIPESTATUS[0]}"';
+    $cmd = '/bin/bash -c ' . escapeshellarg($cmd);
     $rows = [];
-    foreach (array_filter(array_map('trim', explode("\n", (string)@shell_exec($cmd)))) as $f) {
+    $raw = (string)@shell_exec($cmd);
+    // grep: 0 = found, 1 = nothing found, anything else = it did not run. "Did not run" is said, never shown as clean.
+    $grc = preg_match('/__SMRC__=(\d+)\s*$/', $raw, $gm) ? (int)$gm[1] : -1;
+    $raw = (string)preg_replace('/__SMRC__=\d*\s*$/', '', $raw);
+    if (!in_array($grc, [0, 1, 141], true)) return ['err' => 'The scan could not run (exit ' . $grc . ') - this is NOT a clean result.', 'rows' => []];
+    foreach (array_filter(array_map('trim', explode("\n", $raw))) as $f) {
         if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($f)) continue;   // WP Guard's own file / quarantine -> not a phishing page
         $hasForm = trim((string)@shell_exec('grep -lIEi "<form|password|passwd|action=" ' . escapeshellarg($f) . ' 2>/dev/null')) !== '';
         $hits = trim((string)@shell_exec('grep -oiE ' . escapeshellarg($sig) . ' ' . escapeshellarg($f) . ' 2>/dev/null | tr A-Z a-z | sort -u | head -6'));

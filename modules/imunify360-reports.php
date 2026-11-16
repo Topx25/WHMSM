@@ -86,7 +86,7 @@ function smpro_im_report_load($id) {
     $f = SMPRO_IM_REPDIR . '/' . $id . '.json'; if (!is_file($f)) return null;
     $j = json_decode((string)@file_get_contents($f), true); return is_array($j) ? $j : null;
 }
-function smpro_im_acct_of($file) { return preg_match('#^/home/([^/]+)/#', (string)$file, $m) ? $m[1] : 'system'; }
+function smpro_im_acct_of($file) { return preg_match('#^/home\d*/([^/]+)/#', (string)$file, $m) ? $m[1] : 'system'; }
 
 /**
  * CAMPAIGN CORRELATION - the same malware family landing on several accounts at once is not several
@@ -122,7 +122,7 @@ function smpro_imu_malware_families(array $rows, int $minAccounts = 3): array {
             if ($ts > $fam[$f]['last']) $fam[$f]['last'] = $ts;
         }
         // path below the account root, minus the docroot-ish prefix, so the same plugin path lines up
-        if (preg_match('#^/home/[^/]+/(.+)$#', $file, $mm)) {
+        if (preg_match('#^/home\d*/[^/]+/(.+)$#', $file, $mm)) {
             $tail = preg_replace('#^(public_html|www)/#', '', $mm[1]);
             $dir  = trim(dirname($tail), '.');
             if ($dir !== '' && $dir !== '/') $fam[$f]['tails'][$dir] = ($fam[$f]['tails'][$dir] ?? 0) + 1;
@@ -227,8 +227,8 @@ if ($reqMethod === 'POST' && ($_POST['im_action'] ?? '') === 'hash_search') {
     if ($size <= 0)          { echo json_encode(['ok'=>false,'msg'=>'No file size to anchor the hunt — refusing a full /home hash sweep (too heavy).']); exit; }
     // Bounded + throttled: prefilter by EXACT byte size (a same-payload file is byte-identical),
     // skip mail/backup/trash/vendor trees, then verify by hashing only the size matches.
-    $prune = "\\( -path /home/backup -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' -o -ipath '*/vendor' -o -ipath '*/.snapshots*' -o -ipath '*/.git' \\) -prune";
-    $cmd = "timeout 110 nice -n19 ionice -c3 find /home -maxdepth 8 $prune -o -type f -size {$size}c -print 2>/dev/null | head -4000";
+    $prune = "\\( " . implode(' -o ', array_map(fn($hr) => '-path ' . $hr . '/backup', smpro_home_roots())) . " -o -ipath '*/mail' -o -ipath '*/.trash*' -o -ipath '*/node_modules' -o -ipath '*/vendor' -o -ipath '*/.snapshots*' -o -ipath '*/.git' \\) -prune";
+    $cmd = "timeout 110 nice -n19 ionice -c3 find " . implode(' ', smpro_home_roots()) . " -maxdepth 8 $prune -o -type f -size {$size}c -print 2>/dev/null | head -4000";
     $cand = array_filter(explode("\n", (string)@shell_exec($cmd)));
     $matches = []; $checked = 0;
     foreach ($cand as $p) {

@@ -1661,7 +1661,7 @@ function smpro_im_breach_excluded($path) {
     return false;
 }
 /** cpanel account owning a /home/<user>/... path (cheap, for whitelist account-scoping in the detector). */
-function smpro_im_account_for_path($path) { return preg_match('#^/home/([^/]+)/#', (string)$path, $m) ? $m[1] : ''; }
+function smpro_im_account_for_path($path) { return preg_match('#^/home\d*/([^/]+)/#', (string)$path, $m) ? $m[1] : ''; }
 /** Should this candidate be SUPPRESSED from the breach alert / auto-quarantine because the operator
  *  whitelisted it in Forensics? silent = exact-hash; downgrade = path/glob, suppressed UNLESS a NEW
  *  obfuscation/exec family appeared vs the whitelisted fingerprint; rearm = never suppress. Bounded hash. */
@@ -1983,7 +1983,7 @@ function smpro_im_harden_rule() {
  */
 function smpro_im_ht_write($ht, $content) {
     $parent = function_exists('smpro_path_safe') ? smpro_path_safe(dirname($ht), ['/home'])
-            : ((!is_link(dirname($ht)) && ($rp = @realpath(dirname($ht))) !== false && strpos($rp, '/home/') === 0) ? $rp : '');
+            : ((!is_link(dirname($ht)) && ($rp = @realpath(dirname($ht))) !== false && preg_match('#^/home\d*/#', (string)$rp)) ? $rp : '');
     $base = basename($ht);
     if ($parent === '' || $base === '' || strpbrk($base, "/\0") !== false) return [false, ''];
     $ht = $parent . '/' . $base;

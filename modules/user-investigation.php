@@ -25,7 +25,7 @@ if (($reqMethod ?? ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST' && ($_POST[
     }
     if ($act === 'quarantine_shell') {
         $file = (string)($_POST['file'] ?? '');
-        if (!preg_match('#^/home/([^/]+)/.+#', $file, $m) || !is_file($file)) { echo json_encode(['ok'=>false, 'msg'=>'Refused: must be an existing path under /home/<account>/.']); exit; }
+        if (!preg_match('#^/home\d*/([^/]+)/.+#', $file, $m) || !is_file($file)) { echo json_encode(['ok'=>false, 'msg'=>'Refused: must be an existing path under /home/<account>/.']); exit; }
         if (!function_exists('smpro_im_quarantine_file')) { echo json_encode(['ok'=>false, 'msg'=>'Quarantine engine unavailable.']); exit; }
         $r = smpro_im_quarantine_file($file, $m[1], false);
         if (function_exists('smpro_audit')) smpro_audit('upload_breach_quarantine', ['file'=>$file, 'ok'=>(bool)$r]);
