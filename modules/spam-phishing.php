@@ -647,7 +647,7 @@ if ($reqMethod === 'POST' && ($_POST['sp_action'] ?? '') === 'ai_analyze') {
     if ($ref !== '' && is_file($ref) && !is_link($ref) && is_readable($ref) && @filesize($ref) < 3000000) {
         $rp = realpath($ref);
         $sensitive = $rp && preg_match('~(/\.ssh/|/etc/(shadow|gshadow|passwd|csf/)|^/root/|\.pem$|\.key$|id_rsa|/var/lib/smpro/)~i', $rp);
-        if ($rp && preg_match('#^/home/[^/]+/#', $rp) && !$sensitive) $excerpt = (string)@file_get_contents($ref, false, null, 0, 14000);
+        if ($rp && preg_match('#^/home\d*/[^/]+/#', $rp) && !$sensitive) $excerpt = (string)@file_get_contents($ref, false, null, 0, 14000);
     }
     if ($kind === 'mailscan') {
         $sys = 'You are a senior email-deliverability & anti-abuse engineer reviewing a cPanel server\'s OUTGOING mail. '
@@ -730,11 +730,11 @@ if ($reqMethod === 'POST' && ($_POST['sp_action'] ?? '') === 'remove_file') {
     smpro_require_valid_csrf('sp_ai'); smpro_require_root();
     header('Content-Type: application/json');
     $f = (string)($_POST['ref'] ?? '');
-    $acct = preg_match('#^/home/([^/]+)/#', $f, $m) ? $m[1] : '';
+    $acct = preg_match('#^/home\d*/([^/]+)/#', $f, $m) ? $m[1] : '';
     // SECURITY: reject a symlink / out-of-account path so quarantine acts on the REAL flagged file, not a
     // customer-planted link (avoids false "remediated" + moving a root-owned symlink).
     $safe = ($acct !== '' && function_exists('smpro_path_safe')) ? smpro_path_safe($f, [smpro_user_home($acct)]) : '';
-    if (!preg_match('#^/home/[^/]+/.+\.(php|phtml|html?|js)$#', $f) || !is_file($f) || $safe === '') { echo json_encode(['ok'=>false,'msg'=>'Refused: only an existing real file under /home/<account>/ (no symlinks).']); exit; }
+    if (!preg_match('#^/home\d*/[^/]+/.+\.(php|phtml|html?|js)$#', $f) || !is_file($f) || $safe === '') { echo json_encode(['ok'=>false,'msg'=>'Refused: only an existing real file under /home/<account>/ (no symlinks).']); exit; }
     $f = $safe;
     if (function_exists('smpro_wpguard_trusted') && smpro_wpguard_trusted($f)) { echo json_encode(['ok'=>false,'msg'=>'Refused: trusted WP Guard file (its own plugin/log/quarantine) — not moved.']); exit; }
     $dir = SMPRO_VARLIB . '/quarantine/phishing'; @is_dir($dir) || @mkdir($dir, 0700, true);

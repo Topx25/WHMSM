@@ -102,12 +102,18 @@ function smpro_db_pk($db, $table) {
     if (!smpro_db_ident($db) || !smpro_db_ident($table)) return '';
     $k = "$db.$table"; if (isset($c[$k])) return $c[$k];
     $out = trim(smpro_db_q("SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='$db' AND TABLE_NAME='$table' AND INDEX_NAME='PRIMARY' ORDER BY SEQ_IN_INDEX LIMIT 1"));
-    if (smpro_db_ident($out)) return $c[$k] = $out;
+    // A row is addressed as `key` = number. With a key made of several columns, or a text key, that reaches a
+    // different row than the one that was flagged. Such a table is not changed here at all.
+    $isInt = fn(string $col): bool => (bool)preg_match('/int$/i', trim(smpro_db_q("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$db' AND TABLE_NAME='$table' AND COLUMN_NAME='$col'")));
+    if (smpro_db_ident($out)) {
+        $parts = (int)trim(smpro_db_q("SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='$db' AND TABLE_NAME='$table' AND INDEX_NAME='PRIMARY'"));
+        return $c[$k] = ($parts === 1 && $isInt($out)) ? $out : '';
+    }
     // fallback: pick a common single-column id if it exists (covers cases where PRIMARY lookup is blocked/empty)
     $cols = array_filter(array_map('trim', explode("\n", smpro_db_q("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$db' AND TABLE_NAME='$table'"))));
     $lc = array_change_key_case(array_flip($cols), CASE_LOWER);
     foreach (['id', 'option_id', 'meta_id', 'comment_id', 'term_id', 'umeta_id'] as $cand) {
-        if (isset($lc[$cand])) { foreach ($cols as $col) if (strtolower($col) === $cand) return $c[$k] = $col; }
+        if (isset($lc[$cand])) { foreach ($cols as $col) if (strtolower($col) === $cand && $isInt($col)) return $c[$k] = $col; }
     }
     return $c[$k] = '';
 }
@@ -435,6 +441,83 @@ function smpro_db_strip($val, $snippets, $selected) {
     return $val;
 }
 
+/**
+ * Is this snippet certainly planted? The analyser lists everything worth a look: every script, every frame, every
+ * outside link. Removing all of that in bulk took a site's embedded video, its analytics tag and its links to other
+ * sites with it. In bulk only what no site owner puts there is removed; the rest waits for a person.
+ */
+function smpro_db_sure(array $s): bool {
+    $t = (string)($s['text'] ?? ''); $type = (string)($s['type'] ?? '');
+    $obf = (bool)preg_match('/eval\s*\(|atob\s*\(|String\.fromCharCode|unescape\s*\(|base64_decode|gzinflate|str_rot13|(?:\\\\x[0-9a-f]{2}){4}|[A-Za-z0-9+\/]{400,}/i', $t);
+    if ($type === 'eval')   return true;
+    if ($type === 'script') return $obf;
+    if ($type === 'php')    return $obf || (bool)preg_match('/\b(system|shell_exec|passthru|assert|proc_open|popen)\s*\(|\$_(POST|REQUEST|COOKIE|GET)\b/i', $t);
+    if ($type === 'iframe') return (bool)preg_match('/\b(width|height)\s*=\s*["\']?[01](px)?["\'\s>]|display\s*:\s*none|visibility\s*:\s*hidden|(left|top)\s*:\s*-\d{3,}/i', $t);
+    if ($type === 'hidden') return (bool)preg_match('/<a\b[^>]*\bhref\s*=\s*["\'](?:https?:)?\/\//i', $t);
+    return false;   // an outside link in plain sight is a judgement, not a certainty
+}
+/** A PHP-serialized value that reads back (objects are not built). */
+function smpro_db_is_ser(string $v): bool {
+    return $v !== '' && (bool)preg_match('/^(a|s|O|C):\d+[:{]/', $v) && @unserialize($v, ['allowed_classes' => false]) !== false;
+}
+/** A JSON object or list that reads back. */
+function smpro_db_is_json(string $v): bool {
+    $t = ltrim($v); if ($t === '' || ($t[0] !== '{' && $t[0] !== '[')) return false;
+    $j = json_decode($v); return is_array($j) || is_object($j);
+}
+/**
+ * Clean a stored value without breaking what it is. Site settings are stored as serialized arrays and page
+ * builders store JSON; cutting text out of those by position left a wrong length inside, the value no longer read
+ * back, and the site dropped the whole setting. Such a value is opened, each text inside is cleaned, and it is
+ * written back in its own form. One that holds stored objects is left alone.
+ * Returns ['clean' => string, 'n' => snippets removed, 'seen' => snippets found, 'why' => reason nothing was done].
+ */
+function smpro_db_clean_value($val, array $own, bool $onlySure, int $depth = 0): array {
+    $val = (string)$val; $same = fn(string $why = '', int $seen = 0): array => ['clean' => $val, 'n' => 0, 'seen' => $seen, 'why' => $why];
+    if ($depth > 6) return $same();
+    if (smpro_db_is_ser($val)) {
+        if (preg_match('/(^|[;{])[OC]:\d+:"/', $val)) return $same('it holds stored objects - clean it by hand', 1);
+        $n = 0; $seen = 0; $u = smpro_db_clean_walk(@unserialize($val, ['allowed_classes' => false]), $own, $onlySure, $depth + 1, $n, $seen);
+        if ($n === 0) return $same('', $seen);
+        $new = serialize($u);
+        return smpro_db_is_ser($new) ? ['clean' => $new, 'n' => $n, 'seen' => $seen, 'why' => ''] : $same('the cleaned value would not read back', $seen);
+    }
+    if (smpro_db_is_json($val)) {
+        $n = 0; $seen = 0; $j = smpro_db_clean_walk(json_decode($val), $own, $onlySure, $depth + 1, $n, $seen);
+        if ($n === 0) return $same('', $seen);
+        $fl = (strpos($val, '\\/') === false ? JSON_UNESCAPED_SLASHES : 0) | (preg_match('/\\\\u[0-9a-fA-F]{4}/', $val) ? 0 : JSON_UNESCAPED_UNICODE);
+        $new = json_encode($j, $fl);
+        return ($new !== false && smpro_db_is_json($new)) ? ['clean' => $new, 'n' => $n, 'seen' => $seen, 'why' => ''] : $same('the cleaned value would not read back', $seen);
+    }
+    $a = smpro_db_analyze($val, $own);
+    $sel = []; foreach ($a['snippets'] as $sn) if (!$onlySure || smpro_db_sure($sn)) $sel[] = $sn['i'];
+    if (!$sel) return $same('', count($a['snippets']));
+    return ['clean' => smpro_db_strip($val, $a['snippets'], $sel), 'n' => count($sel), 'seen' => count($a['snippets']), 'why' => ''];
+}
+function smpro_db_clean_walk($v, array $own, bool $onlySure, int $depth, int &$n, int &$seen) {
+    if (is_string($v)) { $r = smpro_db_clean_value($v, $own, $onlySure, $depth); $n += $r['n']; $seen += $r['seen']; return $r['clean']; }
+    if (is_array($v)) { foreach ($v as $k => $x) $v[$k] = smpro_db_clean_walk($x, $own, $onlySure, $depth, $n, $seen); return $v; }
+    if (is_object($v)) { foreach (get_object_vars($v) as $k => $x) $v->{$k} = smpro_db_clean_walk($x, $own, $onlySure, $depth, $n, $seen); return $v; }
+    return $v;
+}
+/** Give every s:N:"..." of a serialized value its real length again (after text was cut out of it by position). */
+function smpro_db_ser_relen(string $v): string {
+    return (string)preg_replace_callback('/s:\d+:"(.*?)";(?=[aidsbONOC}]|$)/s', fn($m) => 's:' . strlen($m[1]) . ':"' . $m[1] . '";', $v);
+}
+/**
+ * Run one statement that can be large. As a command argument a statement is cut off by the system at 128 KB, so a
+ * row over about 64 KB could be cleaned but never put back.
+ */
+function smpro_db_exec_big(string $sql, int $t = 60): string {
+    $d = SMPRO_VARLIB . '/tmp'; @is_dir($d) || @mkdir($d, 0700, true);
+    $f = $d . '/sql-' . bin2hex(random_bytes(8));
+    $old = umask(0077); $w = @file_put_contents($f, $sql); umask($old);
+    if ($w === false) return 'the statement could not be staged';
+    $out = (string)@shell_exec('timeout ' . (int)$t . ' ' . smpro_db_cli() . smpro_db_defaults() . ' < ' . escapeshellarg($f) . ' 2>&1');
+    @unlink($f);
+    return $out;
+}
+
 /* ---------------- backup + report + clean ---------------- */
 function smpro_db_report($d) {
     @is_dir(SMPRO_DBC_REPORTS) || @mkdir(SMPRO_DBC_REPORTS, 0700, true);
@@ -501,7 +584,7 @@ function smpro_db_restore_apply($id) {
     $orig = (string)@file_get_contents($bak);
     $hex = bin2hex($orig);
     $sql = "UPDATE `$db`.`$table` SET `$field`=UNHEX('" . $hex . "') WHERE `$pk`=$row LIMIT 1";
-    @shell_exec('timeout 30 ' . smpro_db_cli() . smpro_db_defaults() . ' -e ' . escapeshellarg($sql) . ' 2>&1');
+    smpro_db_exec_big($sql, 60);
     $after = smpro_db_read($db, $table, $field, $pk, $row);
     $ok = ($after !== null && $after === $orig);
     if ($ok) {
@@ -545,6 +628,14 @@ function smpro_db_restore_view($id) {
 function smpro_db_clean_row_core($db, $table, $field, $pk, $row, $orig, $clean, $account) {
     if (!smpro_db_ident($db) || !smpro_db_ident($table) || !smpro_db_ident($field) || !smpro_db_ident($pk)) return ['ok'=>false,'msg'=>'Invalid identifier.','backup'=>''];
     $row = (int)$row;
+    // A value that was a readable structure must still be one after the change - whoever chose what to remove.
+    $orig = (string)$orig; $clean = (string)$clean;
+    if (smpro_db_is_ser($orig) && !smpro_db_is_ser($clean)) {
+        $fixed = smpro_db_ser_relen($clean);
+        if (!smpro_db_is_ser($fixed)) return ['ok' => false, 'msg' => 'Not changed.', 'backup' => '', 'err' => 'this value is a stored structure and would not read back after the removal - nothing was changed (bulk clean handles such values safely)'];
+        $clean = $fixed;
+    }
+    if (smpro_db_is_json($orig) && !smpro_db_is_json($clean)) return ['ok' => false, 'msg' => 'Not changed.', 'backup' => '', 'err' => 'this value is stored JSON and would not read back after the removal - nothing was changed (bulk clean handles such values safely)'];
     $dir = SMPRO_DBC_BACKUP . '/' . preg_replace('/[^a-zA-Z0-9._-]/', '', $account);
     @is_dir($dir) || @mkdir($dir, 0700, true); @chmod(SMPRO_DBC_BACKUP, 0700);
     $bak = $dir . '/' . date('Ymd_His') . '_' . $db . '_' . $table . '_' . $field . '_' . $row . '.txt';
@@ -555,7 +646,7 @@ function smpro_db_clean_row_core($db, $table, $field, $pk, $row, $orig, $clean, 
     if ($wrote === false || (int)$wrote !== strlen((string)$orig) || (int)@filesize($bak) !== strlen((string)$orig)) { @unlink($bak); return ['ok' => false, 'msg' => 'The copy of the row could not be saved (disk full?) - nothing was changed.', 'backup' => '']; }
     $hex = bin2hex($clean);
     $sql = "UPDATE `$db`.`$table` SET `$field`=UNHEX('" . $hex . "') WHERE `$pk`=$row LIMIT 1";
-    $out = (string)@shell_exec('timeout 30 ' . smpro_db_cli() . smpro_db_defaults() . ' -e ' . escapeshellarg($sql) . ' 2>&1');
+    $out = smpro_db_exec_big($sql, 60);
     // VERIFY the write actually took effect - re-read the row and confirm it now equals the cleaned value.
     // ("no 'error' in output" is NOT proof: a write that matches 0 rows, or a read-only grant, prints nothing.)
     $after = smpro_db_read($db, $table, $field, $pk, $row);
@@ -578,7 +669,7 @@ function smpro_db_clean_apply($db, $table, $field, $pk, $row, $orig, $clean, $ac
 }
 /** Clean ONE batch of row-keys ("db|table|field|row"). No reports. Returns running counts. */
 function smpro_db_clean_batch(array $keys) {
-    $cleaned = 0; $skipped = 0; $bytes = 0; $stat = [];
+    $cleaned = 0; $skipped = 0; $bytes = 0; $stat = []; $held = 0;
     foreach ($keys as $key) {
         $p = explode('|', (string)$key);
         if (count($p) !== 4) { $skipped++; continue; }
@@ -588,15 +679,15 @@ function smpro_db_clean_batch(array $keys) {
         $pk = smpro_db_pk($db, $table);
         $val = $pk !== '' ? smpro_db_read($db, $table, $field, $pk, $row) : null;
         if ($val === null) { $skipped++; continue; }
-        $a = smpro_db_analyze($val, smpro_db_account_domains($flag['account']));
-        if (!$a['changed']) { $skipped++; continue; }
-        $clean = smpro_db_strip($val, $a['snippets'], array_map(fn($s) => $s['i'], $a['snippets']));
-        if ($clean === $val) { $skipped++; continue; }
+        // in bulk: only what is certainly planted, and never by cutting into a stored structure
+        $cv = smpro_db_clean_value($val, smpro_db_account_domains($flag['account']), true);
+        $clean = $cv['clean'];
+        if ($clean === $val) { $skipped++; if ($cv['seen'] > 0) $held++; continue; }
         $c = smpro_db_clean_row_core($db, $table, $field, $pk, $row, $val, $clean, $flag['account']);
         if (!empty($c['ok'])) { $cleaned++; $bytes += strlen($val) - strlen($clean); $stat[$key] = ['state'=>'cleaned']; } else $skipped++;
     }
     if ($stat) { smpro_db_status_merge($stat); smpro_db_native_remove(array_keys($stat)); }   // remember + drop cleaned rows from the deep-scan cache
-    return ['cleaned'=>$cleaned, 'skipped'=>$skipped, 'removed_bytes'=>$bytes];
+    return ['cleaned'=>$cleaned, 'skipped'=>$skipped, 'removed_bytes'=>$bytes, 'held'=>$held];   // held = rows whose only findings can be legitimate: left for a person
 }
 
 /* ---------------- trash spam POSTS (whole-page SEO spam) - reversible ---------------- */
@@ -1603,14 +1694,14 @@ html[data-theme=dark] .db-grouprow{background:linear-gradient(180deg,rgba(255,25
   });
   // run keys through clean_batch in chunks, updating the bar; returns totals
   function runChunks(keys,onProgress){
-    var total=keys.length,done=0,cleaned=0,skipped=0,bytes=0,i=0;
+    var total=keys.length,done=0,cleaned=0,skipped=0,bytes=0,held=0,i=0;
     return new Promise(function(resolve){
       function next(){
-        if(cancelFlag||i>=keys.length){resolve({done:done,total:total,cleaned:cleaned,skipped:skipped,bytes:bytes,cancelled:cancelFlag&&i<keys.length});return;}
+        if(cancelFlag||i>=keys.length){resolve({done:done,total:total,cleaned:cleaned,skipped:skipped,bytes:bytes,held:held,cancelled:cancelFlag&&i<keys.length});return;}
         var batch=keys.slice(i,i+CHUNK);i+=CHUNK;
         var fd=new URLSearchParams();fd.set('dbc_action','clean_batch');fd.set('rows',batch.join('\n'));
         post(fd).then(function(j){
-          if(j&&j.ok){cleaned+=j.cleaned||0;skipped+=j.skipped||0;bytes+=j.removed_bytes||0;}
+          if(j&&j.ok){cleaned+=j.cleaned||0;skipped+=j.skipped||0;bytes+=j.removed_bytes||0;held+=j.held||0;}
           else{skipped+=batch.length;}
           done+=batch.length;onProgress(done,total,cleaned,skipped);
           setTimeout(next,0);
@@ -1624,11 +1715,11 @@ html[data-theme=dark] .db-grouprow{background:linear-gradient(180deg,rgba(255,25
     var b=e.target.closest('#dbCleanSel'); if(!b)return;
     var rows=pickRows().filter(function(c){return c.checked;}).map(function(c){var tr=c.closest('tr');return [tr.getAttribute('data-db'),tr.getAttribute('data-table'),tr.getAttribute('data-field'),tr.getAttribute('data-row')].join('|');});
     if(!rows.length)return;
-    if(!confirm('Clean '+rows.length+' selected row(s)?\n\nEvery detected injection snippet is removed and each original value is backed up first (restorable).'))return;
+    if(!confirm('Clean '+rows.length+' selected row(s)?\n\nWhat is certainly planted (obfuscated scripts, hidden frames, hidden blocks of links, code) is removed, and each original value is backed up first (restorable). Rows whose only findings can be legitimate are left for you to review one by one.'))return;
     progShow('Cleaning '+rows.length+' row(s)…');
     runChunks(rows,progUpd).then(function(r){
       var fd=new URLSearchParams();fd.set('dbc_action','bulk_report');fd.set('kind','db_clean_bulk');fd.set('flagged',r.total);fd.set('cleaned',r.cleaned);fd.set('skipped',r.skipped);fd.set('removed_bytes',r.bytes);
-      post(fd).then(function(){progDone((r.cancelled?'Stopped. ':'Done. ')+'Cleaned '+r.cleaned+' row(s)'+(r.skipped?' · '+r.skipped+' skipped':'')+'.'+((r.cleaned===0&&r.skipped>0)?'  These are likely whole-page spam POSTS with no strippable snippet — use “🗑 Trash selected posts” for those.':'  Cleaned rows are removed from the list.'));setTimeout(function(){location.reload();},2600);});
+      post(fd).then(function(){progDone((r.cancelled?'Stopped. ':'Done. ')+'Cleaned '+r.cleaned+' row(s)'+(r.skipped?' · '+r.skipped+' skipped':'')+(r.held?' ('+r.held+' of them hold only things that can be legitimate - an embedded video, an outside link, a plain script - and wait for your review, row by row)':'')+'.'+((r.cleaned===0&&r.skipped>0)?'  These are likely whole-page spam POSTS with no strippable snippet — use “🗑 Trash selected posts” for those.':'  Cleaned rows are removed from the list.'));setTimeout(function(){location.reload();},2600);});
     });
   });
   // Fix whole database: phase 1 backup (mysqldump) -> phase 2 chunked clean -> summary report

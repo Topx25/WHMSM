@@ -76,8 +76,12 @@ function smpro_ds_safe_target($f, $kind) {
     // files must live under a real /home/<account>/ tree; cache dirs limited to known cache paths
     // cache dirs must ALSO live under /home/<account>/ (the old loose '#/cache(/|$)#' fallback allowed
     // e.g. /etc/cache); allow a cache/views/tmp dir at any depth (incl. first segment) + block traversal.
-    if ($kind === 'cache') return (bool)preg_match('#^/home/[^/]+/(.+/)?(cache|views|bootstrap/cache|\.cache|tmp)(/.*)?$#', $f) && strpos($f, '/..') === false;
-    return (bool)preg_match('#^/home/[^/]+/.+#', $f) && strpos($f, '/..') === false;
+    // Caches only. The account's own tmp and .cache folders used to be on this list: tmp holds the site statistics
+    // history and, on some PHP set-ups, the visitors' sessions. "views" counts only as a compiled-template cache
+    // (storage/framework/views), never as a folder of source templates; nothing under vendor or node_modules.
+    if ($kind === 'cache') return (bool)preg_match('#^/home\d*/[^/]+/(.+/)?(cache|bootstrap/cache|storage/framework/views)(/.*)?$#', $f)
+        && !preg_match('#/(vendor|node_modules|resources)/#', $f) && strpos($f, '/..') === false;
+    return (bool)preg_match('#^/home\d*/[^/]+/.+#', $f) && strpos($f, '/..') === false;
 }
 function smpro_ds_rep_dir() { $d = SMPRO_VARLIB . '/reports/disk_deletions'; @is_dir($d) || @mkdir($d, 0700, true); return $d; }
 /** Standalone HTML deletion report (served as a downloadable .html by index.cgi). */
@@ -98,7 +102,7 @@ function smpro_ds_report_html($rep) {
        . "<div class=\"c\"><div class=\"l\">Backups kept in</div><div class=\"v\" style=\"font-size:13px\">/home/backup/detections</div></div></div>";
     echo "<table><thead><tr><th>#</th><th>Account</th><th>Type</th><th class=\"num\">Size</th><th>Path</th><th>Backup</th></tr></thead><tbody>";
     $i = 0; foreach ($items as $it) { $i++;
-        $acct = preg_match('#^/home/([^/]+)/#', (string)($it['path'] ?? ''), $m) ? $m[1] : '';
+        $acct = preg_match('#^/home\d*/([^/]+)/#', (string)($it['path'] ?? ''), $m) ? $m[1] : '';
         echo "<tr><td>$i</td><td>" . $h($acct) . "</td><td>" . $h($it['kind'] ?? 'file') . "</td><td class=\"num\">" . smpro_ds_humb((int)($it['size'] ?? 0)) . "</td><td>" . $h($it['path'] ?? '') . "</td><td>" . $h($it['backup'] ?? '—') . "</td></tr>";
     }
     echo "</tbody></table><p class=\"muted\" style=\"margin-top:16px\">Files are backed up under /home/backup/detections/&lt;account&gt;/ before deletion and can be restored. Cache directories were cleared (no backup).</p></body></html>";
@@ -182,7 +186,7 @@ if (($_GET['ajax'] ?? '') === 'svscan') {
         else {
             echo '<table class="smpro-table"><thead><tr><th class="num">Inodes</th><th>Account</th><th>Directory</th></tr></thead><tbody>';
             foreach ($rows as $it) {
-                $acct = preg_match('#^/home/([^/]+)#', $it['dir'], $mm) ? $mm[1] : '';
+                $acct = preg_match('#^/home\d*/([^/]+)#', $it['dir'], $mm) ? $mm[1] : '';
                 echo '<tr><td class="num mono">' . number_format($it['inodes']) . '</td>'
                    . '<td class="mono">' . ($acct !== '' ? smpro_h($acct) : '<span class="meta">&mdash;</span>') . '</td>'
                    . '<td class="mono fa-file">' . smpro_h($it['dir']) . '</td></tr>';
@@ -214,7 +218,7 @@ if (($_GET['ajax'] ?? '') === 'svscan') {
     if (!$items) echo '<div class="fa-empty" style="color:var(--good);padding:14px">&#10003; None found.</div>';
     else { echo '<table class="smpro-table"><tbody>';
         foreach ($items as $it) {
-            $acct = preg_match('#^/home/([^/]+)/#',$it['file'],$mm)?$mm[1]:'';
+            $acct = preg_match('#^/home\d*/([^/]+)/#',$it['file'],$mm)?$mm[1]:'';
             echo '<tr><td style="width:24px"><input type="checkbox" class="dcChk" data-kind="file" data-size="'.(int)$it['size'].'" data-path="'.smpro_h($it['file']).'"></td>'
                . '<td class="num mono" style="width:90px">'.smpro_ds_humb($it['size']).'</td><td class="mono" style="width:90px">'.smpro_h($acct).'</td>'
                . '<td class="mono" style="width:100px">'.smpro_h($it['mtime']).'</td><td class="mono fa-file">'.smpro_h($it['file']).'</td>'
@@ -344,7 +348,7 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
         $r = ['ok'=>true,'msg'=>'Journald vacuumed (kept 7 days / 200M) and rotated logs older than 14 days removed. ' . $mnt . ' now ' . $after . '% (was ' . $before . '%).'];
     } elseif ($act === 'del_file') {
         $f = (string)($_POST['file'] ?? '');
-        $acct = preg_match('#^/home/([^/]+)/#',$f,$m) ? $m[1] : '';
+        $acct = preg_match('#^/home\d*/([^/]+)/#',$f,$m) ? $m[1] : '';
         // SECURITY: also reject a symlink / a path resolving outside the account (copy() would leak the target).
         $safe = ($acct !== '' && function_exists('smpro_path_safe')) ? smpro_path_safe($f, [smpro_user_home($acct)]) : '';
         if (!smpro_ds_safe_target($f, 'file') || !is_file($f) || $safe === '') $r = ['ok'=>false,'msg'=>'Refused: only an existing real file under /home/<account>/ (no symlinks).'];
@@ -378,9 +382,13 @@ if ($reqMethod === 'POST' && ($_POST['ds_action'] ?? '') !== '') {
         else {
             $before = (int)trim((string)@shell_exec('du -sb ' . escapeshellarg($d) . ' 2>/dev/null | cut -f1'));
             // emptied BY the account: a folder in the path swapped for a link cannot turn this into a root delete elsewhere
-            if (($cu = function_exists('smpro_acct_of_path') ? smpro_acct_of_path($d) : '') !== '') smpro_acct_sh($cu, 'find "$1" -mindepth 1 -not -name .gitignore -not -name index.php -delete 2>/dev/null; true', [$d], null, 120);
-            $after = (int)trim((string)@shell_exec('du -sb ' . escapeshellarg($d) . ' 2>/dev/null | cut -f1'));
-            $r = ['ok'=>true,'msg'=>'Cache cleared — freed ' . smpro_ds_humb(max(0,$before-$after)) . '.'];
+            $cu = function_exists('smpro_acct_of_path') ? smpro_acct_of_path($d) : '';
+            if ($cu === '') $r = ['ok'=>false,'msg'=>'Nothing was cleared: the account that folder belongs to was not found.'];
+            else {
+                smpro_acct_sh($cu, 'find "$1" -mindepth 1 -not -name .gitignore -not -name index.php -delete 2>/dev/null; true', [$d], null, 120);
+                $after = (int)trim((string)@shell_exec('du -sb ' . escapeshellarg($d) . ' 2>/dev/null | cut -f1'));
+                $r = ['ok'=>true,'msg'=>'Cache cleared — freed ' . smpro_ds_humb(max(0,$before-$after)) . '.'];
+            }
         }
     } elseif ($act === 'preview_swap_expand') {
         $tm = (int)($_POST['target_mb'] ?? 0);

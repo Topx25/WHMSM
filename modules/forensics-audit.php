@@ -77,7 +77,7 @@ function smpro_fa_collect_findings($user) {
             // real detections under a mass of false alarms (they dominate the list on a cleaned server).
             $mStatus = strtolower((string)($r['status'] ?? ''));
             if ($mStatus === 'cleanup_done') continue;
-            $mGone = $mfile !== '' && strpos($mfile, '/home/') === 0 && !@is_file($mfile);   // listed but already removed from disk
+            $mGone = $mfile !== '' && preg_match('#^/home\d*/#', $mfile) && !@is_file($mfile);   // listed but already removed from disk
             $f[] = [
                 'sev'=> $mGone ? 'high' : 'critical','conf'=>'high','cat'=>'Active malware','account'=>$acct,
                 'title'=>'Infected file flagged by Imunify360 (' . $fam . ')' . ($mGone ? ' — already removed' : ''),
@@ -192,7 +192,7 @@ function smpro_fa_allowed_target($action, $file) {
     if (is_link($file)) return false;
     $ok = false;
     if ($action === 'cron_disable')         $ok = ($file === '/etc/crontab' || strpos($file, '/var/spool/cron/') === 0 || strpos($file, '/etc/cron.d/') === 0);
-    elseif ($action === 'dotfile_comment')  $ok = (bool)preg_match('#^/home/[^/]+/\.(bashrc|bash_profile|profile|user\.ini)$#', $file);
+    elseif ($action === 'dotfile_comment')  $ok = (bool)preg_match('#^/home\d*/[^/]+/\.(bashrc|bash_profile|profile|user\.ini)$#', $file);
     elseif ($action === 'sshkey_remove')    $ok = (bool)preg_match('#^(?:/root|/home/[^/]+)/\.ssh/authorized_keys$#', $file);
     if (!$ok) return false;
     // the resolved real path must STILL equal the (canonical) allowed path - any symlink/.. resolution = reject
@@ -202,7 +202,7 @@ function smpro_fa_allowed_target($action, $file) {
     // Allow a SERVER-LEVEL /home symlink (e.g. /home -> /home2, or accounts on /home2/home3): resolve ONLY
     // the /home prefix and keep the account + suffix literal. An attacker symlink (a parent dir or the
     // target pointing at /root or another account) makes the fully-resolved $rp differ from this -> rejected.
-    if (strpos($file, '/home/') === 0) {
+    if (preg_match('#^/home\d*/#', (string)$file)) {
         $homeReal = @realpath('/home');
         if ($homeReal !== false && $homeReal !== '/home' && $rp === $homeReal . substr($file, 5)) return true;
     }
@@ -211,7 +211,7 @@ function smpro_fa_allowed_target($action, $file) {
 /** True if a path is one of the file types this module is ever allowed to write. */
 function smpro_fa_path_whitelisted($f) {
     return $f === '/etc/crontab' || strpos($f, '/var/spool/cron/') === 0 || strpos($f, '/etc/cron.d/') === 0
-        || preg_match('#^/home/[^/]+/\.(bashrc|bash_profile|profile|user\.ini)$#', $f)
+        || preg_match('#^/home\d*/[^/]+/\.(bashrc|bash_profile|profile|user\.ini)$#', $f)
         || preg_match('#^(?:/root|/home/[^/]+)/\.ssh/authorized_keys$#', $f);
 }
 /* ---- remediation history (manifest) for the Restore center ---- */
@@ -239,7 +239,7 @@ function smpro_fa_detection_reports($limit = 50) {
     return array_slice($rows, 0, $limit);
 }
 function smpro_fx_file_owner($file) {   // was smpro_fa_account_of: includes/fileaudit.php declares a DIFFERENT function under that name, and both can load on one page
-    if (preg_match('#^/home/([^/]+)/#', $file, $m)) return $m[1];
+    if (preg_match('#^/home\d*/([^/]+)/#', $file, $m)) return $m[1];
     if (strpos($file, '/root/') === 0) return 'root';
     if (strpos($file, '/var/spool/cron/') === 0) return basename($file);
     return 'system';
@@ -247,7 +247,10 @@ function smpro_fx_file_owner($file) {   // was smpro_fa_account_of: includes/fil
 function smpro_fa_backup($file) {
     @is_dir(SMPRO_FA_QUAR) || @mkdir(SMPRO_FA_QUAR, 0700, true);
     $b = SMPRO_FA_QUAR . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', ltrim($file, '/')) . '.bak';
-    @copy($file, $b); @chmod($b, 0600);
+    // '' = the copy could not be made. It used to be returned as if it had been, and the file was edited anyway.
+    if (!@copy($file, $b)) return '';
+    @chmod($b, 0600); clearstatcache(true, $b);
+    if ((int)@filesize($b) !== (int)@filesize($file)) { @unlink($b); return ''; }
     return $b;
 }
 function smpro_fa_rewrite($file, $lines) {
@@ -265,7 +268,7 @@ function smpro_fa_rewrite($file, $lines) {
     $dir = dirname($file); $rpDir = @realpath($dir);
     if ($rpDir === false) return false;
     $okDir = ($rpDir === $dir);
-    if (!$okDir && strpos($dir, '/home/') === 0) {
+    if (!$okDir && preg_match('#^/home\d*/#', (string)$dir)) {
         $homeReal = @realpath('/home');
         $okDir = ($homeReal !== false && $homeReal !== '/home' && $rpDir === $homeReal . substr($dir, 5));
     }
@@ -335,6 +338,7 @@ function smpro_fa_remediate($action, $file, $rawLine, $imid) {
     }
     if (!$done) return ['ok'=>false,'msg'=>'Line not found — it may already have been changed. Re-scan.'];
     $bak = smpro_fa_backup($file);
+    if ($bak === '') return ['ok'=>false,'msg'=>'The file could not be copied to the backup store first (disk full?) - nothing was changed.'];
     if (!smpro_fa_rewrite($file, $out)) return ['ok'=>false,'msg'=>'Write failed (permissions?).'];
     $verb = $action === 'sshkey_remove' ? 'removed' : ($action === 'cron_disable' ? 'disabled' : 'commented out');
     smpro_fa_manifest_add(['kind'=>'file','action'=>$action,'file'=>$file,'backup'=>$bak,'account'=>smpro_fx_file_owner($file),'label'=>$verb . ' line in ' . basename($file)]);
@@ -360,7 +364,7 @@ function smpro_fa_restore($id) {
     // restore a DELETED malware file from its /home/backup/detections copy
     if (($e['kind'] ?? '') === 'delete') {
         $file = (string)($e['file'] ?? ''); $bak = (string)($e['backup'] ?? '');
-        if (!preg_match('#^/home/[^/]+/#', $file)) return ['ok'=>false,'msg'=>'Refused: target outside /home.'];
+        if (!preg_match('#^/home\d*/[^/]+/#', $file)) return ['ok'=>false,'msg'=>'Refused: target outside /home.'];
         if ($bak === '' || (strpos($bak, '/home/backup/detections/') !== 0 && strpos($bak, SMPRO_VARLIB . '/detections/') !== 0) || is_link($bak) || !is_file($bak)) return ['ok'=>false,'msg'=>'Backup copy missing.'];
         // put back AS the account: the name was freed by the delete, so the account may have left a link there -
         // a dangling one passes "no file exists" and a root copy would then create whatever it points at
@@ -376,9 +380,14 @@ function smpro_fa_restore($id) {
     if ($bak === '' || strpos($bak, SMPRO_FA_QUAR) !== 0 || !is_file($bak)) return ['ok'=>false,'msg'=>'Backup file missing.'];
     $lines = file($bak, FILE_IGNORE_NEW_LINES);
     if ($lines === false) return ['ok'=>false,'msg'=>'Cannot read backup.'];
+    // What is in the file NOW is kept first: lines the customer added since the fix (a new cron job, a key, a
+    // setting) used to be lost with the restore, with no way back.
+    $cur = @is_file($file) ? smpro_fa_backup($file) : '';
+    if (@is_file($file) && $cur === '') return ['ok'=>false,'msg'=>'The current file could not be kept first (disk full?) - nothing was restored.'];
+    if ($cur !== '') $m[$id]['replaced_copy'] = $cur;
     if (!smpro_fa_rewrite($file, $lines)) return ['ok'=>false,'msg'=>'Restore write failed (permissions?).'];
     $m[$id]['status'] = 'restored'; $m[$id]['restored_ts'] = time(); smpro_fa_json_save(SMPRO_FA_MANIFEST, $m);
-    return ['ok'=>true,'msg'=>'Restored ' . basename($file) . ' from backup.'];
+    return ['ok'=>true,'msg'=>'Restored ' . basename($file) . ' from backup.' . ($cur !== '' ? ' The file as it was just before this restore is kept as ' . basename($cur) . ' (lines added since the fix are in it).' : '')];
 }
 function smpro_fa_cache_clear() { foreach (glob(SMPRO_FA_CACHE . '/*.json') ?: [] as $f) @unlink($f); }
 
@@ -939,7 +948,7 @@ if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'delete_malware') {
     smpro_require_valid_csrf('fa_remediate'); smpro_require_root();
     header('Content-Type: application/json');
     $file = (string)($_POST['file'] ?? '');
-    if (!preg_match('#^/home/([^/]+)/.+#', $file, $m) || !is_file($file)) { echo json_encode(['ok'=>false,'msg'=>'Refused: only existing files under /home/<account>/ can be deleted.']); exit; }
+    if (!preg_match('#^/home\d*/([^/]+)/.+#', $file, $m) || !is_file($file)) { echo json_encode(['ok'=>false,'msg'=>'Refused: only existing files under /home/<account>/ can be deleted.']); exit; }
     $acct = $m[1];
     // SECURITY: reject a symlink / a path resolving outside the account (a customer could symlink
     // /home/<acct>/x.php -> /root/.ssh/id_rsa, making this root-run copy() leak it + unlink() destroy it).
@@ -1032,7 +1041,7 @@ if ($reqMethod === 'POST' && ($_POST['fa_action'] ?? '') === 'fx_wl_add') {
     $value = (string)($_POST['value'] ?? '');
     $reason = trim((string)($_POST['reason'] ?? ''));
     if ($value === '' || $reason === '') { echo json_encode(['ok'=>false,'msg'=>'A file/pattern and a reason are required.']); exit; }
-    if (in_array($scope, ['file_hash','path','path_size'], true) && strpos($value, '/home/') !== 0) { echo json_encode(['ok'=>false,'msg'=>'Refused: only paths under /home/<account>/ can be whitelisted.']); exit; }
+    if (in_array($scope, ['file_hash','path','path_size'], true) && !preg_match('#^/home\d*/#', (string)$value)) { echo json_encode(['ok'=>false,'msg'=>'Refused: only paths under /home/<account>/ can be whitelisted.']); exit; }
     $id = smpro_fe_wl_add($acct, $scope, $value, ['reason'=>$reason]); smpro_fa_cache_clear();
     echo json_encode(['ok'=>true,'id'=>$id,'msg'=>'Whitelisted. Future re-alerts on this file are suppressed; genuine tampering (new obfuscation, 10× size jump) still fires.'], JSON_UNESCAPED_SLASHES); exit;
 }
@@ -1405,7 +1414,7 @@ function smpro_fa_render_imhist($imHist, $user) {
     </div>
     <div class="fw-pager" data-per="50"><input type="text" class="fw-pgq" placeholder="Filter rows&hellip;"><span class="fw-pginfo"></span><span class="sp"></span><span class="fw-pgctl"><button type="button" class="fw-pgbtn fw-pgprev">&#8249;</button> <span class="mono fw-pgnum"></span> <button type="button" class="fw-pgbtn fw-pgnext">&#8250;</button></span></div>
     <div class="fa-tablewrap" style="max-height:240px"><table class="smpro-table"><tbody>
-      <?php foreach ($imHist['recent'] as $r): $exists = !$r['db'] && $r['path']!=='' && strpos($r['path'],'/home/')===0 && @is_file($r['path']); ?><tr data-row><td style="width:26px"><?php if ($exists): ?><input type="checkbox" class="faHistChk" data-file="<?= smpro_h($r['path']) ?>"><?php endif; ?></td><td><span class="b <?= $r['db']?'orange':'gray' ?>"><?= $r['db']?'DB':'file' ?></span></td><td class="mono"><?= smpro_h($r['account']) ?></td><td><span class="b <?= strpos($r['event'],'fail')!==false?'red':(strpos($r['event'],'clean')!==false?'green':'gray') ?>"><?= smpro_h($r['event']) ?></span></td><td class="mono fa-file"><?= smpro_h($r['path']) ?></td><td style="text-align:right;white-space:nowrap"><?php if ($exists): ?><button class="fa-lnk faDelMal" data-file="<?= smpro_h($r['path']) ?>" title="File still present — delete it (backed up outside the account first)">&#128465; Delete</button><?php elseif ($r['db']): ?><a class="fa-lnk" href="<?= smpro_h(rtrim((string)SMPRO_CPSESS,'/').'/cgi/imunify/handlers/index.cgi') ?>" target="_blank" title="DB injections are cleaned inside Imunify">Imunify ↗</a><?php else: ?><span class="meta" style="font-size:10px">handled</span><?php endif; ?></td></tr><?php endforeach; ?>
+      <?php foreach ($imHist['recent'] as $r): $exists = !$r['db'] && $r['path']!=='' && preg_match('#^/home\d*/#', (string)$r['path']) && @is_file($r['path']); ?><tr data-row><td style="width:26px"><?php if ($exists): ?><input type="checkbox" class="faHistChk" data-file="<?= smpro_h($r['path']) ?>"><?php endif; ?></td><td><span class="b <?= $r['db']?'orange':'gray' ?>"><?= $r['db']?'DB':'file' ?></span></td><td class="mono"><?= smpro_h($r['account']) ?></td><td><span class="b <?= strpos($r['event'],'fail')!==false?'red':(strpos($r['event'],'clean')!==false?'green':'gray') ?>"><?= smpro_h($r['event']) ?></span></td><td class="mono fa-file"><?= smpro_h($r['path']) ?></td><td style="text-align:right;white-space:nowrap"><?php if ($exists): ?><button class="fa-lnk faDelMal" data-file="<?= smpro_h($r['path']) ?>" title="File still present — delete it (backed up outside the account first)">&#128465; Delete</button><?php elseif ($r['db']): ?><a class="fa-lnk" href="<?= smpro_h(rtrim((string)SMPRO_CPSESS,'/').'/cgi/imunify/handlers/index.cgi') ?>" target="_blank" title="DB injections are cleaned inside Imunify">Imunify ↗</a><?php else: ?><span class="meta" style="font-size:10px">handled</span><?php endif; ?></td></tr><?php endforeach; ?>
     </tbody></table></div>
     <div style="margin-top:10px"><a class="tp-btn" href="index.cgi?page=imunify360-reports">Full Imunify360 Report →</a></div>
     </div>
@@ -1823,7 +1832,7 @@ button.fa-scan{text-align:left;font:inherit}
     var tr=(typeof FIND!=='undefined'&&FIND[idx])?fRowFor(idx):null; if(!tr){alert('Finding not found — re-scan and retry.');return;}
     var fd=new URLSearchParams(); fd.set('smpro_csrf',CSRF_REM); var lbl=b.innerHTML;
     if(dec==='suspend'){ if(!acct||acct==='all'||acct==='system'){alert('No account to suspend.');return;} if(!confirm('SUSPEND account "'+acct+'"?\n\nThis disables the whole site. Reversible — you can unsuspend anytime.'))return; fd.set('fa_action','suspend');fd.set('account',acct); }
-    else if(dec==='delete'){ var df=tr.getAttribute('data-file'); if(!df||df.indexOf('/home/')!==0){alert('No deletable /home file for this finding.');return;} if(!confirm('DELETE malware file?\n'+df+'\n\nBacked up outside the account first; report written; restorable.'))return; fd.set('fa_action','delete_malware');fd.set('file',df); }
+    else if(dec==='delete'){ var df=tr.getAttribute('data-file'); if(!df||!/^\/home\d*\//.test(df)){alert('No deletable /home file for this finding.');return;} if(!confirm('DELETE malware file?\n'+df+'\n\nBacked up outside the account first; report written; restorable.'))return; fd.set('fa_action','delete_malware');fd.set('file',df); }
     else if(dec==='trust'){ fd.set('fa_action','allow_key');fd.set('account',tr.getAttribute('data-account'));fd.set('raw',tr.getAttribute('data-raw')); }
     else if(dec==='clean'||dec==='disable'||dec==='remove'){ var act=tr.getAttribute('data-act'); if(!act){alert('This finding has no executable action.');return;} if(!confirm('Apply "'+dec+'" on '+(acct||'')+'?\nReversible — a backup/restore is kept.'))return; fd.set('fa_action','remediate');fd.set('act',act);fd.set('file',tr.getAttribute('data-file'));fd.set('raw',tr.getAttribute('data-raw'));fd.set('imid',tr.getAttribute('data-imid')||''); }
     else return;
@@ -1927,7 +1936,7 @@ button.fa-scan{text-align:left;font:inherit}
     h+='<td>'+fEsc(f.cat)+'</td>';
     h+='<td class="mono"><b>'+fEsc(f.account)+'</b>'+((f.account!=='all'&&f.account!=='system'&&f.account!=='?')?'<div><a class="fa-lnk" href="index.cgi?page=forensics-audit&user='+encodeURIComponent(f.account)+'">focus</a></div>':'')+'</td>';
     h+='<td class="fa-file"><div class="fa-tt">'+fEsc(f.title)+'</div><div class="fa-ev mono">'+fEsc(f.evidence)+'</div><div class="fa-ref mono">'+fEsc(f.ref)+'</div>';
-    var hm=(f.ref&&f.ref.indexOf('/home/')===0)?f.ref.match(/^\/home\/([^\/]+)\//):null;
+    var hm=f.ref?f.ref.match(/^\/home\d*\/([^\/]+)\//):null;
     if(hm&&FX_OK) h+='<a class="fa-lnk" style="display:inline-block;margin-top:4px;border:1px solid var(--brand);color:var(--brand);padding:2px 9px;border-radius:6px" href="index.cgi?page=forensics-audit&fx_user='+encodeURIComponent(hm[1])+'&fx_file='+encodeURIComponent(f.ref)+(f.ts?'&fx_ts='+f.ts:'')+'">&#128269; Deep-analyze (real vs false positive)</a>';
     if(f.raw) h+='<button class="fa-det" type="button">Details &#9662;</button><div class="fa-rawbox" hidden><div class="fa-rawlbl">'+(f.act==='sshkey_remove'?'Full public key':'Full line')+'</div><code class="mono">'+fEsc(f.rawtxt)+'</code></div>';
     h+='</td>';

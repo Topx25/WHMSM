@@ -37,7 +37,7 @@ function smpro_ds_cleanscan($acct) {
         if (trim($l)==='') continue; $p = explode("\t",$l,3); if (count($p)<3) continue; $out['logs'][] = ['size'=>(int)$p[0],'mtime'=>$p[1],'file'=>$p[2]];
     }
     // cache directories (safe to clear)
-    foreach (['public_html/wp-content/cache','public_html/storage/framework/cache','public_html/storage/framework/views','public_html/bootstrap/cache','public_html/cache','.cache','tmp','public_html/wp-content/cache/wp-rocket'] as $cd) {
+    foreach (['public_html/wp-content/cache','public_html/storage/framework/cache','public_html/storage/framework/views','public_html/bootstrap/cache','public_html/cache','public_html/wp-content/cache/wp-rocket'] as $cd) {
         $p = $home . '/' . $cd; if (!is_dir($p)) continue;
         $sz = (int)trim((string)@shell_exec(smpro_ds_wrap('du -sb ' . escapeshellarg($p) . " 2>/dev/null | cut -f1", 40)));
         if ($sz > 1048576) $out['cache'][] = ['dir'=>$p,'size'=>$sz];

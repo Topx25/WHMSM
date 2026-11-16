@@ -739,6 +739,13 @@ function smpro_mnt_decide(array $rows): array {
     $pressure = $anyHigh || $anyProj || $anyFast;
 
     // (1) CRITICAL watermark -> purge NOW, overrides the anti-thrash gap.
+    //     ...unless a purge a short while ago freed next to nothing: then the level is real data, not junk. The purge
+    //     used to run again every hour (a full walk of the homes each time) and the alert below was never reached.
+    if ($anyCrit && $sinceH < $MIN_GAP_H && $lastFreed < 52428800) {
+        $out['alert'] = true;
+        $out['reason'] = 'critical watermark ('.implode(',', $out['signals']).') but the purge '.round($sinceH,1).'h ago freed almost nothing - this is real data, not junk; not purging again yet';
+        return $out;
+    }
     if ($anyCrit) { $out['purge'] = true; $out['reason'] = 'critical watermark ('.implode(',', $out['signals']).')'; return $out; }
     // (2) inside MIN_GAP and something high/rising -> HOLD (back off). If a metric is high but the last run
     //     freed <50MB, the fill is real DATA not junk -> refuse to loop, raise alert to investigate.

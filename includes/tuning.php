@@ -849,10 +849,16 @@ function smpro_tun_restore(string $backupId): array {
     @file_put_contents($sgDir . '/manifest.json', json_encode(['id'=>$sgId,'ts'=>time(),'files'=>$restored,'removed'=>$removed,'type'=>'pre-restore-safeguard','source_backup'=>$backupId], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     if (!$restored && !$removed) return ['ok'=>false,'msg'=>'No files restored.' . ($failed ? ' ' . implode('; ', $failed) : '')];
     if ($csfTouched && smpro_tun_has('csf')) @shell_exec('csf -r >/dev/null 2>&1 &');
-        $apacheBad = ''; if ($apacheTouched) { $t = smpro_tun_sh('apachectl -t 2>&1; httpd -t 2>&1', 15); if (stripos($t, 'Syntax OK') !== false) smpro_tun_sh('/usr/local/cpanel/scripts/restartsrv_httpd --graceful 2>&1; apachectl -k graceful 2>&1', 30); else $apacheBad = mb_substr(trim((string)$t), 0, 200); }
+        $apacheBad = ''; if ($apacheTouched) { $t = smpro_tun_sh('apachectl -t 2>&1; httpd -t 2>&1', 15); if (stripos($t, 'Syntax OK') !== false) smpro_tun_sh('/usr/local/cpanel/scripts/restartsrv_httpd --graceful 2>&1; apachectl -k graceful 2>&1', 30); else {   // the web server refuses the restored files: they are put back as they were a moment ago, so the next restart does not fail
+        $apacheBad = mb_substr(trim((string)$t), 0, 200); $apacheBack = 0;
+        foreach ($restored as $rp) if (strpos($rp, 'apache') !== false || strpos($rp, 'httpd') !== false || strpos($rp, 'includes') !== false) {
+            $sg = $sgDir . '/' . str_replace('/', '_', ltrim($rp, '/'));
+            if (@is_file($sg) && @copy($sg, $rp)) $apacheBack++;
+        }
+    } }
     if ($phpTouched) smpro_tun_sh('/usr/local/cpanel/scripts/restartsrv_apache_php_fpm 2>&1', 60);
     if (function_exists('smpro_audit')) smpro_audit('tuning_restore', ['backup_id'=>$backupId,'restored'=>count($restored),'removed'=>count($removed),'failed'=>count($failed)]);
-    $msg = 'Restored ' . count($restored) . ' file(s)' . ($removed ? ' + removed ' . count($removed) . ' SM Pro drop-in(s)' : '') . ' from backup ' . date('Y-m-d H:i', (int)($m['ts'] ?? 0)) . '.' . ($csfTouched ? ' CSF reloaded.' : '') . (($apacheTouched || $phpTouched) ? ($apacheBad !== '' ? ' The web server was NOT reloaded: its configuration test failed with the restored files (' . $apacheBad . ') - it keeps running on what it had loaded; fix or restore again before the next restart.' : ' Web/PHP reloaded.') : '') . ($failed ? ' Warnings: ' . implode('; ', $failed) : '');
+    $msg = 'Restored ' . count($restored) . ' file(s)' . ($removed ? ' + removed ' . count($removed) . ' SM Pro drop-in(s)' : '') . ' from backup ' . date('Y-m-d H:i', (int)($m['ts'] ?? 0)) . '.' . ($csfTouched ? ' CSF reloaded.' : '') . (($apacheTouched || $phpTouched) ? ($apacheBad !== '' ? ' The web server was NOT reloaded: its configuration test failed with the restored files (' . $apacheBad . ') - ' . (int)($apacheBack ?? 0) . ' web-server file(s) were put back as they were just before this restore, so it keeps running and can restart.' : ' Web/PHP reloaded.') : '') . ($failed ? ' Warnings: ' . implode('; ', $failed) : '');
     return ['ok'=>true,'restored'=>count($restored),'removed'=>count($removed),'msg'=>$msg,'pre_restore_backup'=>$sgId];
 }
 
