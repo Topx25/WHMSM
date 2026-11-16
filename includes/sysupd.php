@@ -227,6 +227,14 @@ function smpro_su_repair(?array $d = null): array {
             $pid = (int)($d['pid'] ?? 0); $age = 0;
             foreach (['/var/run/dnf.pid', '/var/run/yum.pid'] as $lf) if (is_file($lf)) { $age = time() - (int)@filemtime($lf); if ($pid === 0) $pid = (int)trim((string)@file_get_contents($lf)); }
             $alive = $pid > 0 && is_dir('/proc/' . $pid);
+            // The age was the age of the lock FILE. A lock left by an old run and a package manager that started a
+            // minute ago looked like "running for hours", and the live transaction was told to stop. The age is now
+            // the process's own; and a number that has been taken by another program is not a package manager at all.
+            if ($alive) {
+                $comm = trim((string)@file_get_contents('/proc/' . $pid . '/comm'));
+                if (!preg_match('/^(dnf|yum|rpm|microdnf|packagekit|python)/i', $comm)) $alive = false;
+                else $age = max(0, time() - (int)@filemtime('/proc/' . $pid));
+            }
             if ($alive && $age < 1800) return [false, 'a package-manager process (pid ' . $pid . ') is really running for ' . intdiv($age, 60) . ' min; nothing removed - try again later'];
             foreach (['/var/run/dnf.pid', '/var/run/yum.pid'] as $lf) if (is_file($lf)) { @rename($lf, $lf . '.stale.' . date('YmdHis')); $done[] = 'stale lock ' . basename($lf) . ' moved aside'; }
             if ($alive) { @posix_kill($pid, 15); $done[] = 'process ' . $pid . ' (older than 30 min) asked to stop'; }

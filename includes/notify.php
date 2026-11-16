@@ -454,12 +454,16 @@ function smpro_notify($type, $subject, $body, array $meta = [], $force = false) 
     }
     $host = gethostname();
     $tag = strtoupper(($meta['severity'] ?? (smpro_ntf_types()[$type][2] ?? 'info')));
-    // A warning or worse is never sent to nobody. When its type is on but no channel that is switched on is ticked
-    // for it, it goes through every channel that is switched on, and says why it arrived there.
-    $chOn = array_values(array_filter(['email', 'telegram', 'pushbullet', 'whatsapp'], fn($c) => !empty($cfg[$c]['enabled'])));
-    if (in_array($tag, ['CRITICAL', 'HIGH', 'WARNING'], true) && $chOn && !array_filter($chOn, fn($c) => !empty($t[$c]))) {
+    // A warning or worse whose chosen channels are all switched off is not sent to nobody: it goes through the
+    // channels that ARE switched on, and says why it arrived there. (Example: a type ticked for e-mail on a server
+    // where only WhatsApp is on.) A type with NO channel ticked at all is the operator's choice - "keep it in the
+    // log only" - and stays that way: this used to override it and would have sent every such alert.
+    $chAll = ['email', 'telegram', 'pushbullet', 'whatsapp'];
+    $chOn = array_values(array_filter($chAll, fn($c) => !empty($cfg[$c]['enabled'])));
+    $ticked = array_values(array_filter($chAll, fn($c) => !empty($t[$c])));
+    if (in_array($tag, ['CRITICAL', 'HIGH', 'WARNING'], true) && $chOn && $ticked && !array_intersect($ticked, $chOn)) {
         foreach ($chOn as $c) $t[$c] = true;
-        $body .= "\n\n(This alert type has no channel chosen in Notifications, so it was sent through every channel that is switched on. Choose its channels there, or switch the type off.)";
+        $body .= "\n\n(The channels chosen for this alert type in Notifications are all switched off, so it was sent through the ones that are on. Choose its channels there.)";
     }
     $full = "[$tag] $subject\n\n$body\n\n— Safety Monitor Pro on $host\n" . date('Y-m-d H:i:s T');
     $channels = []; $results = [];
@@ -803,7 +807,7 @@ function smpro_notify_run_checks($verbose = false) {
         $thrDb = (int)($thr['db_injections'] ?? 1);
         if (count($found) >= max(1, $thrDb)) {
             $accts = array_values(array_unique(array_filter(array_map(fn($x) => $x['u'], $found))));
-            $maybe('db_injection', 'dbinj:' . count($found), count($found) . ' database injection(s) flagged by Imunify',
+            $maybe('db_injection', 'dbinj:' . count($found) . '.' . substr(md5(implode(',', array_keys($found))), 0, 8), count($found) . ' database injection(s) flagged by Imunify',
                 'Affected accounts: ' . implode(', ', array_slice($accts, 0, 10)) . (count($accts) > 10 ? ' +' . (count($accts) - 10) : '')
                 . "\nOpen DB Cleanup to back up & clean the affected databases.", ['severity' => 'critical']);
         } else $maybe('db_injection', 'clear', '', '');
@@ -824,9 +828,9 @@ function smpro_notify_run_checks($verbose = false) {
     // 3) disk usage
     $checked[] = 'disk_high';
     $dfRaw = (string)@shell_exec("df -P -x tmpfs -x devtmpfs 2>/dev/null | awk 'NR>1{gsub(\"%\",\"\",$5); print $6\" \"$5}'");
-    $over = [];
-    foreach (explode("\n", trim($dfRaw)) as $line) { if (!preg_match('/^(\S+)\s+(\d+)$/', trim($line), $m)) continue; if ((int)$m[2] >= (int)($thr['disk_pct'] ?? 90)) $over[] = $m[1] . ' ' . $m[2] . '%'; }
-    if ($over) $maybe('disk_high', 'disk:' . md5(implode(',', $over)), 'Disk usage high', implode("\n", $over), ['severity' => 'high']);
+    $over = []; $overSig = [];   // the signature moves in steps of 5%: every single percent used to count as a new event and bypassed the reminder window
+    foreach (explode("\n", trim($dfRaw)) as $line) { if (!preg_match('/^(\S+)\s+(\d+)$/', trim($line), $m)) continue; if ((int)$m[2] >= (int)($thr['disk_pct'] ?? 90)) { $over[] = $m[1] . ' ' . $m[2] . '%'; $overSig[] = $m[1] . ':' . intdiv((int)$m[2], 5); } }
+    if ($over) $maybe('disk_high', 'disk:' . md5(implode(',', $overSig)), 'Disk usage high', implode("\n", $over), ['severity' => 'high']);
     else $maybe('disk_high', 'clear', '', '');
 
     // 4) load average
@@ -1120,7 +1124,7 @@ function smpro_notify_run_checks($verbose = false) {
                 $home = function_exists('smpro_im_home_regions_label') ? smpro_im_home_regions_label(true) : 'your home region';   // home + the lock's countries: the set the rows were judged against
                 $rep  = smpro_foreign_login_report($fp, 168, $home);
                 $maybe('foreign_login', $key, $rep['title'], $rep['body'], ['severity' => 'high']);
-            }
+            } else $maybe('foreign_login', 'clear:cplogin', '', '');   // none this time: the next one is a new event
             $an = $r['anomaly'] ?? [];
             if ($an) {
                 $key = 'geoanom:' . md5(implode(',', array_keys($an)));
@@ -1196,6 +1200,7 @@ function smpro_notify_run_checks($verbose = false) {
                 // coarse signature so it fires once then respects the remind window instead of churning on every %
                 $maybe('mem_pressure', 'mem:crit', 'Memory pressure — OOM risk', $body, ['severity' => 'high']);
             } else {
+                $maybe('mem_pressure', 'clear:mem', '', '');   // the host is fine again: the next shortage is a new event (this slot was never cleared, so with "only when it changes" it was told once and never again)
                 // On CloudLinux, HOST RAM is usually healthy while individual accounts hit their per-tenant LVE
                 // memory limit (OOM is per-tenant, not global) - a global reading alone is misleading. When the host
                 // looks fine, surface accounts hitting LVE memory faults instead (probed only here, off the hot path).

@@ -482,6 +482,7 @@ function smpro_tun_sa_apply(string $rawId): array {
     if (strpos($id, 'ROOTLOGIN') !== false)
         return smpro_tun_sa_sshd('PermitRootLogin', 'prohibit-password', 'ssh_root', $bk['id']);
     if (strpos($id, 'PASSWORDAUTH') !== false || (strpos($id, 'SSH') !== false && strpos($id, 'PASSWORD') !== false))
+        if (!smpro_tun_root_has_key()) return ['ok' => false, 'msg' => 'Not applied: root has no SSH key installed (/root/.ssh/authorized_keys). Switching password sign-in off now would lock you out of SSH. Install and test a key first.', 'backup_id' => $bk['id']];
         return smpro_tun_sa_sshd('PasswordAuthentication', 'no', 'ssh_passauth', $bk['id']);
     if (strpos($id, 'X11') !== false && strpos($id, 'FORWARD') !== false)
         return smpro_tun_sa_sshd('X11Forwarding', 'no', 'ssh_x11', $bk['id']);
@@ -639,6 +640,17 @@ function smpro_tun_sa_apache_dir(string $directive, string $key, string $pid, st
     return ['ok' => true, 'applied' => $applied, 'note' => $note . ' Backup: ' . $bkId . '.'];
 }
 
+/** Is there at least one usable public key for root? Switching password sign-in off without one locks the operator out. */
+function smpro_tun_root_has_key(): bool {
+    foreach (['/root/.ssh/authorized_keys', '/root/.ssh/authorized_keys2'] as $f) {
+        if (!@is_file($f)) continue;
+        foreach ((array)@file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
+            $l = trim((string)$l); if ($l === '' || $l[0] === '#') continue;
+            if (preg_match('/(?:^|\s)(ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-\S+)\s+[A-Za-z0-9+\/]{60,}/', $l)) return true;
+        }
+    }
+    return false;
+}
 /* shared: write one directive to sshd drop-in, validate (sshd -t), reload */
 function smpro_tun_sa_sshd(string $key, string $val, string $pid, string $bkId): array {
     $dir = '/etc/ssh/sshd_config.d';
@@ -653,8 +665,8 @@ function smpro_tun_sa_sshd(string $key, string $val, string $pid, string $bkId):
     }
     $bk = (string)@file_get_contents($tgt);
     if (@file_put_contents($tgt, $new, LOCK_EX) === false) return ['ok' => false, 'msg' => 'Cannot write sshd config (permission denied).', 'backup_id' => $bkId];
-    $t = smpro_tun_sh('sshd -t 2>&1; /usr/sbin/sshd -t 2>&1', 10);
-    if (trim($t) !== '' && stripos($t, 'warning') === false) { @file_put_contents($tgt, $bk, LOCK_EX); return ['ok' => false, 'msg' => 'sshd config test failed — rolled back. ' . trim(mb_substr($t, 0, 120)), 'backup_id' => $bkId]; }
+    $t = smpro_tun_sh('sshd -t 2>&1; echo "__SMRC__=$?"', 10); $sshBad = !preg_match('/__SMRC__=0\s*$/', (string)$t); $t = trim((string)preg_replace('/__SMRC__=\d+\s*$/', '', (string)$t));   // the exit code decides: output that held an error AND the word "warning" used to pass
+    if ($sshBad) { @file_put_contents($tgt, $bk, LOCK_EX); return ['ok' => false, 'msg' => 'sshd config test failed — rolled back. ' . trim(mb_substr($t, 0, 120)), 'backup_id' => $bkId]; }
     smpro_tun_sh('systemctl reload sshd 2>&1; systemctl reload ssh 2>&1', 15);
     smpro_tun_profile_add([['engine' => 'ssh', 'id' => $pid, 'change' => $key . ' ' . $val, 'from' => 'previous']]);
     return ['ok' => true, 'applied' => $key . ' ' . $val, 'note' => 'Applied + sshd reloaded. IMPORTANT: keep this session open and verify a new SSH connection works. Backup: ' . $bkId . '.'];
@@ -951,7 +963,9 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         $file = smpro_tun_mycnf();
         $lines = ['# Safety Monitor Pro tune-up ' . date('Y-m-d') . ' (' . $recId . ')'];
         if ($kind === 'mycnf_flag') { $lines[] = $m[1]; }
-        else { for ($i = 1; $i + 1 < count($m); $i += 2) { $val = $m[$i + 1] ?? ''; if ($m[$i] === 'innodb_buffer_pool_size') $val = max(1, (int)round($scan['ram_mb'] * 0.5 / 1024)) . 'G'; $lines[] = $m[$i] . ' = ' . $val; } }
+        // the buffer pool is half the RAM. It used to be rounded to whole gigabytes with a floor of 1G: on a 1 GB server
+        // that is ALL the memory, and MySQL would not start after its next restart
+        else { for ($i = 1; $i + 1 < count($m); $i += 2) { $val = $m[$i + 1] ?? ''; if ($m[$i] === 'innodb_buffer_pool_size') { $bpMb = max(128, (int)floor((int)$scan['ram_mb'] * 0.5)); $val = $bpMb >= 2048 ? intdiv($bpMb, 1024) . 'G' : $bpMb . 'M'; } $lines[] = $m[$i] . ' = ' . $val; } }
         $c = (string)@file_get_contents($file);
         // ensure it lands under [mysqld]
         if (preg_match('/^\s*\[mysqld\]/im', $c)) $new = preg_replace('/^(\s*\[mysqld\][^\n]*\n)/im', "$1" . implode("\n", $lines) . "\n", $c, 1);
@@ -1065,6 +1079,7 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
     // SSH hardening via sshd_config.d drop-in -> validate (sshd -t) -> reload. ACCESS-RISK: port change opens CSF first.
     if ($kind === 'sshd') {
         $key = $m[1]; $val = $m[2];
+        if ($key === 'PasswordAuthentication' && strtolower((string)$val) === 'no' && !smpro_tun_root_has_key()) return ['ok' => false, 'msg' => 'Not applied: root has no SSH key installed (/root/.ssh/authorized_keys). Switching password sign-in off now would lock you out of SSH. Install and test a key first.'];
         if ($key === 'Port' && is_file('/etc/csf/csf.conf')) {                    // open the new port in CSF BEFORE changing sshd (anti-lockout)
             $cc = (string)@file_get_contents('/etc/csf/csf.conf');
             if (preg_match('/^\s*TCP_IN\s*=\s*"([^"]*)"/im', $cc, $mm) && strpos(',' . $mm[1] . ',', ',' . $val . ',') === false) {
@@ -1078,8 +1093,8 @@ function smpro_tun_apply(string $recId, bool $skipBackup = false): array {
         else { $tgt = '/etc/ssh/sshd_config'; $new = rtrim(preg_replace('/^\s*' . preg_quote($key, '/') . '\b.*$/im', '', (string)@file_get_contents($tgt))) . "\n" . $key . ' ' . $val . "\n"; }
         $bk = (string)@file_get_contents($tgt);
         if (@file_put_contents($tgt, $new, LOCK_EX) === false) return ['ok' => false, 'msg' => 'Could not write ' . $tgt . ' (permission denied).'];
-        $t = smpro_tun_sh('sshd -t 2>&1; /usr/sbin/sshd -t 2>&1', 10);
-        if (trim($t) !== '' && stripos($t, 'warning') === false) { @file_put_contents($tgt, $bk, LOCK_EX); return ['ok' => false, 'msg' => 'sshd config test failed — rolled back. ' . trim(mb_substr($t, 0, 160))]; }
+        $t = smpro_tun_sh('sshd -t 2>&1; echo "__SMRC__=$?"', 10); $sshBad = !preg_match('/__SMRC__=0\s*$/', (string)$t); $t = trim((string)preg_replace('/__SMRC__=\d+\s*$/', '', (string)$t));   // the exit code decides: output that held an error AND the word "warning" used to pass
+        if ($sshBad) { @file_put_contents($tgt, $bk, LOCK_EX); return ['ok' => false, 'msg' => 'sshd config test failed — rolled back. ' . trim(mb_substr($t, 0, 160))]; }
         smpro_tun_sh('systemctl reload sshd 2>&1; systemctl reload ssh 2>&1; service sshd reload 2>&1', 15);
         smpro_tun_profile_add([['engine' => 'ssh', 'id' => $recId, 'change' => $key . ' ' . $val, 'from' => $rec['current']]]);
         return ['ok' => true, 'applied' => $key . ' ' . $val, 'note' => 'Applied + sshd reloaded. IMPORTANT: keep this session open and confirm a NEW SSH login works before closing it.' . ($key === 'Port' ? ' New port ' . $val . ' was opened in CSF first.' : '')];
