@@ -234,7 +234,19 @@ function smpro_lv_kernel_state(): array {
             ? 'the LVE kernel module cannot place processes in its cgroups or set CPU limits - usually a kmodlve / kernel update that is loaded half-way, or cgroup state lost since boot; the fix is a reboot into the installed kernel (lvectl apply all afterwards), not a setting on this page'
             : 'the LVE kernel module is reporting failures');
     if ($mv['mismatch']) $why .= '. The module on disk is ' . $mv['disk'] . ' while ' . $mv['loaded'] . ' is loaded: the update is half-way, which is exactly this symptom';
-    return ['broken' => $n >= 3, 'n' => $n, 'last' => $last, 'why' => $why, 'module' => $mv, 'kind' => $kind];
+    // Which accounts is the kernel refusing? When it refuses to CREATE the LVE (rc -75), the account never appears in
+    // lveinfo or /proc/lve/list - the very tables this page reads - so the sites taking 508 show up NOWHERE on the
+    // page while the kernel names them in its own log: "failed to set lve(1463) cpu lim". Pull those LVE ids out,
+    // map id -> uid -> account (an LVE id IS the account uid on cPanel), so the page can name the affected accounts
+    // even though its normal data sources are blind to them.
+    $ids = []; if (preg_match_all('/\blve\((\d+)\)/', $o, $mm)) foreach ($mm[1] as $id) { $id = (int)$id; if ($id >= 1000) $ids[$id] = 1; }
+    $affected = [];
+    foreach (array_keys($ids) as $uid) {
+        $pw = function_exists('posix_getpwuid') ? @posix_getpwuid($uid) : null;
+        if (is_array($pw) && !empty($pw['name'])) $affected[] = (string)$pw['name'];
+    }
+    sort($affected);
+    return ['broken' => $n >= 3, 'n' => $n, 'last' => $last, 'why' => $why, 'module' => $mv, 'kind' => $kind, 'affected' => $affected];
 }
 
 /* ------------------------------------------------------------------ actions */
