@@ -90,6 +90,7 @@ require __DIR__ . '/includes/trustfeed.php';      // trusted-bots list from the 
 require __DIR__ . '/includes/fwallow.php';
 require __DIR__ . '/includes/crawlers.php';       // Crawler Control: per-family traffic and the server-wide refuse switch
 require __DIR__ . '/includes/secreport.php';
+require __DIR__ . '/includes/sechealth.php';   // Security Health checks (shared by the page module + the scheduled scan)
 require __DIR__ . '/includes/hgbridge.php';       // HostGuard bridge: the shared contract with the other products on this server      // Daily Security Report: the day as one page, downloadable, printable, deliverable        // Firewall recommended allow-lists + live fetch + auto-update (uses smpro_csf_allowlisted)
 require __DIR__ . '/includes/svcmon.php';         // Service catalog + controls + background service monitor (auto-restart + notify; uses smpro_notify)
 require __DIR__ . '/includes/migrate.php';
@@ -130,6 +131,7 @@ if (!$__liteReq && $__selfhealDue) {
     if (function_exists('smpro_ds_tmp_watchdog'))     { try { smpro_ds_tmp_watchdog(); }     catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // /tmp-expand crash watchdog
     if (function_exists('smpro_fw_allow_cron_sync'))  { try { smpro_fw_allow_cron_sync(); }  catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // firewall allow-list auto-update cron self-heal
     if (function_exists('smpro_svcmon_cron_sync'))    { try { smpro_svcmon_cron_sync(); }    catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // service-monitor cron self-heal (auto-restart + notify)
+    if (function_exists('smpro_sh_cron_sync'))        { try { smpro_sh_cron_sync(); }        catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // automatic Security Health scan (alerts on a worsened posture)
     if (function_exists('smpro_swapcycle_cron_sync')) { try { smpro_swapcycle_cron_sync(); } catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // auto swap-cycle cron self-heal (OOM-safe)
     if (function_exists('smpro_fw_live_apply_all'))   { try { smpro_fw_live_apply_all(); }   catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // re-insert admin live-allow IPs into iptables (survive reboot/firewall flush; works with no CSF)
     if (function_exists('smpro_reboot_cron_sync'))    { try { smpro_reboot_cron_sync(); }    catch (\Throwable $e) { if (function_exists('smpro_soft_fail')) smpro_soft_fail(basename(__FILE__) . ':' . __LINE__, $e); } }  // scheduled-reboot cron self-heal (re-assert or clear the one-shot)

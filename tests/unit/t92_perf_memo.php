@@ -18,7 +18,7 @@ is_eq($m, 2, 'U2: a null result is never cached - a failed collection is retried
 is_eq(smpro_memo('t92_c', 60, fn() => 'str'), 'str', 'U2: scalars work'); is_eq(smpro_memo('t92_c', 60, fn() => 'other'), 'str', 'U2: ...and are served back');
 $h = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/helpers.php'));
 has($h, "'/var/cpanel/hulkd/enabled'", 'U3: cPHulk is read from the switch file');
-foreach (['modules/security-health.php', 'includes/compcheck.php'] as $f2) {
+foreach (['includes/sechealth.php', 'includes/compcheck.php'] as $f2) {
     $s = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/' . $f2));
     has($s, 'smpro_cphulk_enabled', 'U3: ' . $f2 . ' uses it');
 }

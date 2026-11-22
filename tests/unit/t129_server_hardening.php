@@ -12,7 +12,8 @@ has($src, "if (\$c !== null && \$c !== \$v)", 'U2: a kernel key the running kern
 has($src, "if (trim(\$cur) !== '') continue; }   // keep an operator's own limits", "U3: an operator's own CONNLIMIT/PORTFLOOD is kept");
 has($src, "LFD did not come back — csf.conf put back", 'U4: a CSF change that stops LFD is put back by itself');
 has($src, "if (\$k === 'maxemailsperhour' && \$cur !== '' && (int)\$cur > 0 && (int)\$cur <= (int)\$v) continue;", 'U5: a stricter mail cap is never loosened');
-$mod = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/security-health.php'));
+$mod = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/sechealth.php') . "
+" . (string)file_get_contents(SMPRO_BASE . '/modules/security-health.php'));
 has($mod, "empty(\$spec[\$c['fix']]['danger']) && \$c['fix'] !== 'ssh_rootlogin'", 'U6: Apply all never includes lock-out or database-restart fixes');
 has($mod, "@ignore_user_abort(true)", 'U7: a started fix finishes even if the page is closed');
 has($mod, "smpro_require_root();", 'U8: root only');

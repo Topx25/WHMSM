@@ -479,10 +479,15 @@ function smpro_shh_checks(): array {
             $ev);
     }
     if (!function_exists('smpro_mg_status')) { $mgf = __DIR__ . '/mailguard.php'; if (is_file($mgf)) require_once $mgf; }
+    // SMPRO_MB_LIST + smpro_mb_installed() come from mailblock.php. shharden used to be loaded only after index.php
+    // had already required mailblock, so the constant was always defined; now that the checks can load standalone
+    // (the scheduled scan, a direct test) shharden must pull its own dependency instead of assuming the load order.
+    if (!defined('SMPRO_MB_LIST')) { $mbf = __DIR__ . '/mailblock.php'; if (is_file($mbf)) require_once $mbf; }
+    $mbList = defined('SMPRO_MB_LIST') ? SMPRO_MB_LIST : '/etc/smpro_blocked_senders';
     $mg = function_exists('smpro_mg_status') ? smpro_mg_status() : null;
     if ($mg !== null) {
         $sfLive = function_exists('smpro_mb_installed') && smpro_mb_installed();
-        $ev = 'MailGuard ' . ($mg['version'] ?: '(version unreadable)') . "\nShared sender-block list: " . SMPRO_MB_LIST . ' - ' . ($sfLive ? 'enforced by this plugin\'s system filter' : 'NOT enforced by this plugin') . ($mg['hook'] ? ', and by MailGuard\'s Exim rule' : ', and MailGuard\'s Exim rule is not in place')
+        $ev = 'MailGuard ' . ($mg['version'] ?: '(version unreadable)') . "\nShared sender-block list: " . $mbList . ' - ' . ($sfLive? 'enforced by this plugin\'s system filter' : 'NOT enforced by this plugin') . ($mg['hook'] ? ', and by MailGuard\'s Exim rule' : ', and MailGuard\'s Exim rule is not in place')
             . "\nMailboxes held by MailGuard: " . count($mg['held']) . "\nAccounts / mailboxes throttled: " . count($mg['throttled'])
             . "\nOpen incidents: " . ($mg['read'] ? (int)$mg['open_incidents'] : 'unreadable') . "\nActive enforcement actions: " . ($mg['active_actions'] === null ? 'unreadable' : (int)$mg['active_actions']);
         $C[] = smpro_sh_mk('MailGuard - outgoing-mail protection', !$mg['read'] ? 'info' : ((!$sfLive && !$mg['hook']) ? 'warning' : 'ok'),

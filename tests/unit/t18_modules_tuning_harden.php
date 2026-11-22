@@ -26,7 +26,7 @@ require __DIR__ . '/../support/plugin_funcs.php';
 smpro_plugin_funcs('includes/phlock.php');
 smpro_plugin_funcs('includes/phstack.php');
 smpro_plugin_funcs('modules/php-harden.php');
-smpro_plugin_funcs('modules/security-health.php');
+smpro_plugin_funcs('includes/sechealth.php');   // smpro_sh_fixspec + smpro_sh_mk moved here from the page module
 
 /* =====================================================================
  * U90 — smpro_tun_apply_map(): the exact apply registry.

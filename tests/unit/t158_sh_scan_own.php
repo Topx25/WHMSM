@@ -1,7 +1,8 @@
 <?php
 require __DIR__ . '/../support/bootstrap.php';
 /** t158 - Security Health: a stuck malware scan, an own server in a ban list, and a low SSH flood limit are reported. */
-$sh = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/modules/security-health.php'));
+$sh = str_replace(chr(13), '', (string)file_get_contents(SMPRO_BASE . '/includes/sechealth.php') . "
+" . (string)file_get_contents(SMPRO_BASE . '/modules/security-health.php'));
 has($sh, "function smpro_sh_scan_own_checks() {", 'S1: the checks exist');
 has($sh, "\$C['Scanning & own servers'] = smpro_sh_scan_own_checks();", 'S2: ...and are listed');
 has($sh, "&& \$started > 0 && \$started < time() - 172800)", 'S3: a scan running or queued for more than 2 days is stuck');
