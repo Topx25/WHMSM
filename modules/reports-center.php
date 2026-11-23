@@ -473,10 +473,16 @@ function smpro_rc_block_reason($ip) {
         unset($im);
     }
 
-    // 6) CC_ALLOW (country never-block) from csf.conf - does it cover this IP's country?
-    $cc = trim(smpro_rc_logcmd("grep -E '^CC_ALLOW(_FILTER)? *=' /etc/csf/csf.conf 2>/dev/null"));
+    // 6) CC_ALLOW / CC_ALLOW_FILTER (country never-block) from csf.conf - does EITHER cover this IP's country?
+    //    The two are NOT the same thing and the fix below must not conflate them: CC_ALLOW fully trusts a country
+    //    (it skips EVERY firewall check, including LFD brute-force bans), while CC_ALLOW_FILTER only exempts it from
+    //    country-level blocking and keeps LFD. So we read each line on its own.
+    $ccAllow  = trim(smpro_rc_logcmd("grep -E '^CC_ALLOW *=' /etc/csf/csf.conf 2>/dev/null"));
+    $ccFilter = trim(smpro_rc_logcmd("grep -E '^CC_ALLOW_FILTER *=' /etc/csf/csf.conf 2>/dev/null"));
+    $cc = trim($ccAllow . ' ' . $ccFilter);
     $rep['cc_allow']  = $cc;
-    $rep['cc_covers'] = $rep['country'] !== '' && (bool)preg_match('/\b' . preg_quote($rep['country'], '/') . '\b/i', $cc);
+    $ctryRe = $rep['country'] !== '' ? '/\b' . preg_quote($rep['country'], '/') . '\b/i' : '';
+    $rep['cc_covers'] = $ctryRe !== '' && (bool)preg_match($ctryRe, $cc);
 
     // 7) verdict + fix
     $arab = function_exists('smpro_cc_is_arab') && smpro_cc_is_arab((string)$rep['country']);   // configured trusted region (home ∪ caution), not a fixed list
@@ -509,8 +515,11 @@ function smpro_rc_block_reason($ip) {
             if (array_key_exists('home_shield', $imc) ? !empty($imc['home_shield']) : true) $rep['verdict'] .= preg_match('/manual|by hand|\bkeep\b|^smpro\b/i', (string)$rep['comment']) ? ' The Home-region shield leaves this one alone: the block was written by hand or its reason says keep.' : ' The Home-region shield lifts automatic blocks like this within a minute and reports who set it.';
             else $rep['verdict'] .= ' The Home-region shield is OFF in Intrusion Monitor settings; turned on, it would lift this block within a minute.';
             if (!$rep['cc_covers']) {
-                $rep['verdict'] .= ' CC_ALLOW does NOT include ' . ($rep['country'] ?: 'this country') . ' — that is exactly why a legitimate ' . ($rep['country'] ?: 'local') . ' IP got firewall-blocked.';
-                $rep['fix'][] = 'Add ' . ($rep['country'] ?: 'the country') . ' to Firewall → Country Block-Prevention (CC_ALLOW) so it is never blocked again.';
+                $rep['verdict'] .= ' Neither CC_ALLOW nor CC_ALLOW_FILTER includes ' . ($rep['country'] ?: 'this country') . ' — that is exactly why a legitimate ' . ($rep['country'] ?: 'local') . ' IP got firewall-blocked.';
+                // Recommend CC_ALLOW_FILTER, NOT CC_ALLOW: the filter exempts the country from country-level blocking
+                // while keeping LFD brute-force protection, so one country code can't quietly turn off every firewall
+                // check for a whole nation. CC_ALLOW (full trust, skips LFD) is almost never what you want for this.
+                $rep['fix'][] = 'Add ' . ($rep['country'] ?: 'the country') . ' to Firewall → Country Block-Prevention, "Filtered allow" (CC_ALLOW_FILTER), so a legitimate address from it is not country-blocked — while LFD brute-force bans still apply. Avoid "Full allow" (CC_ALLOW) unless you mean to skip ALL firewall checks for that country.';
             }
             $rep['fix'][] = 'Unblock now: Firewall → Add IP → Allow, or run on the server:  csf -dr ' . $ip . '  then  csf -a ' . $ip;
         } else {
