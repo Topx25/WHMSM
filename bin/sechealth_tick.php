@@ -59,6 +59,15 @@ try {
     $critN = 0; foreach ($cur as $c) if ($c['status'] === 'critical') $critN++;
     $st['cfg'] = $cfg; $st['last_run'] = time(); $st['findings'] = $cur;
     $st['counts'] = ['critical' => $critN, 'warning' => count($cur) - $critN];
+    // Security score + a short trend history, from the SAME formula the page uses (smpro_sh_score over the full
+    // category map, not just the critical/warning subset), so "is my posture improving?" has an answer over time.
+    if (function_exists('smpro_sh_score')) {
+        $sc = smpro_sh_score($cats);
+        $st['score'] = (int)$sc['score'];
+        $hist = is_array($st['score_history'] ?? null) ? $st['score_history'] : [];
+        $hist[] = ['t' => time(), 's' => (int)$sc['score'], 'c' => (int)$sc['critical'], 'w' => (int)$sc['warning']];
+        $st['score_history'] = array_slice($hist, -30);   // keep the last 30 scored runs
+    }
     smpro_json_save($stateFile, $st);
 
     if ($new && function_exists('smpro_notify')) {

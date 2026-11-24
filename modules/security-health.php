@@ -75,6 +75,21 @@ $risk = $critN > 0 ? ['Critical', 'danger'] : ($warnN >= 5 ? ['Warning', 'warn']
 
 smpro_audit('security_health_view', ['score' => $score, 'warnings' => $warnN, 'critical' => $critN]);
 
+// Trend: compare this score to the last one the scheduled scan recorded, so the page shows whether the posture
+// is improving or slipping, not just a number in isolation. Read-only; the history itself is written by the worker.
+$shTrend = ['dir' => 'flat', 'delta' => 0, 'prev' => null, 'spark' => [], 'when' => 0];
+$shAuto = @is_file(SMPRO_VARLIB . '/sechealth_auto.json') ? (array)json_decode((string)@file_get_contents(SMPRO_VARLIB . '/sechealth_auto.json'), true) : [];
+$shHist = is_array($shAuto['score_history'] ?? null) ? $shAuto['score_history'] : [];
+if ($shHist) {
+    $shLast = end($shHist);
+    $shPrev = (int)($shLast['s'] ?? $score);
+    $shTrend['prev'] = $shPrev;
+    $shTrend['when'] = (int)($shLast['t'] ?? 0);
+    $shTrend['delta'] = (int)$score - $shPrev;
+    $shTrend['dir'] = $shTrend['delta'] > 0 ? 'up' : ($shTrend['delta'] < 0 ? 'down' : 'flat');
+    $shTrend['spark'] = array_map(fn($h) => (int)($h['s'] ?? 0), array_slice($shHist, -14));
+}
+
 smpro_layout_header('Security Health');
 $fixspec = smpro_sh_fixspec();
 function smpro_sh_badge($s) { $m = ['ok'=>['good','OK'],'info'=>['blue','INFO'],'warning'=>['warn','WARNING'],'critical'=>['danger','CRITICAL']]; [$c,$t]=$m[$s]??['gray',strtoupper($s)]; return '<span class="shb '.$c.'">'.$t.'</span>'; }
@@ -94,8 +109,18 @@ foreach ($cats as $shCat => $shChecks) foreach ($shChecks as $shC) {
     $shCatN[$shC['status']][$shCat] = ($shCatN[$shC['status']][$shCat] ?? 0) + 1;
 }
 $shFirstCat = $cats ? $shCatId(array_key_first($cats)) : '';
+// the Security Score tile's sub-line: the trend when we have a prior scan, else the formula
+if ($shTrend['prev'] === null) {
+    $shScoreSub = '100 − 3/warning − 12/critical';
+} else {
+    if ($shTrend['dir'] === 'up')        $shScoreSub = '&#9650; up ' . (int)$shTrend['delta'] . ' since last scan';
+    elseif ($shTrend['dir'] === 'down')  $shScoreSub = '&#9660; down ' . abs((int)$shTrend['delta']) . ' since last scan';
+    else                                 $shScoreSub = 'unchanged since last scan';
+    $shScoreSub .= ' (was ' . (int)$shTrend['prev'] . ')';
+}
 $shKpis = [
-  [$shFirstCat,                            'Security Score', (int)$score . '/100',                 $score >= 80 ? 'good' : ($score >= 60 ? 'warn' : 'dang'), '100 − 3/warning − 12/critical'],
+  [$shFirstCat,                            'Security Score', (int)$score . '/100',                 $score >= 80 ? 'good' : ($score >= 60 ? 'warn' : 'dang'),
+    $shScoreSub],
   [$shFirstCat,                            'Overall Risk',   $risk[0],                             $risk[1] === 'danger' ? 'dang' : $risk[1],               $critN ? 'critical findings present' : ($warnN ? 'warnings to review' : 'nothing open')],
   [$shFirst['critical'] ?: $shFirstCat,    'Critical',       (string)(int)$critN,                  $critN ? 'dang' : 'good',                                 $critN ? count($shCatN['critical']) . ' categor' . (count($shCatN['critical']) === 1 ? 'y' : 'ies') : 'none'],
   [$shFirst['warning'] ?: $shFirstCat,     'Warnings',       (string)(int)$warnN,                  $warnN ? 'warn' : 'good',                                 $warnN ? count($shCatN['warning']) . ' categor' . (count($shCatN['warning']) === 1 ? 'y' : 'ies') : 'none'],

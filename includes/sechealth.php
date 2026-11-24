@@ -214,6 +214,26 @@ function smpro_sh_mycnf_all(string $main): string {
 function smpro_sh_mk($title, $status, $finding, $risk, $rec, $evidence = '', $fix = '', $manual = '') { return ['title' => $title, 'status' => $status, 'finding' => $finding, 'risk' => $risk, 'rec' => $rec, 'evidence' => $evidence, 'fix' => $fix, 'manual' => $manual]; }
 
 /**
+ * The single security-score formula, shared by the page render and the scheduled scan so the number the page
+ * shows and the number the trend is built from can never drift apart. Takes smpro_sh_all()'s category map (or a
+ * flat list of checks) and returns ['score'=>0..100, 'critical'=>n, 'warning'=>n]. 100 minus 3 per warning and
+ * 12 per critical, floored at 0 - the same weighting the page has always used, now in one place.
+ */
+function smpro_sh_score(array $cats): array {
+    $crit = 0; $warn = 0;
+    foreach ($cats as $checks) {
+        // accept either [cat => [check,...]] or a flat [check,...]
+        $list = (is_array($checks) && isset($checks['status'])) ? [$checks] : (array)$checks;
+        foreach ($list as $c) {
+            if (!is_array($c)) continue;
+            $s = strtolower((string)($c['status'] ?? ''));
+            if ($s === 'critical') $crit++; elseif ($s === 'warning') $warn++;
+        }
+    }
+    return ['score' => max(0, 100 - $warn * 3 - $crit * 12), 'critical' => $crit, 'warning' => $warn];
+}
+
+/**
  * Parse the text of `dnf/yum updateinfo list --security` into counts + the worst severity. A pure function (no
  * shell), so the severity/CVE/dedup logic can be tested against real vendor output without a package manager.
  * Each row looks like: "ALSA-2026:1234 Important/Sec. openssl-1.1.1k-9.el9.x86_64" (CVE ids appear when the list
