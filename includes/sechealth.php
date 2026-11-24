@@ -214,6 +214,77 @@ function smpro_sh_mycnf_all(string $main): string {
 function smpro_sh_mk($title, $status, $finding, $risk, $rec, $evidence = '', $fix = '', $manual = '') { return ['title' => $title, 'status' => $status, 'finding' => $finding, 'risk' => $risk, 'rec' => $rec, 'evidence' => $evidence, 'fix' => $fix, 'manual' => $manual]; }
 
 /**
+ * Parse the text of `dnf/yum updateinfo list --security` into counts + the worst severity. A pure function (no
+ * shell), so the severity/CVE/dedup logic can be tested against real vendor output without a package manager.
+ * Each row looks like: "ALSA-2026:1234 Important/Sec. openssl-1.1.1k-9.el9.x86_64" (CVE ids appear when the list
+ * was produced with --with-cve). Vendors vary the severity wording, so it is matched case-insensitively, and an
+ * advisory seen on several package rows is counted once at its highest severity.
+ */
+function smpro_sh_parse_updateinfo(string $raw): array {
+    $sevRank = ['critical' => 4, 'important' => 3, 'moderate' => 2, 'low' => 1, 'none' => 0];
+    $advisories = []; $pkgs = []; $cves = []; $worst = 'none'; $kept = [];
+    foreach (explode("\n", $raw) as $l) {
+        $l = trim($l); if ($l === '') continue;
+        if (stripos($l, 'Last metadata') !== false || stripos($l, 'updateinfo') !== false) continue;   // header noise
+        if (!preg_match('/^(\S+)\s+(\S+)\s+(\S+)/', $l, $m)) continue;
+        $adv = $m[1]; $sevRaw = $m[2]; $pkg = $m[3];
+        // the first token must look like an advisory id (LETTERS-YEAR:NUM or a CVE), not a stray word
+        if (!preg_match('/^[A-Z]+-\d{4}[:\-]\d+/i', $adv) && !preg_match('/^CVE-\d{4}-\d+/i', $adv)) continue;
+        $kept[] = $l;
+        $sev = 'none';
+        foreach ($sevRank as $s => $_r) if (stripos($sevRaw, $s) !== false) { $sev = $s; break; }
+        // keep an advisory at its HIGHEST severity across its package rows
+        if (!isset($advisories[$adv]) || $sevRank[$sev] > $sevRank[$advisories[$adv]]) $advisories[$adv] = $sev;
+        $pkgs[$pkg] = true;
+        if ($sevRank[$sev] > $sevRank[$worst]) $worst = $sev;
+        if (preg_match_all('/CVE-\d{4}-\d{4,}/i', $l, $cm)) foreach ($cm[0] as $c) $cves[strtoupper($c)] = true;
+    }
+    return ['advisories' => count($advisories), 'packages' => count($pkgs), 'cves' => count($cves),
+            'worst' => $worst, 'sample' => array_slice(array_keys($advisories), 0, 8),
+            'raw' => implode("\n", array_slice($kept, 0, 20))];
+}
+
+/**
+ * Pending OS security updates, read from the distribution's OWN security advisory data (dnf/yum updateinfo) -
+ * no external feed, no CVE database to keep current, no version guessing: the vendor (AlmaLinux / CloudLinux /
+ * Rocky / CentOS) ships the advisory metadata in its repos and marks which updates are security fixes and how
+ * severe. This turns the section from a hardening checklist into a real "are there known-vulnerable packages
+ * installed right now" check. Returns a structured result so both the page check and the auto-scan can use it.
+ *
+ * Three states are kept DISTINCT so an unreadable or advisory-less box is never shown as clean:
+ *   has_updates  - security updates are waiting (severity + counts set)
+ *   clean        - no security updates AND the repo carries advisory metadata (a trustworthy all-clear)
+ *   no_metadata  - the repos do not publish updateinfo advisories here, so security status cannot be judged
+ *   unavailable  - no dnf/yum, or the query failed
+ */
+function smpro_sh_os_security(): array {
+    $mgr = trim(smpro_sh_run('command -v dnf', 5)) !== '' ? 'dnf' : (trim(smpro_sh_run('command -v yum', 5)) !== '' ? 'yum' : '');
+    if ($mgr === '') return ['state' => 'unavailable', 'why' => 'Neither dnf nor yum is present (not an RPM-based system).'];
+
+    // The security advisory list: one line per (advisory, package). Severity is a column; CVE ids appear with --with-cve
+    // on dnf. Bounded; metadata refresh is capped so a slow mirror cannot hang the page. 2>/dev/null keeps stdout clean.
+    $raw = smpro_sh_run(escapeshellarg($mgr) . ' -q --setopt=metadata_expire=3h updateinfo list --security 2>/dev/null', 45);
+    $p = smpro_sh_parse_updateinfo($raw);
+
+    if ($p['advisories'] > 0) {
+        return ['state' => 'has_updates', 'manager' => $mgr, 'worst' => $p['worst'],
+                'advisories' => $p['advisories'], 'packages' => $p['packages'], 'cves' => $p['cves'],
+                'sample' => $p['sample'], 'raw' => $p['raw']];
+    }
+
+    // No security advisories came back. Decide between a real all-clear and a repo that simply has no advisory data:
+    // if there ARE pending updates at all but updateinfo named none, the metadata is the thing missing, not the risk.
+    $anyUpd = smpro_sh_run(escapeshellarg($mgr) . ' -q check-update 2>/dev/null | grep -cE ' . escapeshellarg('^[a-zA-Z0-9]'), 45);
+    $pending = (int)trim($anyUpd);
+    $summary = smpro_sh_run(escapeshellarg($mgr) . ' -q updateinfo summary 2>/dev/null', 30);
+    $hasMeta = trim($summary) !== '' || $pending === 0;   // a clean box legitimately prints an empty summary
+    if ($pending > 0 && trim($summary) === '')
+        return ['state' => 'no_metadata', 'manager' => $mgr, 'pending' => $pending,
+                'why' => $pending . ' update(s) are available but the repositories publish no security advisory data, so which of them are security fixes cannot be determined here.'];
+    return ['state' => 'clean', 'manager' => $mgr, 'pending' => $pending];
+}
+
+/**
  * Three failures that look like nothing at all from the panel. A malware scan that has said "running" for months
  * (nothing is being scanned); one of the operator's own servers sitting in a ban list (its calls fail, and any reply it
  * sends is dropped); and an SSH flood limit low enough that the operator's own tools trip it (a silent drop, no deny line).
@@ -533,6 +604,41 @@ function smpro_sh_all() {
             $slGaps ? 'kernel_harden' : '',
             $slGaps ? 'sysctl -w fs.protected_symlinks=1 ; sysctl -w fs.protected_hardlinks=1 — then persist in /etc/sysctl.d/99-hardening.conf: fs.protected_symlinks=1 and fs.protected_hardlinks=1' : ''),
     ];
+    /* ---- Known-vulnerable packages: pending OS security updates from the vendor's own advisory data ---- */
+    $osv = smpro_sh_os_security();
+    if ($osv['state'] === 'has_updates') {
+        $sevWord = ucfirst($osv['worst']);
+        $isCrit  = in_array($osv['worst'], ['critical', 'important'], true);
+        $cveTxt  = $osv['cves'] > 0 ? ' (' . $osv['cves'] . ' CVE' . ($osv['cves'] === 1 ? '' : 's') . ')' : '';
+        $C['Security updates'] = [
+            smpro_sh_mk('Pending OS security updates',
+                $isCrit ? 'critical' : 'warning',
+                $osv['advisories'] . ' security advisory(ies)' . $cveTxt . ' affecting ' . $osv['packages'] . ' installed package(s) are waiting — highest severity: ' . $sevWord . '.',
+                'Each advisory is a vendor-published fix for a KNOWN vulnerability in a package installed on this server. Until it is applied the server is running software with a publicly documented flaw — exactly what mass scanners look for. A Critical/Important advisory for an internet-facing service (OpenSSL, the kernel, Exim, a web server) is the highest-priority item on this whole page.',
+                'Apply the security updates: ' . $osv['manager'] . ' -y update --security  (schedule a brief window; a kernel or glibc update needs a reboot to take effect). Review first with: ' . $osv['manager'] . ' updateinfo list --security.',
+                'Highest severity: ' . $sevWord . "\nAdvisories: " . implode(', ', $osv['sample']) . (count($osv['sample']) < $osv['advisories'] ? ' …' : '') . "\n\n" . $osv['raw'],
+                '',
+                $osv['manager'] . ' -y update --security   # then reboot if the kernel or glibc was updated'),
+        ];
+    } elseif ($osv['state'] === 'no_metadata') {
+        $C['Security updates'] = [
+            smpro_sh_mk('Pending OS security updates', 'info',
+                $osv['why'],
+                'Without the vendor\'s security-advisory metadata this server cannot tell which pending updates are security fixes, so a known-vulnerable package could be installed without this check seeing it.',
+                'Install the advisory metadata so security updates become visible: ' . $osv['manager'] . ' install -y dnf-plugins-core (and enable the distro\'s updateinfo, e.g. the AlmaLinux/Rocky release repos). Until then, apply all updates regularly: ' . $osv['manager'] . ' -y update.',
+                $osv['pending'] . ' update(s) pending; no security advisory data from the repos.'),
+        ];
+    } elseif ($osv['state'] === 'clean') {
+        $C['Security updates'] = [
+            smpro_sh_mk('Pending OS security updates', 'ok',
+                'No security updates are waiting — every vendor security advisory for the installed packages has been applied.' . ((int)($osv['pending'] ?? 0) > 0 ? ' (' . (int)$osv['pending'] . ' non-security update(s) are available.)' : ''),
+                'Known-vulnerable packages are the most commonly exploited way into a server; keeping security advisories applied closes that door.',
+                (int)($osv['pending'] ?? 0) > 0 ? 'Up to date on security; apply the remaining non-security updates at your convenience: ' . $osv['manager'] . ' -y update.' : 'No action needed — keep applying security updates as they are published.',
+                'Checked via ' . $osv['manager'] . ' updateinfo (vendor advisory data).'),
+        ];
+    }
+    // state 'unavailable' -> not an RPM system; emit nothing rather than a misleading finding.
+
     /* ---- scanning that silently stopped, own servers in a ban list, SSH flood limit ---- */
     $C['Scanning & own servers'] = smpro_sh_scan_own_checks();
     /* ---- Server hardening (fixable, each with Undo) ---- */
