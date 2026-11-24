@@ -603,17 +603,10 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'ipadd') {
         // (in/out) and -c is the COMMENT flag, so the "SM Pro temp block" label is passed with -c. IP was validated
         // above (filter_var); ttl is a clamped int (no shell metachars); ip + comment are escapeshellarg'd.
         if ($csf === '') { echo json_encode(['ok'=>false,'msg'=>'Temporary blocks require CSF, which is not installed. Use a permanent block instead.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
-        // Same safety guard the permanent path (smpro_csf_deny_add) enforces: NEVER block a Cloudflare edge IP -
-        // it fronts inbound traffic for every site, so a deny black-holes all of them.
-        if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip)) {
-            echo json_encode(['ok'=>false,'msg'=>'Refused: ' . $ip . ' is a Cloudflare edge IP — blocking it would cut ALL inbound traffic. Block the real client at Cloudflare, not CSF.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
-        }
-        // The same refusals as a permanent block: mail providers and the allow-list (temporary is still a block).
-        if (function_exists('smpro_fw_never_block') && ($nb = smpro_fw_never_block($ip)) !== '') {
-            echo json_encode(['ok'=>false,'msg'=>'Refused: ' . $ip . ' belongs to ' . $nb . ' — blocking it would bounce your customers\' mail.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
-        }
-        if (function_exists('smpro_im_allowlisted') && smpro_im_allowlisted($ip)) {
-            echo json_encode(['ok'=>false,'msg'=>'Refused: ' . $ip . ' is on the Intrusion Monitor allow-list. Remove it from the list first if it really has to be blocked.'], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+        // A temporary block is still a block: refuse exactly what a permanent block refuses (Cloudflare edge,
+        // mail providers, the Intrusion Monitor allow-list) through the one shared guard, so the two paths agree.
+        if (function_exists('smpro_fw_block_refusal') && ($rf = smpro_fw_block_refusal($ip)) !== '') {
+            echo json_encode(['ok'=>false,'msg'=>$rf], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
         }
         $ttl = (int)$ttlMap[$dur];
         $cmt = 'SM Pro temp block' . ($reason !== '' ? ': ' . $reason : '');
@@ -632,7 +625,15 @@ if ($reqMethod === 'POST' && ($_POST['fw_action'] ?? '') === 'ipadd') {
         echo json_encode(['ok'=>$ok, 'msg'=>$msg], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
         exit;
     }
-    // permanent block: prefer CSF (csf.deny, verified + Cloudflare-safe); if CSF is absent, block via Imunify + live iptables DROP
+    // permanent block: refuse the off-limits addresses first, through the SAME guard the temporary path uses.
+    // smpro_csf_deny_add has always refused a Cloudflare edge IP, but NOT a never-block mail provider or an
+    // allow-listed address - so a permanent manual block could bounce customer mail or override the operator's
+    // own allow-list, while the temporary block correctly refused both. One guard now covers both paths.
+    if (function_exists('smpro_fw_block_refusal') && ($rf = smpro_fw_block_refusal($ip)) !== '') {
+        smpro_audit('firewall_ip_block', ['ip'=>$ip, 'reason'=>$reason, 'ok'=>false, 'refused'=>true, 'actor'=>smpro_current_actor()]);
+        echo json_encode(['ok'=>false,'msg'=>$rf], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+    }
+    // prefer CSF (csf.deny, verified + Cloudflare-safe); if CSF is absent, block via Imunify + live iptables DROP
     if ($csf !== '' && function_exists('smpro_csf_deny_add')) $r = smpro_csf_deny_add($ip, $reason ?: 'manual block');
     elseif (function_exists('smpro_fw_live_block'))           $r = smpro_fw_live_block($ip, $reason ?: 'manual block');
     else                                                      $r = ['ok'=>false, 'msg'=>'No block method available.'];

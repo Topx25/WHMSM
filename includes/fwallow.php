@@ -218,6 +218,22 @@ function smpro_fw_never_block($ip): string {
     $pv = smpro_fw_allow_providers()[$k] ?? [];
     return !empty($pv['never_block']) ? (string)($pv['name'] ?? $k) : '';
 }
+/**
+ * The one set of reasons the Firewall page refuses to block an address, shared by the permanent and the
+ * temporary block paths so the two can never disagree about what is off-limits. Returns the refusal message
+ * to show the operator, or '' when the address may be blocked. The three reasons: a Cloudflare edge IP (a
+ * deny there black-holes every proxied site), a mail/provider range marked never-block (blocking it bounces
+ * customers' mail), and an address on the Intrusion Monitor allow-list (block it only after removing it there).
+ */
+function smpro_fw_block_refusal(string $ip): string {
+    if (function_exists('smpro_ip_is_cloudflare') && smpro_ip_is_cloudflare($ip))
+        return 'Refused: ' . $ip . ' is a Cloudflare edge IP — blocking it would cut ALL inbound traffic. Block the real client at Cloudflare, not CSF.';
+    if (function_exists('smpro_fw_never_block') && ($nb = smpro_fw_never_block($ip)) !== '')
+        return 'Refused: ' . $ip . ' belongs to ' . $nb . ' — blocking it would bounce your customers\' mail.';
+    if (function_exists('smpro_im_allowlisted') && smpro_im_allowlisted($ip))
+        return 'Refused: ' . $ip . ' is on the Intrusion Monitor allow-list. Remove it from the list first if it really has to be blocked.';
+    return '';
+}
 /** Fetch the CURRENT ranges live from the provider feed(s). URLs are fixed constants (no SSRF). Returns [] on failure. */
 function smpro_fw_allow_fetch_raw($pv) {
     $out = [];
