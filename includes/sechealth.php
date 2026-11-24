@@ -285,6 +285,65 @@ function smpro_sh_os_security(): array {
 }
 
 /**
+ * Is the running kernel exposed to a known, fixed flaw? The single most common real case is NOT an EOL kernel -
+ * it is a patched kernel that has been installed but the server is still running the OLD one because it was never
+ * rebooted: the fix is on disk, doing nothing, and uname looks "old" while the security update already shipped.
+ *
+ * The subtlety that makes a naive check wrong: a LIVE-PATCHING kernel (KernelCare/kpatch) rewrites the RUNNING
+ * kernel in memory without a reboot, so uname deliberately shows an "old" version that is in fact fully fixed.
+ * Comparing uname to the newest installed RPM there would cry "reboot needed" on a server that is already
+ * patched - exactly the kind of false alarm that teaches an operator to ignore this page. So:
+ *   - KernelCare active + "patch is applied" + no newer patch  -> OK (effective kernel is current, no reboot).
+ *   - KernelCare active but a newer patch is available         -> warning (apply it: kcarectl --update).
+ *   - no live patching: compare running vs newest-installed; different -> warning (a fix is installed but the
+ *     server runs the old kernel; needs-restarting -r, when present, is the authoritative confirmation).
+ * Returns a structured result; the page + the scheduled scan both render from it.
+ */
+function smpro_sh_kernel_exposure(): array {
+    $running = trim(smpro_sh_run('uname -r'));
+    if ($running === '') return ['state' => 'unknown', 'running' => '', 'why' => 'uname did not answer'];
+
+    // live patching first - it changes the whole meaning of "running vs installed"
+    $kc = trim(smpro_sh_run('command -v kcarectl', 5));
+    if ($kc !== '') {
+        $info = smpro_sh_run('kcarectl --info 2>/dev/null', 15);
+        $applied = stripos($info, 'patch is applied') !== false;
+        $noNewer = stripos($info, 'No newer patch is available') !== false;
+        $effective = preg_match('/5\.\d+\.\d+-\S+|\b\d+\.\d+\.\d+-\S+/', (string)(preg_match('/kpatch-description:[^;]*;(\S+)/', $info, $dm) ? $dm[1] : ''), $em) ? $em[0] : '';
+        if ($applied && $noNewer) return ['state' => 'ok', 'running' => $running, 'livepatch' => 'kernelcare', 'effective' => $effective,
+            'why' => 'KernelCare live patching is active and up to date; the running kernel is patched in memory without a reboot' . ($effective !== '' ? ' (effective ' . $effective . ')' : '') . '.'];
+        if ($applied && !$noNewer) return ['state' => 'warning', 'running' => $running, 'livepatch' => 'kernelcare',
+            'why' => 'KernelCare is active but a newer live patch is available for this kernel.',
+            'fix' => 'kcarectl --update'];
+        // KernelCare present but not confirming an applied patch - treat like no live patch, fall through to the RPM compare
+    }
+
+    // no (confirmed) live patch: a newer kernel installed but not booted is the real exposure
+    $newest = trim(smpro_sh_run("rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\\n' 2>/dev/null | sort -V | tail -1"));
+    // needs-restarting -r is authoritative when it exists (0 = no reboot needed, 1 = reboot needed)
+    $nrBin = trim(smpro_sh_run('command -v needs-restarting', 5));
+    $nrReboot = null;
+    if ($nrBin !== '') { $out = smpro_sh_run('needs-restarting -r 2>&1; echo "RC=$?"', 20); if (preg_match('/RC=(\d+)/', $out, $rm)) $nrReboot = ((int)$rm[1] === 1); }
+
+    if ($newest !== '' && $newest !== $running) {
+        // a different newest-installed kernel: the fix is on disk but the old kernel is still running
+        $sev = ($nrReboot === false) ? 'ok' : 'warning';   // needs-restarting can still clear it (e.g. only non-kernel pkgs newer)
+        if ($sev === 'ok') return ['state' => 'ok', 'running' => $running, 'newest' => $newest,
+            'why' => 'A newer kernel (' . $newest . ') is installed, but the system reports no reboot is required (needs-restarting -r).'];
+        return ['state' => 'warning', 'running' => $running, 'newest' => $newest, 'needs_reboot' => $nrReboot,
+            'why' => 'A newer kernel is installed (' . $newest . ') but the server is still running ' . $running . '. Any kernel security fix in that newer build is installed but NOT in effect until a reboot.',
+            'fix' => 'Reboot into the newer kernel during a maintenance window (SM Pro > Reboot can schedule it).'];
+    }
+
+    if ($nrReboot === true) return ['state' => 'warning', 'running' => $running, 'newest' => $newest ?: $running, 'needs_reboot' => true,
+        'why' => 'The system reports a reboot is required (needs-restarting -r) for updated core libraries/services to take effect.',
+        'fix' => 'Reboot during a maintenance window (SM Pro > Reboot can schedule it).'];
+
+    return ['state' => 'ok', 'running' => $running, 'newest' => $newest ?: $running,
+        'why' => 'The running kernel is the newest installed and no reboot is pending.'];
+}
+
+/**
  * Three failures that look like nothing at all from the panel. A malware scan that has said "running" for months
  * (nothing is being scanned); one of the operator's own servers sitting in a ban list (its calls fail, and any reply it
  * sends is dropped); and an SSH flood limit low enough that the operator's own tools trip it (a silent drop, no deny line).
@@ -638,6 +697,25 @@ function smpro_sh_all() {
         ];
     }
     // state 'unavailable' -> not an RPM system; emit nothing rather than a misleading finding.
+
+    /* ---- Kernel exposure: a security-fixed kernel installed but not running (reboot), live-patch aware ---- */
+    $kx = smpro_sh_kernel_exposure();
+    if (($kx['state'] ?? '') !== 'unknown') {
+        $kSev = ($kx['state'] === 'warning') ? 'warning' : 'ok';
+        $kEv  = 'running: ' . ($kx['running'] ?? '?')
+              . (isset($kx['newest']) ? "\nnewest installed: " . $kx['newest'] : '')
+              . (isset($kx['effective']) && $kx['effective'] !== '' ? "\nlive-patch effective: " . $kx['effective'] : '')
+              . (isset($kx['livepatch']) ? "\nlive patching: " . $kx['livepatch'] : '');
+        $C['Security updates'] = array_merge($C['Security updates'] ?? [], [
+            smpro_sh_mk('Running kernel up to date', $kSev,
+                (string)($kx['why'] ?? ''),
+                'A kernel security fix only protects the server once that kernel is actually running. The common trap is a patched kernel installed by an update but never booted — the fix is on disk, doing nothing, while scanners still reach the running (vulnerable) kernel. Live-patching (KernelCare) is the exception: it fixes the running kernel in memory with no reboot, so an "old" uname can be fully patched.',
+                $kSev === 'warning' ? (string)($kx['fix'] ?? 'Reboot into the newest kernel during a maintenance window.') : 'No action needed — the effective kernel is current.',
+                $kEv,
+                '',
+                $kSev === 'warning' ? (string)($kx['fix'] ?? '') : ''),
+        ]);
+    }
 
     /* ---- Hosting-stack CVEs: installed cPanel/Imunify/CSF/LiteSpeed vs the signed advisory feed ---- */
     if (!function_exists('smpro_vf_match_product')) { $vf = dirname(__DIR__) . '/includes/vulnfeed.php'; if (is_file($vf)) require_once $vf; }
