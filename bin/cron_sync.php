@@ -22,7 +22,7 @@ define('SMPRO_BOOT', 1);
 $base = dirname(__DIR__);
 foreach (['defines', 'mmdb', 'helpers', 'secret', 'license',
           'notify', 'botguard', 'geologin', 'bfrules', 'maintenance', 'reboot', 'svcmon', 'spqueue',
-          'fwallow', 'disk_home', 'benchdiag', 'geowall', 'loginfeed', 'evidence', 'hub', 'compcheck', 'ccfix', 'loadhist', 'cooler', 'tgbot', 'update', 'intrusion', 'backupmon', 'evship', 'fileaudit', 'learn', 'sysupd', 'slmaint', 'lvelimits', 'trustfeed', 'botguard', 'crawlers', 'secreport', 'shharden', 'sechealth'] as $m) {
+          'fwallow', 'disk_home', 'benchdiag', 'geowall', 'loginfeed', 'evidence', 'hub', 'compcheck', 'ccfix', 'loadhist', 'cooler', 'tgbot', 'update', 'intrusion', 'backupmon', 'evship', 'fileaudit', 'learn', 'sysupd', 'slmaint', 'lvelimits', 'trustfeed', 'botguard', 'crawlers', 'secreport', 'shharden', 'sechealth', 'vulnfeed'] as $m) {
     $f = $base . '/includes/' . $m . '.php';
     if (is_file($f)) require_once $f;
 }
@@ -43,6 +43,7 @@ foreach ([
     'scheduled reboot'   => 'smpro_reboot_cron_sync',
     'service monitor'    => 'smpro_svcmon_cron_sync',
     'security health'    => 'smpro_sh_cron_sync',
+    'vulnerability feed'  => 'smpro_vf_cron_sync',
     'site protection'    => 'smpro_spq_cron_sync',
     // Found by the regression, not by memory: three more installers existed and this list did not know
     // about them. That is the whole reason r30 discovers them from the tree instead of trusting this list.

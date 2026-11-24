@@ -639,6 +639,62 @@ function smpro_sh_all() {
     }
     // state 'unavailable' -> not an RPM system; emit nothing rather than a misleading finding.
 
+    /* ---- Hosting-stack CVEs: installed cPanel/Imunify/CSF/LiteSpeed vs the signed advisory feed ---- */
+    if (!function_exists('smpro_vf_match_product')) { $vf = dirname(__DIR__) . '/includes/vulnfeed.php'; if (is_file($vf)) require_once $vf; }
+    if (function_exists('smpro_vf_match_product') && function_exists('smpro_vf_status')) {
+        $vfSt = smpro_vf_status();
+        $vfChecks = [];
+        $anyInstalled = false; $worstSev = 'none'; $sevRank = ['none' => 0, 'low' => 1, 'moderate' => 2, 'important' => 3, 'critical' => 4];
+        foreach (smpro_vf_known_products() as $prod) {
+            $m = smpro_vf_match_product($prod);
+            if (!$m['installed']) continue;
+            $anyInstalled = true;
+            $label = ['cpanel' => 'cPanel & WHM', 'imunify360' => 'Imunify360', 'csf' => 'CSF (ConfigServer Firewall)', 'litespeed' => 'LiteSpeed'][$prod] ?? $prod;
+            if (!$vfSt['have']) {
+                // feed not configured yet: show the version, flag nothing - never a false "vulnerable" or "clean".
+                $vfChecks[] = smpro_sh_mk($label . ' version', 'info',
+                    $label . ' ' . $m['version'] . ' is installed. The vulnerability advisory feed is not configured, so it was not checked against known CVEs.',
+                    'Without the signed advisory feed this server cannot tell whether the installed hosting-stack versions carry a published vulnerability.',
+                    'The advisory feed is served by the licence server; once it is published this check lights up automatically. ' . ($vfSt['why'] !== '' ? '(' . $vfSt['why'] . ')' : ''),
+                    'Installed: ' . $m['version']);
+                continue;
+            }
+            $hits = $m['hits'];
+            if (!$hits) {
+                $vfChecks[] = smpro_sh_mk($label . ' known vulnerabilities', 'ok',
+                    $label . ' ' . $m['version'] . ' has no known advisory affecting it in the current feed.',
+                    'A hosting-stack component with a published CVE is a direct, remotely known way in.',
+                    'No action needed — keep it updated.',
+                    'Installed: ' . $m['version'] . ' · feed built ' . date('Y-m-d H:i', (int)$vfSt['generated']));
+                continue;
+            }
+            // worst severity + fixed-in across the matching advisories
+            $prodWorst = 'low'; $cves = []; $fixedTo = '';
+            foreach ($hits as $h) {
+                if (($sevRank[$h['severity']] ?? 0) > ($sevRank[$prodWorst] ?? 0)) $prodWorst = $h['severity'];
+                foreach ((array)($h['cves'] ?? []) as $c) $cves[strtoupper($c)] = true;
+                if ($fixedTo === '' || version_compare((string)$h['fixed'], $fixedTo, '>')) $fixedTo = (string)$h['fixed'];
+            }
+            if (($sevRank[$prodWorst] ?? 0) > ($sevRank[$worstSev] ?? 0)) $worstSev = $prodWorst;
+            $isCrit = in_array($prodWorst, ['critical', 'important'], true);
+            $cveList = array_keys($cves);
+            $ev = [];
+            foreach ($hits as $h) $ev[] = (string)($h['id'] ?? '?') . '  ' . ucfirst((string)$h['severity']) . '  fixed in ' . (string)$h['fixed'] . (($h['cves'] ?? []) ? '  (' . implode(', ', (array)$h['cves']) . ')' : '') . (($h['title'] ?? '') !== '' ? '  — ' . (string)$h['title'] : '');
+            $vfChecks[] = smpro_sh_mk($label . ' known vulnerabilities',
+                $isCrit ? 'critical' : 'warning',
+                $label . ' ' . $m['version'] . ' is affected by ' . count($hits) . ' known advisory(ies)' . ($cveList ? ' (' . implode(', ', array_slice($cveList, 0, 4)) . (count($cveList) > 4 ? ' …' : '') . ')' : '') . ' — highest severity: ' . ucfirst($prodWorst) . '. Fixed in ' . $fixedTo . '.',
+                'This is a component of your hosting stack running a version with a PUBLISHED vulnerability and a vendor fix available. A Critical/Important advisory against cPanel, Imunify, CSF or the web server is a direct, documented way into the server.',
+                'Update ' . $label . ' to ' . $fixedTo . ' or later. ' . ($prod === 'cpanel' ? 'cPanel updates via /scripts/upcp (or WHM > Upgrade to Latest Version).' : ($prod === 'imunify360' ? 'imunify360-agent update, or yum update imunify360.' : ($prod === 'csf' ? 'csf -u (CSF self-update).' : 'Update LiteSpeed from its control panel / vendor packages.'))),
+                implode("\n", $ev));
+        }
+        if ($vfChecks) {
+            // keep the section even when every product is clean; it is the "known-CVE" half of Security updates.
+            $C['Security updates'] = array_merge($C['Security updates'] ?? [], $vfChecks);
+        } elseif (!$anyInstalled) {
+            // none of the four products present (rare on a cPanel box) - say nothing rather than an empty finding.
+        }
+    }
+
     /* ---- scanning that silently stopped, own servers in a ban list, SSH flood limit ---- */
     $C['Scanning & own servers'] = smpro_sh_scan_own_checks();
     /* ---- Server hardening (fixable, each with Undo) ---- */
