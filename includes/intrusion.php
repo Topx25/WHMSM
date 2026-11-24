@@ -1330,52 +1330,20 @@ function smpro_im_allowlisted($ip) {
  * Returns rows [{ts, source, result:failed|success|attempt, user, detail}] newest-first.
  */
 function smpro_ip_auth_attempts($ip, $sinceTs = 0, $untilTs = 0, $cap = 400) {
-    if (!filter_var($ip, FILTER_VALIDATE_IP)) return [];
-    $ipq = escapeshellarg($ip); $since = $sinceTs ?: 0; $until = $untilTs ?: (time() + 86400);
-    $rows = []; $yr = (int)date('Y'); $start = microtime(true);
-    $sources = [
-        ['/var/log/secure', 'ssh'], ['/var/log/auth.log', 'ssh'],
-        ['/var/log/exim_mainlog', 'mail'], ['/var/log/maillog', 'mail'], ['/var/log/mail.log', 'mail'],
-        ['/var/log/messages', 'ftp'], ['/usr/local/cpanel/logs/login_log', 'cpanel'],
-    ];
-    $seenMail = false; $seenFtp = false;
-    foreach ($sources as $src) {
-        [$file, $hint] = $src;
-        if (!is_readable($file)) continue;
-        if ($hint === 'mail' && $seenMail) continue;            // first existing maillog is enough
-        if (microtime(true) - $start > 32) break;               // hard wall-clock budget
-        $raw = (string)@shell_exec('timeout 12 sh -c ' . escapeshellarg('tail -n 250000 ' . escapeshellarg($file) . ' 2>/dev/null | grep -aF ' . $ipq . ' | tail -n 500') . ' 2>/dev/null');
-        if ($hint === 'mail' && trim($raw) !== '') $seenMail = true;
-        foreach (explode("\n", $raw) as $l) {
-            $l = trim($l); if ($l === '' || strpos($l, $ip) === false) continue;
-            $svc = $hint;
-            if (stripos($l, 'sshd') !== false || stripos($l, 'ssh2') !== false) $svc = 'SSH';
-            elseif (preg_match('/pure-?ftpd|proftpd|ftpd|pure-authd/i', $l)) $svc = 'FTP';
-            elseif (preg_match('/dovecot|imap-login|pop3-login|authenticator failed|_login authenticator|exim|set_id=/i', $l)) $svc = 'Mail';
-            elseif (preg_match('/whostmgrd|cpaneld|webmaild|cpsrvd/i', $l)) $svc = (stripos($l, 'webmail') !== false) ? 'Webmail' : 'cPanel';
-            else $svc = strtoupper($hint) === 'SSH' ? 'SSH' : ($hint === 'ftp' ? 'FTP' : ($hint === 'mail' ? 'Mail' : 'cPanel'));
-            if ($svc === 'ftp' || $svc === 'FTP') { if (!preg_match('/ftp/i', $l)) continue; }
-            $failed = (bool)preg_match('/Failed|Invalid|failure|Incorrect|authentication (failed|error)|rejected|denied|not allowed|refused|FAILED LOGIN|DEFERRED|negativ/i', $l);
-            $success = !$failed && (bool)preg_match('/Accepted|SUCCEEDED LOGIN|SUCCESS|authentication succeeded|logged in/i', $l);
-            if (!$failed && !$success) { if (!preg_match('/login|auth|password|sshd|ftpd|dovecot|LOGIN/i', $l)) continue; $failed = true; }
-            $user = '';
-            if ($svc === 'SSH') { if (preg_match('/for (?:invalid user )?([^\s]+) from/i', $l, $um)) $user = $um[1]; elseif (preg_match('/invalid user ([^\s]+)/i', $l, $um)) $user = $um[1]; }
-            elseif ($svc === 'Mail') { if (preg_match('/set_id=([^\s)]+)/i', $l, $um)) $user = $um[1]; elseif (preg_match('/U=([^\s]+)/', $l, $um)) $user = $um[1]; elseif (preg_match('/for user \[?([^\]\s]+)/i', $l, $um)) $user = $um[1]; }
-            elseif ($svc === 'FTP') { if (preg_match('/user \[([^\]]+)\]/i', $l, $um)) $user = $um[1]; }
-            else { if (preg_match('/\]\s+' . preg_quote($ip, '/') . '\s+-\s+([^\s"]+)/', $l, $um)) $user = rawurldecode($um[1]); }
-            $user = trim((string)$user, "[]\"' "); if ($user === '-') $user = '';
-            $ts = 0;
-            if (preg_match('/^\[([^\]]+)\]/', $l, $tm)) $ts = strtotime($tm[1]) ?: 0;
-            elseif (preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/', $l, $tm)) $ts = strtotime($tm[1]) ?: 0;
-            elseif (preg_match('/^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/', $l, $tm)) $ts = smpro_syslog_ts($tm[1], $yr);
-            if ($since && $ts && $ts < $since) continue;
-            if ($until && $ts && $ts > $until) continue;
-            $rows[] = ['ts' => $ts, 'source' => $svc, 'result' => $failed ? 'failed' : ($success ? 'success' : 'attempt'), 'user' => $user, 'detail' => ''];
-            if (count($rows) >= 5000) break 2;
-        }
+    // Thin view over the shared auth-log engine (smpro_auth_log_scan in helpers.php): a flat, time-bounded
+    // list of attempts with the service shown by its display label. The classification/timestamp logic that
+    // used to be hand-copied here now lives in one place, so this list and the Account-Audit IP summary can
+    // no longer disagree about the same line.
+    $rows = smpro_auth_log_scan($ip, [
+        'since' => $sinceTs ?: 0,
+        'until' => $untilTs ?: (time() + 86400),
+        'cap'   => (int)$cap,
+    ]);
+    $out = [];
+    foreach ($rows as $r) {
+        $out[] = ['ts' => $r['ts'], 'source' => $r['svc_label'], 'result' => $r['result'], 'user' => $r['user'], 'detail' => ''];
     }
-    usort($rows, fn($a, $b) => ($b['ts'] ?? 0) <=> ($a['ts'] ?? 0));
-    return array_slice($rows, 0, $cap);
+    return $out;
 }
 /**
  * Home-region protection classifier for AUTO/AI blocks (manual admin blocks bypass this).

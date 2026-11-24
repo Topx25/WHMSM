@@ -129,62 +129,27 @@ function smpro_aa_ip_web($ip) {
  *  actually show up in the report instead of appearing as "no activity". Bounded + recent-focused. */
 function smpro_aa_ip_auth($ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return null;
-    $ipq = escapeshellarg($ip);
+    // Per-service summary built on the shared auth-log engine (smpro_auth_log_scan in helpers.php). The line
+    // parsing used to be a second hand-copy of the Intrusion-monitor scanner and had drifted from it; both now
+    // read the same engine, so the same log line is always classified the same way wherever it is shown. This
+    // view keeps the canonical lowercase service keys and the redacted raw line the Account-Audit UI expects,
+    // and includes the extra cPanel access_log source this page has always read.
+    $rows = smpro_auth_log_scan($ip, ['with_access_log' => true, 'cap' => 5000]);
     $o = ['ip' => $ip, 'total' => 0, 'failed' => 0, 'success' => 0, 'services' => [], 'users' => [], 'first_ts' => 0, 'last_ts' => 0, 'recent' => []];
-    // (log => default service hint). Content-based classification below wins; the hint is a fallback.
-    $sources = [
-        ['/var/log/secure', 'ssh'], ['/var/log/auth.log', 'ssh'],
-        ['/var/log/exim_mainlog', 'mail'], ['/var/log/maillog', 'mail'], ['/var/log/mail.log', 'mail'],
-        ['/var/log/messages', 'ftp'], ['/usr/local/cpanel/logs/login_log', 'cpanel'],
-        ['/usr/local/cpanel/logs/access_log', 'cpanel'],
-    ];
-    $curYear = (int)date('Y');
-    $budgetStart = microtime(true); $truncated = false;
-    foreach ($sources as $src) {
-        [$file, $hint] = $src;
-        if (!is_readable($file)) continue;
-        if (microtime(true) - $budgetStart > 32) { $truncated = true; break; }   // hard wall-clock budget for a busy shared box
-        // read only the recent tail (fast on huge busy-box logs - seeks near EOF), grep the IP, keep the last matches
-        $raw = (string)@shell_exec('timeout 12 sh -c ' . escapeshellarg('tail -n 250000 ' . escapeshellarg($file) . ' 2>/dev/null | grep -aF ' . $ipq . ' | tail -n 500') . ' 2>/dev/null');
-        foreach (explode("\n", $raw) as $l) {
-            $l = trim($l); if ($l === '' || strpos($l, $ip) === false) continue;
-            // service classification (content beats the file hint)
-            $svc = $hint;
-            if (stripos($l, 'sshd') !== false || stripos($l, 'ssh2') !== false) $svc = 'ssh';
-            elseif (preg_match('/pure-?ftpd|proftpd|ftpd|pure-authd/i', $l)) $svc = 'ftp';
-            elseif (preg_match('/dovecot|imap-login|pop3-login|authenticator failed|_login authenticator|exim|set_id=|A=(dovecot|courier)/i', $l)) $svc = 'mail';
-            elseif (preg_match('/whostmgrd|cpaneld|webmaild|cpsrvd|LOGIN\b/i', $l)) $svc = (stripos($l, 'webmaild') !== false || stripos($l, 'webmail') !== false) ? 'webmail' : 'cpanel';
-            // result
-            $failed = (bool)preg_match('/Failed|Invalid|failure|Incorrect|authentication (failed|error)|rejected|denied|not allowed|refused|FAILED LOGIN|DEFERRED|access denied|negativ/i', $l);
-            $success = !$failed && (bool)preg_match('/Accepted|SUCCEEDED LOGIN|SUCCESS|authentication succeeded|logged in|session opened/i', $l);
-            if (!$failed && !$success) {
-                // only keep auth-relevant lines (skip generic noise that merely mentions the IP)
-                if (!preg_match('/login|auth|password|sshd|ftpd|dovecot|LOGIN/i', $l)) continue;
-                $failed = true; // an auth-context line we can't classify -> treat as an attempt
-            }
-            // targeted username
-            $user = '';
-            if ($svc === 'ssh') { if (preg_match('/for (?:invalid user )?([^\s]+) from/i', $l, $um)) $user = $um[1]; elseif (preg_match('/invalid user ([^\s]+)/i', $l, $um)) $user = $um[1]; }
-            elseif ($svc === 'mail') { if (preg_match('/set_id=([^\s)]+)/i', $l, $um)) $user = $um[1]; elseif (preg_match('/U=([^\s]+)/', $l, $um)) $user = $um[1]; elseif (preg_match('/for user \[?([^\]\s]+)/i', $l, $um)) $user = $um[1]; }
-            elseif ($svc === 'ftp') { if (preg_match('/user \[([^\]]+)\]/i', $l, $um)) $user = $um[1]; elseif (preg_match('/Authentication failed for user \[?([^\]\s]+)/i', $l, $um)) $user = $um[1]; }
-            else { if (preg_match('/\]\s+' . preg_quote($ip, '/') . '\s+-\s+([^\s"]+)/', $l, $um)) $user = rawurldecode($um[1]); }
-            $user = trim($user, "[]\"' "); if ($user === '-' ) $user = '';
-            // timestamp (several formats)
-            $ts = 0;
-            if (preg_match('/^\[([^\]]+)\]/', $l, $tm)) $ts = smpro_aa_ts($tm[1]);                                       // cpanel [2026-.. ]
-            elseif (preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/', $l, $tm)) $ts = strtotime($tm[1]);            // exim
-            elseif (preg_match('/^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/', $l, $tm)) $ts = strtotime($tm[1] . ' ' . $curYear); // syslog
-            $o['total']++; if ($failed) $o['failed']++; if ($success) $o['success']++;
-            $o['services'][$svc] = ($o['services'][$svc] ?? 0) + 1;
-            if ($user !== '') $o['users'][$user] = ($o['users'][$user] ?? 0) + 1;
-            if ($ts) { $o['first_ts'] = $o['first_ts'] ? min($o['first_ts'], $ts) : $ts; $o['last_ts'] = max($o['last_ts'], $ts); }
-            if (count($o['recent']) < 400) $o['recent'][] = ['ts' => $ts, 'svc' => $svc, 'result' => $failed ? 'failed' : ($success ? 'success' : 'attempt'), 'user' => $user, 'line' => function_exists('smpro_redact_sensitive') ? smpro_redact_sensitive(mb_substr($l, 0, 300)) : mb_substr($l, 0, 300)];
-        }
+    foreach ($rows as $r) {
+        $svc = $r['svc']; $user = (string)$r['user']; $ts = (int)$r['ts'];
+        $o['total']++;
+        if ($r['result'] === 'failed') $o['failed']++;
+        if ($r['result'] === 'success') $o['success']++;
+        $o['services'][$svc] = ($o['services'][$svc] ?? 0) + 1;
+        if ($user !== '') $o['users'][$user] = ($o['users'][$user] ?? 0) + 1;
+        if ($ts) { $o['first_ts'] = $o['first_ts'] ? min($o['first_ts'], $ts) : $ts; $o['last_ts'] = max($o['last_ts'], $ts); }
+        if (count($o['recent']) < 400) $o['recent'][] = ['ts' => $ts, 'svc' => $svc, 'result' => $r['result'], 'user' => $user, 'line' => $r['line']];
     }
     arsort($o['services']); arsort($o['users']);
     usort($o['recent'], fn($a, $b) => ($b['ts'] ?? 0) <=> ($a['ts'] ?? 0));
     $o['recent'] = array_slice($o['recent'], 0, 200);
-    $o['truncated'] = $truncated;
+    $o['truncated'] = (count($rows) >= 5000);
     return $o;
 }
 

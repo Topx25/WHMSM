@@ -2240,6 +2240,92 @@ function smpro_login_ts($t): int {
     return (int)(@strtotime($t) ?: 0);
 }
 
+/**
+ * Scan the server's auth logs for every login/auth line one IP produced, across SSH, mail, FTP and
+ * cPanel/WHM/webmail - the one engine behind both the Account-Audit IP report and the Intrusion-monitor
+ * attempt list. It used to live in two hand-copied places that had already drifted apart (one knew the
+ * cPanel access_log and a few extra mail/FTP phrasings, the other didn't), so the SAME line could be
+ * classified one way on one page and another way on the next. This is the single source of truth.
+ *
+ * Returns the raw matched lines as rows, newest first, each:
+ *   ['ts'=>int, 'svc'=>'ssh|ftp|mail|cpanel|webmail', 'svc_label'=>'SSH|FTP|Mail|cPanel|Webmail',
+ *    'result'=>'failed|success|attempt', 'user'=>string, 'line'=>string(redacted, <=300 chars)]
+ * Callers shape their own view from these (a flat list, or a per-service summary).
+ *
+ * $opts: 'since'/'until' (unix secs, 0 = no bound), 'cap' (max rows kept after sort, 0 = no cap),
+ *        'with_access_log' (bool, add the cPanel access_log source), 'redact' (bool, default true).
+ */
+function smpro_auth_log_scan($ip, array $opts = []): array {
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) return [];
+    $since  = (int)($opts['since'] ?? 0);
+    $until  = (int)($opts['until'] ?? 0);
+    $cap    = (int)($opts['cap'] ?? 0);
+    $redact = $opts['redact'] ?? true;
+    $ipq    = escapeshellarg($ip);
+    $yr     = (int)date('Y');
+    $start  = microtime(true);
+
+    // (log file => default service hint). Content-based classification below always wins; the hint is the fallback.
+    $sources = [
+        ['/var/log/secure', 'ssh'], ['/var/log/auth.log', 'ssh'],
+        ['/var/log/exim_mainlog', 'mail'], ['/var/log/maillog', 'mail'], ['/var/log/mail.log', 'mail'],
+        ['/var/log/messages', 'ftp'], ['/usr/local/cpanel/logs/login_log', 'cpanel'],
+    ];
+    if (!empty($opts['with_access_log'])) $sources[] = ['/usr/local/cpanel/logs/access_log', 'cpanel'];
+
+    $labels = ['ssh' => 'SSH', 'ftp' => 'FTP', 'mail' => 'Mail', 'cpanel' => 'cPanel', 'webmail' => 'Webmail'];
+    $rows = []; $seenMail = false;
+    foreach ($sources as [$file, $hint]) {
+        if (!is_readable($file)) continue;
+        if ($hint === 'mail' && $seenMail) continue;               // first existing maillog is enough
+        if (microtime(true) - $start > 32) break;                  // hard wall-clock budget on a busy box
+        // read only the recent tail (seeks near EOF on huge logs), grep the IP, keep the last matches
+        $raw = (string)@shell_exec('timeout 12 sh -c ' . escapeshellarg('tail -n 250000 ' . escapeshellarg($file) . ' 2>/dev/null | grep -aF ' . $ipq . ' | tail -n 500') . ' 2>/dev/null');
+        if ($hint === 'mail' && trim($raw) !== '') $seenMail = true;
+        foreach (explode("\n", $raw) as $l) {
+            $l = trim($l); if ($l === '' || strpos($l, $ip) === false) continue;
+            // service classification (line content beats the file hint) - union of both former copies
+            $svc = $hint;
+            if (stripos($l, 'sshd') !== false || stripos($l, 'ssh2') !== false) $svc = 'ssh';
+            elseif (preg_match('/pure-?ftpd|proftpd|ftpd|pure-authd/i', $l)) $svc = 'ftp';
+            elseif (preg_match('/dovecot|imap-login|pop3-login|authenticator failed|_login authenticator|exim|set_id=|A=(dovecot|courier)/i', $l)) $svc = 'mail';
+            elseif (preg_match('/whostmgrd|cpaneld|webmaild|cpsrvd|LOGIN\b/i', $l)) $svc = (stripos($l, 'webmail') !== false) ? 'webmail' : 'cpanel';
+            else $svc = in_array($hint, ['ssh', 'ftp', 'mail', 'cpanel', 'webmail'], true) ? $hint : 'cpanel';
+            if ($svc === 'ftp' && !preg_match('/ftp/i', $l)) continue;   // a hinted-ftp line with no ftp token is noise
+            // result (union of both copies' phrasings)
+            $failed  = (bool)preg_match('/Failed|Invalid|failure|Incorrect|authentication (failed|error)|rejected|denied|not allowed|refused|FAILED LOGIN|DEFERRED|access denied|negativ/i', $l);
+            $success = !$failed && (bool)preg_match('/Accepted|SUCCEEDED LOGIN|SUCCESS|authentication succeeded|logged in|session opened/i', $l);
+            if (!$failed && !$success) {
+                if (!preg_match('/login|auth|password|sshd|ftpd|dovecot|LOGIN/i', $l)) continue;   // generic noise that merely names the IP
+                $failed = true;                                     // an auth-context line we can't pin down -> an attempt
+            }
+            // targeted username
+            $user = '';
+            if ($svc === 'ssh') { if (preg_match('/for (?:invalid user )?([^\s]+) from/i', $l, $um)) $user = $um[1]; elseif (preg_match('/invalid user ([^\s]+)/i', $l, $um)) $user = $um[1]; }
+            elseif ($svc === 'mail') { if (preg_match('/set_id=([^\s)]+)/i', $l, $um)) $user = $um[1]; elseif (preg_match('/U=([^\s]+)/', $l, $um)) $user = $um[1]; elseif (preg_match('/for user \[?([^\]\s]+)/i', $l, $um)) $user = $um[1]; }
+            elseif ($svc === 'ftp') { if (preg_match('/user \[([^\]]+)\]/i', $l, $um)) $user = $um[1]; elseif (preg_match('/Authentication failed for user \[?([^\]\s]+)/i', $l, $um)) $user = $um[1]; }
+            else { if (preg_match('/\]\s+' . preg_quote($ip, '/') . '\s+-\s+([^\s"]+)/', $l, $um)) $user = rawurldecode($um[1]); }
+            $user = trim((string)$user, "[]\"' "); if ($user === '-') $user = '';
+            // timestamp (best reader from each former copy: aa_ts handles the Apache DD/Mon/YYYY stamp;
+            // syslog_ts handles the year-boundary rollover for bare syslog lines)
+            $ts = 0;
+            if (preg_match('/^\[([^\]]+)\]/', $l, $tm)) $ts = function_exists('smpro_aa_ts') ? smpro_aa_ts($tm[1]) : (strtotime($tm[1]) ?: 0);
+            elseif (preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/', $l, $tm)) $ts = strtotime($tm[1]) ?: 0;
+            elseif (preg_match('/^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})/', $l, $tm)) $ts = smpro_syslog_ts($tm[1], $yr);
+            if ($since && $ts && $ts < $since) continue;
+            if ($until && $ts && $ts > $until) continue;
+            $rows[] = [
+                'ts' => $ts, 'svc' => $svc, 'svc_label' => $labels[$svc] ?? ucfirst($svc),
+                'result' => $failed ? 'failed' : ($success ? 'success' : 'attempt'), 'user' => $user,
+                'line' => $redact && function_exists('smpro_redact_sensitive') ? smpro_redact_sensitive(mb_substr($l, 0, 300)) : mb_substr($l, 0, 300),
+            ];
+            if (count($rows) >= 5000) break 2;
+        }
+    }
+    usort($rows, fn($a, $b) => ($b['ts'] ?? 0) <=> ($a['ts'] ?? 0));
+    return $cap > 0 ? array_slice($rows, 0, $cap) : $rows;
+}
+
 /** One advisory lock for every read-modify-write of csf.deny by this plugin (CSF itself appends; a block appended
  *  between a read and a full rewrite disappeared). Blocking; released by the caller or at exit. */
 function smpro_csf_deny_lock() {
