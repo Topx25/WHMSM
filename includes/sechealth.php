@@ -742,7 +742,7 @@ function smpro_sh_all() {
     if (function_exists('smpro_vf_match_product') && function_exists('smpro_vf_status')) {
         $vfSt = smpro_vf_status();
         $vfChecks = [];
-        $anyInstalled = false; $worstSev = 'none'; $sevRank = ['none' => 0, 'low' => 1, 'moderate' => 2, 'important' => 3, 'critical' => 4];
+        $anyInstalled = false; $sevRank = ['none' => 0, 'low' => 1, 'moderate' => 2, 'important' => 3, 'critical' => 4];
         foreach (smpro_vf_known_products() as $prod) {
             $m = smpro_vf_match_product($prod);
             if (!$m['installed']) continue;
@@ -773,7 +773,6 @@ function smpro_sh_all() {
                 foreach ((array)($h['cves'] ?? []) as $c) $cves[strtoupper($c)] = true;
                 if ($fixedTo === '' || version_compare((string)$h['fixed'], $fixedTo, '>')) $fixedTo = (string)$h['fixed'];
             }
-            if (($sevRank[$prodWorst] ?? 0) > ($sevRank[$worstSev] ?? 0)) $worstSev = $prodWorst;
             $isCrit = in_array($prodWorst, ['critical', 'important'], true);
             $cveList = array_keys($cves);
             $ev = [];
