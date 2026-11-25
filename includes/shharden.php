@@ -465,6 +465,34 @@ function smpro_shh_wpguard_status(): ?array {
     return $s;
 }
 
+/**
+ * WordPress known-vulnerability exposure across the server's sites, read from WP Guard's own wg_vuln table in
+ * read-only mode. This is the customer-application half of the vulnerability picture: Security Health already
+ * reports OS packages, the hosting stack and the kernel against known CVEs, but the single biggest real attack
+ * surface on a shared host is an outdated WordPress plugin/theme with a published, exploitable flaw (the shopx
+ * break-ins came in through exactly that). WP Guard tracks these; this surfaces the count in Security Health so
+ * it is visible there, not only inside WP Guard. Read-only aggregate COUNTs (the table can hold tens of
+ * thousands of rows), bounded by a short sqlite timeout. null when WP Guard is absent or the table cannot be read.
+ */
+function smpro_shh_wp_vuln(): ?array {
+    if (!function_exists('smpro_wpguard_whm')) return null;
+    $w = smpro_wpguard_whm(); if (!$w['installed']) return null;
+    $bin = trim((string)@shell_exec('command -v sqlite3 2>/dev/null'));
+    if ($w['db'] === '' || $bin === '') return null;
+    // the table only exists on a WP Guard new enough to track vulnerabilities; absence is "nothing to report"
+    $has = trim((string)@shell_exec('timeout 8 ' . escapeshellarg($bin) . ' -readonly ' . escapeshellarg($w['db']) . ' ' . escapeshellarg("SELECT name FROM sqlite_master WHERE type='table' AND name='wg_vuln'") . ' 2>/dev/null'));
+    if ($has !== 'wg_vuln') return null;
+    $q = function (string $sql) use ($bin, $w) { return trim((string)@shell_exec('timeout 12 ' . escapeshellarg($bin) . ' -readonly -cmd ' . escapeshellarg('.timeout 4000') . ' ' . escapeshellarg($w['db']) . ' ' . escapeshellarg($sql) . ' 2>/dev/null')); };
+    // only OPEN + ACTIVE vulns are a live exposure (a vuln in a deactivated plugin is not reachable). Count the
+    // worst by rating, the no-login (unauth) critical/high subset, and how many distinct sites are affected.
+    $crit = (int)$q("SELECT COUNT(*) FROM wg_vuln WHERE status='open' AND active=1 AND rating='critical'");
+    $high = (int)$q("SELECT COUNT(*) FROM wg_vuln WHERE status='open' AND active=1 AND rating='high'");
+    $unauth = (int)$q("SELECT COUNT(*) FROM wg_vuln WHERE status='open' AND active=1 AND unauth=1 AND rating IN ('critical','high')");
+    $sites = (int)$q("SELECT COUNT(DISTINCT docroot) FROM wg_vuln WHERE status='open' AND active=1");
+    $critSites = (int)$q("SELECT COUNT(DISTINCT docroot) FROM wg_vuln WHERE status='open' AND active=1 AND rating IN ('critical','high')");
+    return ['read' => true, 'critical' => $crit, 'high' => $high, 'unauth' => $unauth, 'sites' => $sites, 'crit_sites' => $critSites];
+}
+
 /** Checks for the "Server Hardening" category (same shape as smpro_sh_mk). */
 function smpro_shh_checks(): array {
     $C = [];
@@ -477,6 +505,22 @@ function smpro_shh_checks(): array {
             'WP Guard cleans WordPress sites (planted plugins, database malware, hidden admins) and keeps every original in its root-only quarantine. SM Pro reads its status only and never alerts on, cleans or deletes the files in that quarantine, so WP Guard\'s Undo keeps working.',
             $serious ? 'Open WP Guard > Threats > Compromise check and fix the open findings there (each fix has Undo).' : 'No action needed.',
             $ev);
+        // WordPress known-vulnerability exposure (the customer-application side of the vulnerability picture)
+        $wv = smpro_shh_wp_vuln();
+        if ($wv !== null && !empty($wv['read'])) {
+            $sev = ($wv['critical'] > 0 || $wv['unauth'] > 0) ? 'critical' : (($wv['high'] > 0 || $wv['sites'] > 0) ? 'warning' : 'ok');
+            $find = $wv['sites'] === 0
+                ? 'No active WordPress plugin or theme on this server has a known open vulnerability.'
+                : ($wv['crit_sites'] . ' site(s) run an active component with a CRITICAL/HIGH known vulnerability'
+                    . ($wv['unauth'] > 0 ? ' (' . $wv['unauth'] . ' of them exploitable with no login)' : '')
+                    . '; ' . $wv['sites'] . ' site(s) are affected in total.');
+            $C[] = smpro_sh_mk('WordPress known vulnerabilities (customer sites)', $sev, $find,
+                'An outdated WordPress plugin or theme with a PUBLISHED, exploitable vulnerability is the single most common way a shared-hosting account is taken over — and a no-login (unauthenticated) critical flaw needs no password at all. These sit in customer sites, so they are easy to miss from the server view, but one compromised site is a foothold on the server. WP Guard tracks them; this surfaces the exposure here.',
+                $wv['sites'] === 0 ? 'No action needed — keep WP Guard\'s vulnerability feed current.'
+                    : 'Open WP Guard > Threats > Vulnerabilities: update or virtually-patch the critical/high items first, especially the no-login ones. Each site\'s worst components are listed there with the fixed-in version.',
+                'critical: ' . $wv['critical'] . "  high: " . $wv['high'] . "  unauth(crit/high): " . $wv['unauth']
+                    . "\naffected sites: " . $wv['sites'] . " (critical/high on " . $wv['crit_sites'] . ")");
+        }
     }
     if (!function_exists('smpro_mg_status')) { $mgf = __DIR__ . '/mailguard.php'; if (is_file($mgf)) require_once $mgf; }
     // SMPRO_MB_LIST + smpro_mb_installed() come from mailblock.php. shharden used to be loaded only after index.php
